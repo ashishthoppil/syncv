@@ -15,7 +15,7 @@ export const SettingsSection = () => {
   const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [unsubscribing, setUnsubscribing] = useState(false);
-  const [plan, setPlan] = useState("Free");
+  const [_plan, setPlan] = useState("Free");
   const [loading, setLoading] = useState(false);
 
   const languageOptions = [

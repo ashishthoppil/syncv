@@ -50,7 +50,7 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
       ? String(user.user_metadata.experience_years)
       : ""
   );
-  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [_loadingProfile, setLoadingProfile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [parsingResume, setParsingResume] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);

@@ -3,7 +3,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -11,7 +10,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { CircleCheck, CircleHelp } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const tooltipContent = {
   styles: "Choose from a variety of styles to suit your preferences.",
@@ -67,6 +66,10 @@ const plans = [
 
 const Pricing = () => {
   const [selectedBillingPeriod, setSelectedBillingPeriod] = useState("monthly");
+
+  useEffect(() => {
+    setSelectedBillingPeriod("monthly");
+  }, [])
 
   return (
     <div
