@@ -9,115 +9,88 @@ import {
 } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button";
 
+const sampleResume = {
+    header: {
+        name: "Ashish B Thoppil",
+        phone: "+918848274176",
+        email: "ashisht.developer@gmail.com",
+        links: [
+            "https://www.linkedin.com/in/ashish-thoppil",
+            "https://github.com/ashishthoppil"
+        ]
+    },
+    summary: {
+        content: "Results-driven Fullstack Engineer experienced in building scalable, high-performance web applications with React, Next.js, TypeScript, Node.js, and modern tooling."
+    },
+    skills: {
+        content: [
+            "Frontend: React, Next.js, TypeScript, JavaScript, HTML5, CSS3, Sass, Tailwind, Bootstrap, MaterialUI, Storybook",
+            "Backend: Node.js, Express.js, REST API, MongoDB, MySQL, JWT Auth",
+            "Devops & Tools: Docker, Azure DevOps, AWS, Git & Github, CI/CD pipelines, Webpack, Vite, Babel",
+            "Testing & QA: Jest, Unit Testing, Performance Profiling, Lighthouse",
+            "Others: Agile Methodologies, Open Project, Jira"
+        ]
+    },
+    experience: [
+        {
+            company: "Dbiz AI",
+            location: "Kochi, India",
+            designation: "Analyst - Frontend Dev",
+            duration: "Sep 2024 - Jan 2025",
+            responsibilities: [
+                "Improved response time of a Retrieval-Augmented Generation (RAG) AI chatbot by 50% through streaming and async optimizations using Vercel AI SDK and Next.js",
+                "Enhanced application performance and user experience through iterative profiling and code refinement",
+                "Achieved 90%+ unit test coverage with Jest, reducing production bugs",
+                "Collaborated in Agile setup for weekly releases"
+            ]
+        },
+        {
+            company: "Fingent Global Solutions",
+            location: "Kochi, India",
+            designation: "Software Engineer",
+            duration: "Jul 2022 - Aug 2024",
+            responsibilities: [
+                "Designed and implemented scalable backend RBAC systems using Node.js and MongoDB",
+                "Mentored junior developers to improve delivery speed and code quality",
+                "Developed responsive frontend components with React",
+                "Participated in sprint planning, QA cycles, and client demo presentations"
+            ]
+        }
+    ],
+    projects: [
+        {
+            title: "RAG Based AI Chatbot",
+            description: "A customizable multi-tenant AI chatbot with a custom knowledge base, capable of streaming chat interactions.",
+            link: "https://kulfi-ai.com"
+        },
+        {
+            title: "ATS Resume Scanner",
+            description: "AI-based resume scoring and optimization application using OpenAI APIs.",
+            link: "https://ats-resume-scanner.com"
+        }
+    ],
+    education: [
+        {
+            degree: "Master of Computer Applications",
+            institute: "Mahatma Gandhi University, Kottayam",
+            duration: "Aug 2015 - Dec 2018",
+            grade: ""
+        },
+        {
+            degree: "Bachelor of Computer Applications",
+            institute: "Mahatma Gandhi University, Kottayam",
+            duration: "May 2012 - Jun 2015",
+            grade: ""
+        }
+    ],
+    achievements: [
+        "Awarded the Employee of the year award.",
+        "Awarded the XYZ for completing the ABC at Google."
+    ]
+}
 
-export const Template = ({ resume, setResumeResult, handleDownload }) => {
-    // const [resume, setResumeResult] = useState({
-    //         "header": {
-    //             "name": "Ashish B Thoppil",
-    //             "phone": "+918848274176",
-    //             "email": "ashisht.developer@gmail.com",
-    //             "links": [
-    //                 "https://www.linkedin.com/in/ashish-thoppil",
-    //                 "https://github.com/ashishthoppil"
-    //             ]
-    //         },
-    //         "summary": {
-    //             "content": "Results-driven Fullstack Engineer with 4.11 years of experience in building scalable and high-performance web applications. Proficient in React, Next.js, TypeScript, Node.js, and modern tooling. Skilled in performance optimization, CI/CD, testing, and user-centric design. Proven track record of delivering enterprise-grade systems and AI-integrated apps."
-    //         },
-    //         "skills": {
-    //             "content": [
-    //                 "Frontend: React, Next.js, TypeScript, JavaScript, HTML5, CSS3, Sass, Tailwind, Bootstrap, MaterialUI, Storybook",
-    //                 "Backend: Node.js, Express.js, REST API, MongoDB, MySQL, JWT Auth",
-    //                 "Devops & Tools: Docker, Azure DevOps, AWS, Git & Github, CI/CD pipelines, Webpack, Vite, Babel",
-    //                 "Testing & QA: Jest, Unit Testing, Performance Profiling, Lighthouse",
-    //                 "Others: Agile Methodologies, Open Project, Jira"
-    //             ]
-    //         },
-    //         "experience": [
-    //             {
-    //                 "company": "Dbiz AI",
-    //                 "location": "Kochi, India",
-    //                 "designation": "Analyst - Frontend Dev",
-    //                 "duration": "Sep 2024 - Jan 2025",
-    //                 "responsibilities": [
-    //                     "Improved response time of a Retrieval-Augmented Generation (RAG) AI chatbot by 50% through streaming and async optimizations using Vercel AI SDK and Next.js",
-    //                     "Enhanced application performance and user experience through iterative profiling and code refinement",
-    //                     "Achieved 90%+ unit test coverage with Jest, reducing production bugs",
-    //                     "Collaborated in Agile setup for weekly releases"
-    //                 ]
-    //             },
-    //             {
-    //                 "company": "Fingent Global Solutions",
-    //                 "location": "Kochi, India",
-    //                 "designation": "Software Engineer",
-    //                 "duration": "Jul 2022 - Aug 2024",
-    //                 "responsibilities": [
-    //                     "Designed and implemented scalable backend RBAC systems using Node.js and MongoDB",
-    //                     "Mentored junior developers to improve delivery speed and code quality",
-    //                     "Developed responsive frontend components with React",
-    //                     "Participated in sprint planning, QA cycles, and client demo presentations"
-    //                 ]
-    //             },
-    //             {
-    //                 "company": "Polus Solutions",
-    //                 "location": "Trivandrum, India",
-    //                 "designation": "Software Developer",
-    //                 "duration": "Jun 2021 - Jul 2022",
-    //                 "responsibilities": [
-    //                     "Built and deployed over 10 websites and web apps using React, HTML, CSS, and Tailwind",
-    //                     "Interfaced with international clients for requirements gathering and timely delivery",
-    //                     "Mentored developers to improve coding standards and documentation"
-    //                 ]
-    //             },
-    //             {
-    //                 "company": "Reizend IT Consultants",
-    //                 "location": "Trivandrum, India",
-    //                 "designation": "Junior System Engineer",
-    //                 "duration": "Jul 2019 - Aug 2020",
-    //                 "responsibilities": [
-    //                     "Contributed to UI development, bug fixing, and maintenance in Agile sprints",
-    //                     "Worked on production deployments and backend tasks in PHP and JavaScript projects",
-    //                     "Gained experience in project lifecycles and cross-team collaboration"
-    //                 ]
-    //             }
-    //         ],
-    //         "projects": [
-    //             {
-    //                 "title": "RAG Based AI Chatbot",
-    //                 "description": "A customizable multi-tenant AI chatbot with a custom knowledge base, capable of streaming chat interactions, which can be integrated into any website in minutes.",
-    //                 "link": "https://kulfi-ai.com"
-    //             },
-    //             {
-    //                 "title": "ATS Resume Scanner",
-    //                 "description": "AI-based resume scoring and optimization application using OpenAI APIs.",
-    //                 "link": "https://ats-resume-scanner.com"
-    //             },
-    //             {
-    //                 "title": "Portfolio 2.0",
-    //                 "description": "Personal portfolio website developed using React.js and Framer Motion, deployed on Netlify.",
-    //                 "link": "https://ashishbthoppil.netlify.app"
-    //             }
-    //         ],
-    //         "education": [
-    //             {
-    //                 "degree": "Master of Computer Applications",
-    //                 "institute": "Mahatma Gandhi University, Kottayam",
-    //                 "duration": "Aug 2015 - Dec 2018",
-    //                 "grade": ""
-    //             },
-    //             {
-    //                 "degree": "Bachelor of Computer Applications",
-    //                 "institute": "Mahatma Gandhi University, Kottayam",
-    //                 "duration": "May 2012 - Jun 2015",
-    //                 "grade": ""
-    //             }
-    //         ],
-    //         "achievements": [
-    //             "Awarded the Employee of the year award.",
-    //             "Awarded the XYZ for completing the ABC at Google."
-    //         ]
-    //     })
-    
+const Template = ({ resume, setResumeResult }) => {
+
     const [name, setName] = useState(resume.header.name);
     const [email, setEmail] = useState(resume.header.email);
     const [phone, setPhone] = useState(resume.header.phone);
@@ -629,4 +602,10 @@ export const Template = ({ resume, setResumeResult, handleDownload }) => {
                 </section> : <></>}
             </div>
     )
+}
+
+export default function Page() {
+    const [resume, setResumeResult] = useState(sampleResume);
+
+    return <Template resume={resume} setResumeResult={setResumeResult} />;
 }
