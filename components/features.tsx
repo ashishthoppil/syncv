@@ -11,39 +11,39 @@ import React from "react";
 const features = [
   {
     icon: Settings2,
-    title: "Customizable Layouts",
+    title: "Instant ATS Scoring",
     description:
-      "Design your space with drag-and-drop simplicity—create grids, lists, or galleries in seconds.",
+      "Get real-time feedback on your resume’s compatibility with job descriptions. Instantly see what recruiters and ATS systems will think and how to improve it.",
   },
   {
     icon: Blocks,
-    title: "Interactive Widgets",
+    title: "AI-Powered Resume Suggestions",
     description:
-      "Embed polls, quizzes, or forms to keep your audience engaged.",
+      "Leverage AI to rewrite bullet points, summarize experience, and match keywords, all aligned with the job you're targeting. Save hours of editing.",
   },
   {
     icon: Bot,
-    title: "AI-Powered Tools",
+    title: "One-Click Resume & Cover Letter Generation",
     description:
-      "Generate summaries, auto-format content, or translate into multiple languages seamlessly.",
+      "Paste a job description and let our AI craft a tailored resume and cover letter that stands out. Download them instantly in clean, ATS-friendly formats.",
   },
   {
     icon: Film,
-    title: "Media Integrations",
+    title: "Smart Match Analytics",
     description:
-      "Connect with Spotify, Instagram, or your own media library for dynamic visuals and sound.",
+      "Visualize your resume’s performance with match scores, keyword coverage, and section-wise feedback. Make data-driven improvements easily.",
   },
   {
     icon: ChartPie,
-    title: "Advanced Analytics",
+    title: "Seamless Job Tracking",
     description:
-      "Track engagement, clicks, and user activity with intuitive charts and reports.",
+      "Organize and track all your job applications in one place. Monitor application status, interview stages, and follow-ups effortlessly, no spreadsheets needed.",
   },
   {
     icon: MessageCircle,
-    title: "Seamless Collaboration",
+    title: "Job Description Analyzer",
     description:
-      "Comment, tag, and assign tasks directly within your documents.",
+      "Paste any job description and let the AI break it down, highlighting must-have keywords, skills, and qualifications so you know exactly what to tailor in your resume.",
   },
 ];
 
@@ -51,7 +51,7 @@ const Features = () => {
   return (
     <div id="features" className="w-full py-12 xs:py-20 px-6">
       <h2 className="text-3xl xs:text-4xl sm:text-5xl font-bold tracking-tight text-center">
-        Unleash Your Creativity
+        Land Jobs Faster with Smarter Resumes
       </h2>
       <div className="w-full max-w-screen-lg mx-auto mt-10 sm:mt-16 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {features.map((feature) => (

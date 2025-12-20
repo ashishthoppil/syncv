@@ -10,39 +10,39 @@ import {
 const faq = [
   {
     icon: Undo2,
-    question: "What is your return policy?",
+    question: "Do you offer refunds?",
     answer:
-      "You can return unused items in their original packaging within 30 days for a refund or exchange. Contact support for assistance.",
+      "We do not offer refunds. However, we're here to assist with any issues or concerns you may have — just reach out to support.",
   },
   {
     icon: Route,
-    question: "How do I track my order?",
+    question: "Where can I find my resume scans?",
     answer:
-      "Track your order using the link provided in your confirmation email, or log into your account to view tracking details.",
+      "All your resume scans and application history are saved in the Job Tracker section for easy access and reference.",
   },
   {
     icon: Truck,
-    question: "Do you ship internationally?",
+    question: "Is your service available internationally?",
     answer:
-      "Yes, we ship worldwide. Shipping fees and delivery times vary by location, and customs duties may apply for some countries.",
+      "Yes! Our platform is accessible globally. You can optimize and track your resumes from anywhere in the world.",
   },
   {
     icon: BadgeDollarSign,
     question: "What payment methods do you accept?",
     answer:
-      "We accept Visa, MasterCard, American Express, PayPal, Apple Pay, and Google Pay, ensuring secure payment options for all customers.",
+      "We accept payments securely via LemonSqueezy (powered by Stripe) and Razorpay. All transactions are encrypted and safe.",
   },
   {
     icon: ShieldCheck,
-    question: "What if I receive a damaged item?",
+    question: "What if something doesn’t work?",
     answer:
-      "Please contact our support team within 48 hours of delivery with photos of the damaged item. We’ll arrange a replacement or refund.",
+      "If you face issues with resume parsing, scoring, or download, contact us immediately. We’ll ensure a fast resolution.",
   },
   {
     icon: UserRoundCheck,
     question: "How can I contact customer support?",
     answer:
-      "Reach out via email at support@example.com or call us at 1-800-123-4567 for assistance with any inquiries.",
+      "Email us at support@aligncv.com or use the in-app chat. We usually respond within 24 hours.",
   },
 ];
 

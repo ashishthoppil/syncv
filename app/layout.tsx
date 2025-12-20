@@ -1,15 +1,15 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Metadata } from "next";
-import { ThemeProvider } from "next-themes";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import { ToastContainer } from 'react-toastify';
 
 const geistSans = Geist({
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "PureLanding - Beautiful Shadcn UI Landing Page",
+  title: "SynCV - AI optimized CVs & Cover Letters.",
   description:
     "A beautiful landing page built with Shadcn UI, Next.js 15, Tailwind CSS, and Shadcn UI Blocks.",
   keywords: [
@@ -101,9 +101,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.className} antialiased`}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <TooltipProvider>{children}</TooltipProvider>
-        </ThemeProvider>
+        <TooltipProvider>{children}</TooltipProvider>
+        <ToastContainer hideProgressBar />
       </body>
     </html>
   );

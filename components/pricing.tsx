@@ -23,47 +23,45 @@ const YEARLY_DISCOUNT = 20;
 const plans = [
   {
     name: "Starter",
-    price: 20,
+    price: 19,
     description:
-      "Get 20 AI-generated portraits with 2 unique styles and filters.",
+      "Get 10 (100 Credits) AI-generated resume's and cover letter's per week.",
     features: [
-      { title: "5 hours turnaround time" },
-      { title: "20 AI portraits" },
-      { title: "Choice of 2 styles", tooltip: tooltipContent.styles },
-      { title: "Choice of 2 filters", tooltip: tooltipContent.filters },
-      { title: "2 retouch credits", tooltip: tooltipContent.credits },
+      { title: "10 AI scans/week" },
+      { title: "Resume Generation", tooltip: tooltipContent.filters },
+      { title: "Cover Letter Generation", tooltip: tooltipContent.filters },
+      // { title: "2 retouch credits", tooltip: tooltipContent.credits },
     ],
-    buttonText: "Get 20 portraits in 5 hours",
+    buttonText: "Get 10 Scans in 7 days",
   },
   {
     name: "Advanced",
-    price: 40,
+    price: 47,
     isRecommended: true,
     description:
-      "Get 50 AI-generated portraits with 5 unique styles and filters.",
+      "Get 25 (250 Credits) AI-generated resume's and cover letter's per week.",
     features: [
-      { title: "3 hours turnaround time" },
-      { title: "50 AI portraits" },
-      { title: "Choice of 5 styles", tooltip: tooltipContent.styles },
-      { title: "Choice of 5 filters", tooltip: tooltipContent.filters },
-      { title: "5 retouch credits", tooltip: tooltipContent.credits },
+      { title: "25 AI scans/week" },
+      { title: "Job Tracking" },
+      { title: "Instant ATS Score", tooltip: tooltipContent.styles },
+      { title: "Resume Generation", tooltip: tooltipContent.filters },
+      { title: "Cover Letter Generation", tooltip: tooltipContent.filters },
     ],
-    buttonText: "Get 50 portraits in 3 hours",
+    buttonText: "Get 20 Scans in 7 days",
     isPopular: true,
   },
   {
     name: "Premium",
-    price: 80,
+    price: 89,
     description:
-      "Get 100 AI-generated portraits with 10 unique styles and filters.",
+      "Get 50 (500 Credits) AI-generated resume's and cover letter's per week.",
     features: [
-      { title: "1-hour turnaround time" },
-      { title: "100 AI portraits" },
-      { title: "Choice of 10 styles", tooltip: tooltipContent.styles },
-      { title: "Choice of 10 filters", tooltip: tooltipContent.filters },
-      { title: "10 retouch credits", tooltip: tooltipContent.credits },
+      { title: "50 AI scans/week" },
+      { title: "Cover letter generation", tooltip: tooltipContent.filters },
+      { title: "Resume suggestions" },
+      { title: "Job description analyzer" },
     ],
-    buttonText: "Get 100 portraits in 1 hour",
+    buttonText: "Get 50 Scans in 7 days",
   },
 ];
 
@@ -78,7 +76,7 @@ const Pricing = () => {
       <h1 className="text-3xl xs:text-4xl md:text-5xl font-bold text-center tracking-tight">
         Pricing
       </h1>
-      <Tabs
+      {/* <Tabs
         value={selectedBillingPeriod}
         onValueChange={setSelectedBillingPeriod}
         className="mt-8"
@@ -91,7 +89,7 @@ const Pricing = () => {
             Yearly (Save {YEARLY_DISCOUNT}%)
           </TabsTrigger>
         </TabsList>
-      </Tabs>
+      </Tabs> */}
       <div className="mt-12 max-w-screen-lg mx-auto grid grid-cols-1 lg:grid-cols-3 items-center gap-8">
         {plans.map((plan) => (
           <div
