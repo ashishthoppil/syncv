@@ -50,7 +50,6 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
       ? String(user.user_metadata.experience_years)
       : ""
   );
-  const [_loadingProfile, setLoadingProfile] = useState(false);
   const [saving, setSaving] = useState(false);
   const [parsingResume, setParsingResume] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
@@ -74,7 +73,6 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
   useEffect(() => {
     const loadProfile = async () => {
       if (!user?.id) return;
-      setLoadingProfile(true);
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
@@ -83,7 +81,6 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
 
       if (error) {
         toast.error("Failed to load profile.");
-        setLoadingProfile(false);
         return;
       }
 
@@ -111,7 +108,6 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
       } else {
         setEmail(user.email || "");
       }
-      setLoadingProfile(false);
     };
 
     loadProfile();

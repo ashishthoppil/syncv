@@ -15,7 +15,6 @@ export const SettingsSection = () => {
   const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [unsubscribing, setUnsubscribing] = useState(false);
-  const [_plan, setPlan] = useState("Free");
   const [loading, setLoading] = useState(false);
 
   const languageOptions = [
@@ -71,7 +70,6 @@ export const SettingsSection = () => {
       if (!error && data) {
         if (data.resume_language) setResumeLanguage(data.resume_language);
         if (data.date_format) setDateFormat(data.date_format);
-        if (data.plan) setPlan(data.plan);
       }
       setLoading(false);
     };
@@ -166,7 +164,6 @@ export const SettingsSection = () => {
         plan: null,
       });
       if (error) throw error;
-      setPlan("Free");
       toast.success("You have been unsubscribed.");
     } catch (error: unknown) {
       const message =
