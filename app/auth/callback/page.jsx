@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { toast } from "react-toastify";
 import { Loader2 } from "lucide-react";
 
-export default function AuthCallback() {
+const Loading = () => (
+  <div className="flex min-h-screen items-center justify-center">
+    <div className="text-center">
+      <Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-500" />
+      <p className="mt-4 text-sm text-slate-600">Completing sign in...</p>
+    </div>
+  </div>
+);
+
+const AuthCallbackContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -18,7 +27,7 @@ export default function AuthCallback() {
       if (code) {
         try {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
-          
+
           if (error) {
             toast.error("Authentication failed. Please try again.");
             router.push("/login");
@@ -40,12 +49,13 @@ export default function AuthCallback() {
     handleCallback();
   }, [searchParams, router]);
 
+  return <Loading />;
+};
+
+export default function AuthCallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-500" />
-        <p className="mt-4 text-sm text-slate-600">Completing sign in...</p>
-      </div>
-    </div>
+    <Suspense fallback={<Loading />}>
+      <AuthCallbackContent />
+    </Suspense>
   );
 }

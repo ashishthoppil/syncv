@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import {
@@ -30,7 +30,13 @@ const sectionLabels = {
   settings: "Settings",
 };
 
-export default function DashboardPage() {
+const Loading = () => (
+  <div className="flex min-h-screen items-center justify-center">
+    <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+  </div>
+);
+
+const DashboardPageContent = () => {
   const [activeSection, setActiveSection] = useState("scan");
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
@@ -93,11 +99,7 @@ export default function DashboardPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
-      </div>
-    );
+    return <Loading />;
   }
 
   return (
@@ -163,5 +165,13 @@ export default function DashboardPage() {
         </main>
       </div>
     </div>
+  );
+};
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <DashboardPageContent />
+    </Suspense>
   );
 }
