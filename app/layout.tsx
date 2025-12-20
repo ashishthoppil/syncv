@@ -9,49 +9,43 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "SynCV - AI optimized CVs & Cover Letters.",
+  title: "SynCV - Tailored CVs & Cover Letters in Seconds",
   description:
-    "A beautiful landing page built with Shadcn UI, Next.js 15, Tailwind CSS, and Shadcn UI Blocks.",
+    "SynCV crafts ATS-friendly resumes and cover letters fast—upload, optimize, and track your applications in one place.",
   keywords: [
-    "PureLanding",
-    "PureLanding Landing Page",
-    "PureLanding Landing Page Template",
-    "PureLanding Page",
-    "Shadcn UI Landing Page",
-    "Shadcn UI Blocks",
-    "Shadcn UI",
-    "Landing Page",
-    "Tailwind CSS Landing Page",
-    "Beautiful Shadcn UI Landing Page",
-    "Next.js 15 Landing Page",
-    "Simple Landing Page",
-    "Landing Page Template",
-    "Landing Page Design",
+    "SynCV",
+    "ATS resume",
+    "cover letter generator",
+    "resume scoring",
+    "job tracker",
+    "resume optimizer",
+    "career tools",
+    "Ashish B Thoppil",
   ],
   openGraph: {
     type: "website",
-    siteName: "PureLanding",
+    siteName: "SynCV",
     locale: "en_US",
-    url: "https://shadcn-landing-page.vercel.app",
-    title: "PureLanding - Beautiful Shadcn UI Landing Page",
+    url: "https://syncv.app",
+    title: "SynCV - Tailored CVs & Cover Letters in Seconds",
     description:
-      "A beautiful landing page built with Shadcn UI, Next.js 15, Tailwind CSS, and Shadcn UI Blocks.",
+      "SynCV crafts ATS-friendly resumes and cover letters fast—upload, optimize, and track your applications in one place.",
     images: [
       {
         url: "/og-image.jpg",
         width: 1200,
         height: 630,
-        alt: "PureLanding Preview",
+        alt: "SynCV Preview",
       },
     ],
   },
   authors: [
     {
-      name: "Akash Moradiya",
-      url: "https://shadcnui-blocks.com",
+      name: "Ashish B Thoppil",
+      url: "https://syncv.app",
     },
   ],
-  creator: "Akash Moradiya",
+  creator: "Ashish B Thoppil",
   icons: [
     {
       rel: "icon",
