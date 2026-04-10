@@ -348,12 +348,13 @@ export const ScanSection = ({
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      const sessionUserId = session?.user?.id;
       if (guestTrial && session) {
         router.push("/scan");
         setIsAnalyzing(false);
         return;
       }
-      if (!session && !guestTrial) {
+      if (!sessionUserId && !guestTrial) {
         toast.error("Please log in to save scan results.");
         setIsAnalyzing(false);
         return;
@@ -390,7 +391,7 @@ export const ScanSection = ({
           const saveResponse = await fetch("/api/job-tracker", {
             method: "POST",
             body: JSON.stringify({
-              userId: session.user.id,
+              userId: sessionUserId,
               organization: form.organization,
               designation: form.designation,
               initialScore: data.message.initialScore,
@@ -507,7 +508,7 @@ export const ScanSection = ({
       if (error) return null;
 
       const nextProfile = {
-        email: data?.email || session.user.email || "",
+        email: data?.email || session?.user?.email || "",
         phone: data?.phone || "",
         linkedin: data?.linkedin || "",
         portfolio: data?.portfolio || "",
