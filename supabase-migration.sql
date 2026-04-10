@@ -77,3 +77,12 @@ ALTER TABLE profiles
   ADD COLUMN IF NOT EXISTS photo_url TEXT,
   ADD COLUMN IF NOT EXISTS resume_language TEXT,
   ADD COLUMN IF NOT EXISTS date_format TEXT;
+
+-- Job tracker additions for storing generated resume/cover-letter outputs
+ALTER TABLE job_tracker
+  ADD COLUMN IF NOT EXISTS resume_template_id TEXT,
+  ADD COLUMN IF NOT EXISTS cover_letter_template_id TEXT,
+  ADD COLUMN IF NOT EXISTS generated_resume_text TEXT,
+  ADD COLUMN IF NOT EXISTS generated_cover_letter_text TEXT,
+  ADD COLUMN IF NOT EXISTS generated_resume_updated_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS generated_cover_letter_updated_at TIMESTAMPTZ;

@@ -11,10 +11,10 @@ const geistSans = Geist({
 export const metadata: Metadata = {
   title: "SynCV - Tailored CVs & Cover Letters in Seconds",
   description:
-    "SynCV crafts ATS-friendly resumes and cover letters fast—upload, optimize, and track your applications in one place.",
+    "SynCV helps you build targeted resumes and cover letters in minutes so you can apply faster and get better results.",
   keywords: [
     "SynCV",
-    "ATS resume",
+    "resume builder",
     "cover letter generator",
     "resume scoring",
     "job tracker",
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     url: "https://syncv.app",
     title: "SynCV - Tailored CVs & Cover Letters in Seconds",
     description:
-      "SynCV crafts ATS-friendly resumes and cover letters fast—upload, optimize, and track your applications in one place.",
+      "SynCV helps you build targeted resumes and cover letters in minutes so you can apply faster and get better results.",
     images: [
       {
         url: "/og-image.jpg",

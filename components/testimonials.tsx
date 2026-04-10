@@ -7,43 +7,48 @@ import React, { ComponentProps } from "react";
 const testimonials = [
   {
     id: 1,
-    name: "Aarav Mehta",
+    name: "Ishaan Kulkarni",
     designation: "Frontend Developer",
     company: "Spotify",
     testimonial: "Helped me land interviews faster than ever before.",
     avatar: "https://randomuser.me/api/portraits/men/1.jpg",
+    socialLink: "https://x.com",
   },
   {
     id: 2,
-    name: "Sophia Lindberg",
+    name: "Nivedita Sen",
     designation: "Business Analyst",
     company: "Klarna",
     testimonial: "A must-have tool if you're serious about getting hired.",
     avatar: "https://randomuser.me/api/portraits/women/6.jpg",
+    socialLink: "https://x.com",
   },
   {
     id: 3,
-    name: "Kunal Verma",
+    name: "Farhan Shihab",
     designation: "UI/UX Designer",
     company: "Designable",
     testimonial: "The resume feedback was precise and actionable.",
     avatar: "https://randomuser.me/api/portraits/men/3.jpg",
+    socialLink: "https://x.com",
   },
   {
     id: 4,
-    name: "Emily Davis",
+    name: "Aditi Chatterjee",
     designation: "Digital Marketer",
     company: "HubSpot",
     testimonial: "Clean interface and instant resume scoring — love it!",
     avatar: "https://randomuser.me/api/portraits/women/4.jpg",
+    socialLink: "https://x.com",
   },
   {
     id: 5,
-    name: "Daniel Costa",
+    name: "Raghav Menon",
     designation: "Software Engineer",
     company: "Zerocode Labs",
     testimonial: "Best resume tool I’ve used during my job search.",
     avatar: "https://randomuser.me/api/portraits/men/5.jpg",
+    socialLink: "https://x.com",
   },
   {
     id: 6,
@@ -52,30 +57,34 @@ const testimonials = [
     company: "Revolut",
     testimonial: "Super helpful in tailoring my resume to job posts.",
     avatar: "https://randomuser.me/api/portraits/women/2.jpg",
+    socialLink: "https://x.com",
   },
   {
     id: 7,
-    name: "James Carter",
+    name: "Varun Bhattacharjee",
     designation: "DevOps Engineer",
     company: "Cloudsmith.io",
     testimonial: "I optimized my resume and landed three interviews in a week.",
     avatar: "https://randomuser.me/api/portraits/men/7.jpg",
+    socialLink: "https://x.com",
   },
   {
     id: 8,
     name: "Priya Nair",
     designation: "Data Scientist",
     company: "Fractal Analytics",
-    testimonial: "ATS score insights were accurate and easy to act on.",
+    testimonial: "The scoring insights were accurate and easy to act on.",
     avatar: "https://randomuser.me/api/portraits/women/8.jpg",
+    socialLink: "https://x.com",
   },
   {
     id: 9,
-    name: "Lucas Müller",
+    name: "Shaurya Bendre",
     designation: "Cloud Architect",
     company: "Siemens",
     testimonial: "Perfect tool for European job applications.",
     avatar: "https://randomuser.me/api/portraits/men/9.jpg",
+    socialLink: "https://x.com",
   },
   // {
   //   id: 10,
@@ -174,7 +183,7 @@ const TestimonialList = () =>
           </div>
         </div>
         <Button variant="ghost" size="icon" asChild>
-          <Link href="#" target="_blank">
+          <Link href={testimonial.socialLink} target="_blank" rel="noopener noreferrer">
             <TwitterLogo className="w-4 h-4" />
           </Link>
         </Button>

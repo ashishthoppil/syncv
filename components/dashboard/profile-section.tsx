@@ -271,6 +271,7 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
         photo_url: uploadedPhotoPath,
       });
 
+      console.log('profilePayload.experience_years', typeof profilePayload.experience_years);
       const { error: updateError } = await supabase.auth.updateUser({
         email: profilePayload.email,
         data: {
@@ -314,7 +315,7 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
         throw profileError;
       }
 
-      toast.success("Profile saved to Supabase.");
+      toast.success("Your profile has been updated");
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Failed to save profile.";
@@ -359,7 +360,7 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
       const parsed = parseResumeForProfile(data.message as string);
       applyParsedProfile(parsed);
       await persistProfile(parsed);
-      toast.success("Resume parsed and profile updated.");
+      // toast.success("Resume parsed and profile updated.");
     } catch (error) {
       console.error(error);
       toast.error("Failed to parse and save resume.");
@@ -578,7 +579,7 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
                 Experience (years)
               </label>
               <Input
-                type="number"
+                type="text"
                 min="0"
                 step="0.5"
                 placeholder="e.g. 5"

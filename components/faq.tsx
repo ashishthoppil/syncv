@@ -9,12 +9,6 @@ import {
 
 const faq = [
   {
-    icon: Undo2,
-    question: "Do you offer refunds?",
-    answer:
-      "We do not offer refunds. However, we're here to assist with any issues or concerns you may have — just reach out to support.",
-  },
-  {
     icon: Route,
     question: "Where can I find my resume scans?",
     answer:
@@ -22,27 +16,33 @@ const faq = [
   },
   {
     icon: Truck,
-    question: "Is your service available internationally?",
+    question: "Can I edit the optimized resume before downloading?",
     answer:
-      "Yes! Our platform is accessible globally. You can optimize and track your resumes from anywhere in the world.",
+      "Yes. After optimization, you can edit the resume directly in the preview and re-evaluate the score before downloading.",
   },
   {
     icon: BadgeDollarSign,
     question: "What payment methods do you accept?",
     answer:
-      "We accept payments securely via LemonSqueezy (powered by Stripe) and Razorpay. All transactions are encrypted and safe.",
+      "At the moment, we accept payments through Razorpay only. We will expand to more trusted payment providers soon.",
   },
   {
     icon: ShieldCheck,
     question: "What if something doesn’t work?",
     answer:
-      "If you face issues with resume parsing, scoring, or download, contact us immediately. We’ll ensure a fast resolution.",
+      "If you face issues with resume parsing, scoring, or downloads, email us at support@syncv.com and we’ll ensure a fast resolution.",
   },
   {
     icon: UserRoundCheck,
     question: "How can I contact customer support?",
     answer:
-      "Email us at support@aligncv.com or use the in-app chat. We usually respond within 24 hours.",
+      "Email us at support@syncv.com. We usually respond within 24 hours.",
+  },
+  {
+    icon: Undo2,
+    question: "Do you offer refunds?",
+    answer:
+      "We do not offer refunds. However, we're here to assist with any issues or concerns you may have — just reach out to support.",
   },
 ];
 

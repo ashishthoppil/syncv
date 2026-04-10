@@ -29,7 +29,7 @@ export const NavMenu = ({ isHome = false, ...props }) => {
             </NavigationMenuItem>
             <NavigationMenuItem>
               <NavigationMenuLink asChild>
-                <Link href="#scan">Scan</Link>
+                <Link href="/scan">Scan</Link>
               </NavigationMenuLink>
             </NavigationMenuItem>
             <NavigationMenuItem>

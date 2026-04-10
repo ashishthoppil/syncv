@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -9,6 +11,8 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { FormEvent } from "react";
+import { toast } from "react-toastify";
 
 const footerLinks = [
   {
@@ -25,7 +29,7 @@ const footerLinks = [
   },
   {
     title: "Scan",
-    href: "#scan",
+    href: "/scan",
   },
   {
     title: "Testimonials",
@@ -33,11 +37,16 @@ const footerLinks = [
   },
   {
     title: "Privacy",
-    href: "#privacy",
+    href: "mailto:support@aligncv.com?subject=Privacy%20Policy%20Request",
   },
 ];
 
 const Footer = () => {
+  const handleSubscribe = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    toast.info("We’ll be starting our newsletters soon. Stay tuned!");
+  };
+
   return (
     <footer className="dark:border-t mt-40 dark bg-background text-foreground">
       <div className="max-w-screen-xl mx-auto">
@@ -63,9 +72,9 @@ const Footer = () => {
           {/* Subscribe Newsletter */}
           <div className="max-w-xs w-full">
             <h6 className="font-semibold">Stay up to date</h6>
-            <form className="mt-6 flex items-center gap-2">
+            <form className="mt-6 flex items-center gap-2" onSubmit={handleSubscribe}>
               <Input type="email" placeholder="Enter your email" />
-              <Button>Subscribe</Button>
+              <Button type="submit">Subscribe</Button>
             </form>
           </div>
         </div>
@@ -81,16 +90,16 @@ const Footer = () => {
           </span>
 
           <div className="flex items-center gap-5 text-muted-foreground">
-            <Link href="#" target="_blank">
+            <Link href="https://www.linkedin.com" target="_blank" rel="noopener noreferrer">
               <LinkedinIcon className="h-5 w-5" />
             </Link>
-            <Link href="#" target="_blank">
+            <Link href="https://x.com" target="_blank" rel="noopener noreferrer">
               <TwitterIcon className="h-5 w-5" />
             </Link>
-            <Link href="#" target="_blank">
+            <Link href="https://www.instagram.com" target="_blank" rel="noopener noreferrer">
               <InstagramIcon className="h-5 w-5" />
             </Link>
-            <Link href="#" target="_blank">
+            <Link href="https://www.facebook.com" target="_blank" rel="noopener noreferrer">
               <FacebookIcon className="h-5 w-5" />
             </Link>
           </div>

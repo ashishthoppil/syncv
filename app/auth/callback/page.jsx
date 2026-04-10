@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { toast } from "react-toastify";
@@ -18,31 +18,43 @@ const Loading = () => (
 const AuthCallbackContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hasHandledCallback = useRef(false);
 
   useEffect(() => {
     const handleCallback = async () => {
+      if (hasHandledCallback.current) return;
+      hasHandledCallback.current = true;
+
       const code = searchParams.get("code");
-      const next = searchParams.get("next") || "/scan";
+      const rawNext = searchParams.get("next");
+      const next = rawNext?.startsWith("/") ? rawNext : "/scan";
 
-      if (code) {
-        try {
+      try {
+        if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
-
           if (error) {
             toast.error("Authentication failed. Please try again.");
-            router.push("/login");
+            router.replace("/login");
             return;
           }
-
-          toast.success("Successfully signed in!");
-          router.push(next);
-        } catch (err) {
-          console.error("Error during OAuth callback:", err);
-          toast.error("An error occurred during authentication.");
-          router.push("/login");
         }
-      } else {
-        router.push("/login");
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          toast.error("Unable to complete authentication. Please try again.");
+          router.replace("/login");
+          return;
+        }
+
+        toast.success("Successfully signed in!");
+        router.replace(next);
+      } catch (err) {
+        console.error("Error during OAuth callback:", err);
+        toast.error("An error occurred during authentication.");
+        router.replace("/login");
       }
     };
 

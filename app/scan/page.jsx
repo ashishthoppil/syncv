@@ -8,24 +8,24 @@ import {
   DashboardSidebar,
   DASHBOARD_SECTIONS,
 } from "@/components/dashboard/sidebar";
-import { ProfileSection } from "@/components/dashboard/profile-section";
 import { ScanSection } from "@/components/dashboard/scan-section";
 import { JobTrackerSection } from "@/components/dashboard/job-tracker-section";
 import { SettingsSection } from "@/components/dashboard/settings-section";
+import { ProfileSection } from "@/components/dashboard/profile-section";
 import { Loader2, LogOut, LayoutDashboard } from "lucide-react";
 import { toast } from "react-toastify";
 import { Logo } from "@/components/navbar/logo";
 
 const sectionMap = {
-  profile: ProfileSection,
   scan: ScanSection,
+  profile: ProfileSection,
   "job-tracker": JobTrackerSection,
   settings: SettingsSection,
 };
 
 const sectionLabels = {
-  profile: "Profile",
   scan: "Scan",
+  profile: "Profile",
   "job-tracker": "Job Tracker",
   settings: "Settings",
 };
@@ -73,11 +73,11 @@ const DashboardPageContent = () => {
   };
 
   const renderSection = () => {
-    if (activeSection === "profile") {
-      return <ProfileSection user={user} />;
-    }
     if (activeSection === "scan") {
       return <ScanSection />;
+    }
+    if (activeSection === "profile") {
+      return <ProfileSection user={user} />;
     }
     if (activeSection === "job-tracker") {
       return <JobTrackerSection />;

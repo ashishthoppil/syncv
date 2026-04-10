@@ -11,39 +11,39 @@ import React from "react";
 const features = [
   {
     icon: Settings2,
-    title: "Instant ATS Scoring",
+    title: "Fast Resume Scans",
     description:
-      "Get real-time feedback on your resume’s compatibility with job descriptions. Instantly see what recruiters and ATS systems will think and how to improve it.",
+      "Upload your resume and get clear, actionable feedback in minutes so you can apply quickly with confidence.",
   },
   {
     icon: Blocks,
-    title: "AI-Powered Resume Suggestions",
+    title: "Rapid Resume Improvements",
     description:
-      "Leverage AI to rewrite bullet points, summarize experience, and match keywords, all aligned with the job you're targeting. Save hours of editing.",
+      "Improve bullets, summaries, and skills alignment in a few clicks and save hours of manual editing.",
   },
   {
     icon: Bot,
-    title: "One-Click Resume & Cover Letter Generation",
+    title: "One-Click Resume & Cover Letter Builder",
     description:
-      "Paste a job description and let our AI craft a tailored resume and cover letter that stands out. Download them instantly in clean, ATS-friendly formats.",
+      "Paste a job description and generate a targeted resume and cover letter instantly, ready to download and send.",
   },
   {
     icon: Film,
-    title: "Smart Match Analytics",
+    title: "Smart Match Breakdown",
     description:
-      "Visualize your resume’s performance with match scores, keyword coverage, and section-wise feedback. Make data-driven improvements easily.",
+      "See match score, keyword coverage, and section-level insights at a glance to fix weak spots faster.",
   },
   {
     icon: ChartPie,
     title: "Seamless Job Tracking",
     description:
-      "Organize and track all your job applications in one place. Monitor application status, interview stages, and follow-ups effortlessly, no spreadsheets needed.",
+      "Track all your applications in one place and stay on top of interviews, follow-ups, and next steps.",
   },
   {
     icon: MessageCircle,
-    title: "Job Description Analyzer",
+    title: "Quick Job Description Analysis",
     description:
-      "Paste any job description and let the AI break it down, highlighting must-have keywords, skills, and qualifications so you know exactly what to tailor in your resume.",
+      "Break down any job description in seconds and focus your resume on what each role actually needs.",
   },
 ];
 
@@ -51,7 +51,7 @@ const Features = () => {
   return (
     <div id="features" className="w-full py-12 xs:py-20 px-6">
       <h2 className="text-3xl xs:text-4xl sm:text-5xl font-bold tracking-tight text-center">
-        Land Jobs Faster with Smarter Resumes
+        Apply Faster. Get Better Results.
       </h2>
       <div className="w-full max-w-screen-lg mx-auto mt-10 sm:mt-16 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {features.map((feature) => (

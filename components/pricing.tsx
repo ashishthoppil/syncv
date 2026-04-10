@@ -9,68 +9,51 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { CircleCheck, CircleHelp } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CircleCheck, CircleHelp, CircleX } from "lucide-react";
+import Link from "next/link";
 
 const tooltipContent = {
-  styles: "Choose from a variety of styles to suit your preferences.",
-  filters: "Choose from a variety of filters to enhance your portraits.",
-  credits: "Use these credits to retouch your portraits.",
+  scans: "Each scan gives role-specific feedback to improve your resume quickly.",
+  generation: "Generate targeted resume and cover letter drafts from each job description.",
 };
 
-const YEARLY_DISCOUNT = 20;
 const plans = [
   {
-    name: "Starter",
-    price: 19,
+    name: "Speed",
+    price: 699,
     description:
-      "Get 10 (100 Credits) AI-generated resume's and cover letter's per week.",
+      "Built for fast job applications with essential optimization tools.",
     features: [
-      { title: "10 AI scans/week" },
-      { title: "Resume Generation", tooltip: tooltipContent.filters },
-      { title: "Cover Letter Generation", tooltip: tooltipContent.filters },
-      // { title: "2 retouch credits", tooltip: tooltipContent.credits },
+      { title: "12 resume scans every week", tooltip: tooltipContent.scans },
+      { title: "Resume generation", tooltip: tooltipContent.generation },
+      { title: "One click analysis and optimization" },
+      { title: "No job tracker" },
+      { title: "No cover letter generation" },
     ],
-    buttonText: "Get 10 Scans in 7 days",
+    buttonText: "Choose Speed Plan",
+    href: "/sign-up?plan=speed",
   },
   {
-    name: "Advanced",
-    price: 47,
+    name: "Pro",
+    price: 849,
     isRecommended: true,
     description:
-      "Get 25 (250 Credits) AI-generated resume's and cover letter's per week.",
+      "Best value for serious applicants who need faster and fuller workflow support.",
     features: [
-      { title: "25 AI scans/week" },
-      { title: "Job Tracking" },
-      { title: "Instant ATS Score", tooltip: tooltipContent.styles },
-      { title: "Resume Generation", tooltip: tooltipContent.filters },
-      { title: "Cover Letter Generation", tooltip: tooltipContent.filters },
+      { title: "50 resume scans every week", tooltip: tooltipContent.scans },
+      { title: "Instant resume generation", tooltip: tooltipContent.generation },
+      { title: "Cover letter generation", tooltip: tooltipContent.generation },
+      { title: "Job tracking" },
+      { title: "One click analysis and optimization" },
+      { title: "Free upgrade to top plan which will be introduced soon" },
     ],
-    buttonText: "Get 20 Scans in 7 days",
+    buttonText: "Choose Pro Plan",
+    href: "/sign-up?plan=pro",
     isPopular: true,
-  },
-  {
-    name: "Premium",
-    price: 89,
-    description:
-      "Get 50 (500 Credits) AI-generated resume's and cover letter's per week.",
-    features: [
-      { title: "50 AI scans/week" },
-      { title: "Cover letter generation", tooltip: tooltipContent.filters },
-      { title: "Resume suggestions" },
-      { title: "Job description analyzer" },
-    ],
-    buttonText: "Get 50 Scans in 7 days",
   },
 ];
 
 const Pricing = () => {
-  const [selectedBillingPeriod, setSelectedBillingPeriod] = useState("monthly");
-
-  useEffect(() => {
-    setSelectedBillingPeriod("monthly");
-  }, [])
-
   return (
     <div
       id="pricing"
@@ -93,7 +76,7 @@ const Pricing = () => {
           </TabsTrigger>
         </TabsList>
       </Tabs> */}
-      <div className="mt-12 max-w-screen-lg mx-auto grid grid-cols-1 lg:grid-cols-3 items-center gap-8">
+      <div className="mt-12 max-w-screen-lg mx-auto grid grid-cols-1 lg:grid-cols-2 items-center gap-8">
         {plans.map((plan) => (
           <div
             key={plan.name}
@@ -108,10 +91,7 @@ const Pricing = () => {
             )}
             <h3 className="text-lg font-medium">{plan.name}</h3>
             <p className="mt-2 text-4xl font-bold">
-              $
-              {selectedBillingPeriod === "monthly"
-                ? plan.price
-                : plan.price * ((100 - YEARLY_DISCOUNT) / 100)}
+              ₹{plan.price}
               <span className="ml-1.5 text-sm text-muted-foreground font-normal">
                 /month
               </span>
@@ -124,14 +104,17 @@ const Pricing = () => {
               variant={plan.isPopular ? "default" : "outline"}
               size="lg"
               className="w-full mt-6 text-base"
+              asChild
             >
-              {plan.buttonText}
+              <Link href={plan.href}>{plan.buttonText}</Link>
             </Button>
             <Separator className="my-8" />
             <ul className="space-y-2">
               {plan.features.map((feature) => (
                 <li key={feature.title} className="flex items-start gap-1.5">
-                  <CircleCheck className="h-4 w-4 mt-1 text-green-600" />
+                  {feature.title === "No job tracker" || feature.title === "No cover letter generation" ? 
+                  <CircleX className="h-4 w-4 mt-1 text-red-600" /> :
+                  <CircleCheck className="h-4 w-4 mt-1 text-green-600" />}
                   {feature.title}
                   {feature.tooltip && (
                     <Tooltip>

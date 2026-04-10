@@ -47,12 +47,12 @@ export default function SignUp() {
       return;
     }
 
-    toast.success("Registered successfully! Redirecting to your dashboard...");
+    toast.success("Registered successfully! Let’s set up your profile.");
     setEmail("");
     setPassword("");
     setConfirmPassword("");
     setLoading(false);
-    router.push("/scan");
+    router.push("/onboarding");
   };
 
   const handleGoogleSignUp = async () => {
@@ -61,7 +61,7 @@ export default function SignUp() {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/scan`,
+          redirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
           skipBrowserRedirect: true,
         },
       });
@@ -91,9 +91,7 @@ export default function SignUp() {
       <main className="min-h-screen bg-slate-50 pt-32 pb-10 flex justify-center px-4">
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
           <div className="flex flex-col items-center gap-3 text-center">
-            <Link href="/" aria-label="Back to landing">
-              <Logo />
-            </Link>
+            <Logo />
             <div>
               <h1 className="text-2xl font-semibold">Create your account</h1>
               <p className="text-sm text-muted-foreground">

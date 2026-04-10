@@ -110,9 +110,7 @@ export default function Login() {
       <main className="min-h-screen bg-slate-50 pt-32 pb-10 flex justify-center px-4">
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
           <div className="flex flex-col items-center gap-3 text-center">
-            <Link href="/" aria-label="Back to landing">
-              <Logo />
-            </Link>
+            <Logo />
             <div>
               <h1 className="text-2xl font-semibold">Log in to SynCV</h1>
               <p className="text-sm text-muted-foreground">

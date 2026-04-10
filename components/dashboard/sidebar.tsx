@@ -2,15 +2,15 @@
 
 import { cn } from "@/lib/utils";
 import {
-  User2Icon,
   ScanLine,
   BriefcaseBusiness,
   Settings2,
+  UserRound,
 } from "lucide-react";
 
 export const DASHBOARD_SECTIONS = [
-  { id: "profile", label: "Profile", icon: User2Icon },
   { id: "scan", label: "Scan", icon: ScanLine },
+  { id: "profile", label: "Profile", icon: UserRound },
   { id: "job-tracker", label: "Job Tracker", icon: BriefcaseBusiness },
   { id: "settings", label: "Settings", icon: Settings2 },
 ];
@@ -47,4 +47,3 @@ export const DashboardSidebar = ({
     </nav>
   );
 };
-

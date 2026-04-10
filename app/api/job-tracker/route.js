@@ -107,25 +107,100 @@ export async function POST(req) {
 export async function PATCH(req) {
   try {
     const body = await req.json();
-    const { id, interviewStatus } = body;
+    const {
+      id,
+      interviewStatus,
+      initialScore,
+      resumeTemplateId,
+      coverLetterTemplateId,
+      generatedResumeText,
+      generatedCoverLetterText,
+    } = body;
 
-    if (!id || !interviewStatus) {
+    if (!id) {
       return NextResponse.json({
         success: false,
-        message: "Job ID and interview status are required.",
+        message: "Job ID is required.",
       });
     }
 
+    const hasBaseUpdate = interviewStatus || initialScore !== undefined;
+    const hasGeneratedUpdate =
+      resumeTemplateId !== undefined ||
+      coverLetterTemplateId !== undefined ||
+      generatedResumeText !== undefined ||
+      generatedCoverLetterText !== undefined;
+
+    if (!hasBaseUpdate && !hasGeneratedUpdate) {
+      return NextResponse.json({
+        success: false,
+        message: "No update payload provided.",
+      });
+    }
+
+    const baseUpdates = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (interviewStatus) {
+      baseUpdates.interview_status = interviewStatus;
+    }
+    if (initialScore !== undefined && initialScore !== null && !Number.isNaN(Number(initialScore))) {
+      baseUpdates.initial_score = Number(initialScore);
+    }
+
+    const generatedUpdates = {
+      updated_at: new Date().toISOString(),
+    };
+    if (resumeTemplateId !== undefined) {
+      generatedUpdates.resume_template_id = resumeTemplateId;
+      generatedUpdates.generated_resume_updated_at = new Date().toISOString();
+    }
+    if (coverLetterTemplateId !== undefined) {
+      generatedUpdates.cover_letter_template_id = coverLetterTemplateId;
+      generatedUpdates.generated_cover_letter_updated_at = new Date().toISOString();
+    }
+    if (generatedResumeText !== undefined) {
+      generatedUpdates.generated_resume_text = generatedResumeText;
+      generatedUpdates.generated_resume_updated_at = new Date().toISOString();
+    }
+    if (generatedCoverLetterText !== undefined) {
+      generatedUpdates.generated_cover_letter_text = generatedCoverLetterText;
+      generatedUpdates.generated_cover_letter_updated_at = new Date().toISOString();
+    }
+
     const supabase = getAdminClient();
-    const { data, error } = await supabase
-      .from("job_tracker")
-      .update({
-        interview_status: interviewStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-      .select()
-      .single();
+    let data = null;
+    let error = null;
+    let partial = false;
+    let partialMessage = "";
+
+    if (hasBaseUpdate) {
+      const baseRes = await supabase
+        .from("job_tracker")
+        .update(baseUpdates)
+        .eq("id", id)
+        .select()
+        .single();
+      data = baseRes.data;
+      error = baseRes.error;
+    }
+
+    if (!error && hasGeneratedUpdate) {
+      const genRes = await supabase
+        .from("job_tracker")
+        .update(generatedUpdates)
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (genRes.error) {
+        partial = true;
+        partialMessage = genRes.error.message;
+      } else {
+        data = genRes.data || data;
+      }
+    }
 
     if (error) {
       return NextResponse.json({
@@ -137,6 +212,8 @@ export async function PATCH(req) {
     return NextResponse.json({
       success: true,
       data,
+      partial,
+      partialMessage,
     });
   } catch (error) {
     return NextResponse.json({
@@ -192,4 +269,3 @@ export async function DELETE(req) {
     });
   }
 }
-

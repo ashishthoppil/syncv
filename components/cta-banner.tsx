@@ -2,6 +2,7 @@ import { ArrowUpRight, Forward } from "lucide-react";
 import { Button } from "./ui/button";
 import { AnimatedGridPattern } from "./ui/animated-grid-pattern";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 export default function CTABanner() {
   return (
@@ -27,18 +28,22 @@ export default function CTABanner() {
         />
         <div className="relative z-0 flex flex-col gap-3">
           <h3 className="text-3xl md:text-4xl font-semibold">
-            Ready to Land Your Next Job Faster?
+            Ready to Start Applying Faster?
           </h3>
           <p className="mt-2 text-base md:text-lg">
-            Boost your job search with AI-powered resume insights and instant ATS scans.
+            Turn each job post into a polished, ready-to-send application in minutes.
           </p>
         </div>
         <div className="relative z-0 mt-14 flex flex-col sm:flex-row gap-4">
-          <Button size="lg">
-            Get Started <ArrowUpRight className="!h-5 !w-5" />
+          <Button size="lg" asChild>
+            <Link href="/sign-up">
+              Get Started <ArrowUpRight className="!h-5 !w-5" />
+            </Link>
           </Button>
-          <Button size="lg" variant="outline">
-            Learn More <Forward className="!h-5 !w-5" />
+          <Button size="lg" variant="outline" asChild>
+            <Link href="#features">
+              Learn More <Forward className="!h-5 !w-5" />
+            </Link>
           </Button>
         </div>
       </div>

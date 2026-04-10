@@ -2,6 +2,7 @@
 
 import { useTheme } from "next-themes";
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export const Logo = () => {
@@ -14,6 +15,8 @@ export const Logo = () => {
   }, [resolvedTheme]);
 
   return (
-    <Image alt="SynCV" src={logoSrc} height={100} width={100} />
+    <Link href="/" aria-label="Go to homepage">
+      <Image alt="SynCV" src={logoSrc} height={100} width={100} />
+    </Link>
   );
 }
