@@ -28,6 +28,15 @@ export async function POST(req) {
 
     const supabase = getAdminClient();
 
+    // Delete subscription records
+    const { error: subscriptionError } = await supabase
+      .from("subscriptions")
+      .delete()
+      .eq("user_id", userId);
+    if (subscriptionError) {
+      throw subscriptionError;
+    }
+
     // Delete job tracker entries
     const { error: jobError } = await supabase
       .from("job_tracker")

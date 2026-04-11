@@ -40,8 +40,44 @@ const DashboardPageContent = () => {
   const [activeSection, setActiveSection] = useState("scan");
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  const [subscription, setSubscription] = useState({
+    hasActivePlan: false,
+    planKey: null,
+    planName: null,
+    status: "none",
+  });
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const refreshSubscription = async (userId) => {
+    if (!userId) return;
+    setSubscriptionLoading(true);
+    try {
+      const response = await fetch(`/api/subscription/status?userId=${userId}`);
+      const result = await response.json();
+      if (result.success) {
+        setSubscription(result.data);
+      } else {
+        setSubscription({
+          hasActivePlan: false,
+          planKey: null,
+          planName: null,
+          status: "none",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to fetch subscription status:", error);
+      setSubscription({
+        hasActivePlan: false,
+        planKey: null,
+        planName: null,
+        status: "none",
+      });
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
 
   useEffect(() => {
     const ensureSession = async () => {
@@ -53,6 +89,7 @@ const DashboardPageContent = () => {
         return;
       }
       setUser(session.user);
+      await refreshSubscription(session.user.id);
       setLoading(false);
     };
 
@@ -73,19 +110,21 @@ const DashboardPageContent = () => {
   };
 
   const renderSection = () => {
+    const subscriptionLocked = subscriptionLoading || !subscription.hasActivePlan;
+
     if (activeSection === "scan") {
-      return <ScanSection />;
+      return <ScanSection subscriptionLocked={subscriptionLocked} />;
     }
     if (activeSection === "profile") {
       return <ProfileSection user={user} />;
     }
     if (activeSection === "job-tracker") {
-      return <JobTrackerSection />;
+      return <JobTrackerSection subscriptionLocked={subscriptionLocked} />;
     }
     if (activeSection === "settings") {
-      return <SettingsSection />;
+      return <SettingsSection onSubscriptionChange={() => refreshSubscription(user?.id)} />;
     }
-    return <ScanSection />;
+    return <ScanSection subscriptionLocked={subscriptionLocked} />;
   };
 
   const handleLogout = async () => {

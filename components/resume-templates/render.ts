@@ -79,8 +79,12 @@ const normalizeExperienceBullets = (bullets: string[] = []) => {
   return merged;
 };
 
+const PHONE_PATTERN = /(?:\+?\d[\d\s().-]{7,}\d)/;
+
 const isContactLine = (line: string) =>
-  /@|https?:\/\/|www\.|linkedin\.com|github\.com|behance\.net|phone\b|mobile\b|contact\b|email\b/i.test(line);
+  /@|https?:\/\/|www\.|linkedin(?:\.com)?|github(?:\.com)?|behance(?:\.net)?|phone\b|mobile\b|contact\b|email\b|location\b|address\b|☎|✉/i.test(
+    line
+  ) || PHONE_PATTERN.test(line);
 
 const isRoleHeaderLine = (line: string) =>
   /\b(19|20)\d{2}\b/.test(line) ||
@@ -88,7 +92,13 @@ const isRoleHeaderLine = (line: string) =>
   line.includes("|") ||
   /\b(engineer|developer|manager|coordinator|analyst|consultant|specialist)\b/i.test(line);
 
-const normalizeHeader = (line: string) => line.toLowerCase().replace(/[:\s]+$/g, "").trim();
+const normalizeHeader = (line: string) =>
+  stripMarkdownBold(line)
+    .replace(/^[-*•·▪◦]+\s*/, "")
+    .replace(/^\d+[.)]\s*/, "")
+    .toLowerCase()
+    .replace(/[:\s]+$/g, "")
+    .trim();
 
 const HEADER_ALIASES: Record<string, string> = {
   summary: "summary",
@@ -109,10 +119,12 @@ const HEADER_ALIASES: Record<string, string> = {
   language: "languages",
   "languages known": "languages",
   "language competencies": "languages",
+  references: "references",
+  reference: "references",
 };
 
 type ContactItem = {
-  kind: "phone" | "email" | "linkedin" | "github" | "behance" | "link";
+  kind: "phone" | "email" | "linkedin" | "github" | "behance" | "link" | "location";
   label: string;
   href?: string;
 };
@@ -271,6 +283,13 @@ const extractContactItems = (
       if (href && /portfolio|about\.me|linktr\.ee/i.test(href)) {
         addItem({ kind: "link", label: cleaned, href });
       }
+      return;
+    }
+    if (/^(location|address)\s*:/i.test(chunk)) {
+      addItem({
+        kind: "location",
+        label: chunk.replace(/^(location|address)\s*:\s*/i, "").trim(),
+      });
     }
   });
 
@@ -283,6 +302,7 @@ const iconForContactKind = (kind: ContactItem["kind"]) => {
   if (kind === "linkedin") return "in";
   if (kind === "github") return "gh";
   if (kind === "behance") return "be";
+  if (kind === "location") return "loc";
   return "🔗";
 };
 
@@ -319,7 +339,18 @@ const renderResumeBodyFromText = (
 
   let html = "";
   const preludeLines = sections.prelude || [];
-  const personalLines = preludeLines.filter(isContactLine);
+  const promotedPersonalLines: string[] = [];
+  Object.keys(sections).forEach((sectionKey) => {
+    if (sectionKey === "prelude") return;
+    sections[sectionKey] = (sections[sectionKey] || []).filter((line) => {
+      if (isContactLine(line)) {
+        promotedPersonalLines.push(line);
+        return false;
+      }
+      return true;
+    });
+  });
+  const personalLines = [...preludeLines.filter(isContactLine), ...promotedPersonalLines];
   const preludeWithoutPersonal = preludeLines.filter((line) => !isContactLine(line));
   const knownProfileLinks = extractKnownProfileLinks(lines.join("\n"));
 
@@ -359,7 +390,10 @@ const renderResumeBodyFromText = (
 
   const sectionHeadingStyle = `font-size:12px;font-weight:700;margin:${options.sectionSpacing}px 0 6px;color:${options.headingColor};letter-spacing:.04em;text-transform:uppercase;`;
 
-  const summaryLines = [...preludeWithoutPersonal, ...(sections.summary || [])];
+  const summarySectionLines = sections.summary || [];
+  const summaryLines = summarySectionLines.length
+    ? summarySectionLines
+    : preludeWithoutPersonal.filter((line) => !isRoleHeaderLine(line));
   const summaryText = summaryLines.join(" ").trim();
   if (summaryText) {
     html += `<h3 style=\"${sectionHeadingStyle}\">SUMMARY</h3>`;
@@ -497,6 +531,12 @@ const renderResumeBodyFromText = (
   }
   if ((sections.languages || []).length) {
     renderSectionLines("LANGUAGES", sections.languages || [], {
+      forceBullets: true,
+      treatAllAsBullets: true,
+    });
+  }
+  if ((sections.references || []).length) {
+    renderSectionLines("REFERENCES", sections.references || [], {
       forceBullets: true,
       treatAllAsBullets: true,
     });

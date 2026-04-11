@@ -752,7 +752,6 @@ export async function POST(req) {
       formattingWarnings = [],
       scoreBreakdown = null,
       titleAnalysis = null,
-      experienceAnalysis = null,
       careerChangeApproved = false,
       resumeRoleFamily = "",
       targetRoleFamily = "",
@@ -788,10 +787,6 @@ export async function POST(req) {
       scoreBreakdown && typeof scoreBreakdown === "object" ? scoreBreakdown : {};
     const safeTitleAnalysis =
       titleAnalysis && typeof titleAnalysis === "object" ? titleAnalysis : {};
-    const safeExperienceAnalysis =
-      experienceAnalysis && typeof experienceAnalysis === "object"
-        ? experienceAnalysis
-        : {};
     const candidateName = extractCandidateName(resume);
     const candidateEmail = extractCandidateEmail(resume);
     const candidatePhone = extractCandidatePhone(resume);
@@ -849,7 +844,6 @@ export async function POST(req) {
       `ATS formatting warnings to address: ${safeFormattingWarnings.join(" | ") || "None"}`,
       `Current score breakdown: ${JSON.stringify(safeScoreBreakdown)}`,
       `Title analysis: ${JSON.stringify(safeTitleAnalysis)}`,
-      `Experience analysis: ${JSON.stringify(safeExperienceAnalysis)}`,
       `Must preserve these titles: ${originalTitles.join(" | ") || "None"}`,
       `Must preserve these organizations: ${originalOrganizations.join(" | ") || "None"}`,
       `Factual experience baseline (must not omit): ${JSON.stringify(factualExperienceBaseline.slice(0, 8))}`,

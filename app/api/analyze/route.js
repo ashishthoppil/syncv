@@ -179,6 +179,9 @@ const CURATED_FALLBACK_TERMS = [
   "performance analytics",
 ];
 
+const KEYWORD_EXTRACTION_CACHE = new Map();
+const KEYWORD_CACHE_LIMIT = 120;
+
 const stripHtml = (value = "") => value.replace(/<[^>]*>/g, " ");
 
 const normalizeToken = (token = "") =>
@@ -209,6 +212,11 @@ const tokenize = (value = "") =>
     .filter(Boolean);
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const buildKeywordCacheKey = (cleanedJd = "", organization = "", designation = "") =>
+  [cleanedJd, organization, designation]
+    .map((value) => normalizePhrase(value || ""))
+    .join("::");
 
 const extractOrganizationTokens = (organization = "") =>
   tokenize(organization).filter((token) => token.length > 2);
@@ -395,7 +403,7 @@ const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designat
     "2) Keep compounds and phrases intact. Never emit fragments like 'end', 'ies', 'best', or section words.",
     "3) Exclude organization names, locations, boilerplate, and application process language.",
     "4) Output compact JSON only.",
-    "5) Max 20 keywords.",
+    // "5) Max 20 keywords.",
     `Organization context: ${organization || ""}`,
     `Designation context: ${designation || ""}`,
     "JSON schema:",
@@ -444,7 +452,6 @@ const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designat
     if (!jsonBlock) {
       throw new Error("No JSON object found in model response");
     }
-    console.log('jsonBlockjsonBlockjsonBlock', jsonBlock);
     parsed = JSON.parse(jsonBlock);
   } catch {
     throw new Error("OpenAI returned non-JSON keyword payload");
@@ -1051,31 +1058,51 @@ export async function POST(req) {
 
     const cleanedJd = preprocessJobDescription(jd);
     const exclusionTokenSet = extractJdExclusionTokens(jd, organization);
+    const keywordCacheKey = buildKeywordCacheKey(cleanedJd, organization, designation);
 
     let weightedKeywords = [];
     let extractionMode = "ai";
     let extractionStats = { rawCount: 0, cleanedCount: 0 };
+    const cachedKeywords = KEYWORD_EXTRACTION_CACHE.get(keywordCacheKey);
+    if (cachedKeywords?.weightedKeywords?.length) {
+      weightedKeywords = cachedKeywords.weightedKeywords;
+      extractionMode = `cache-${cachedKeywords.mode || "ai"}`;
+      extractionStats = cachedKeywords.stats || extractionStats;
+    } else {
+      try {
+        const ai = await extractWeightedKeywordsWithAI({
+          cleanedJd,
+          organization,
+          designation,
+          exclusionTokenSet,
+        });
+        weightedKeywords = ai.keywords;
+        extractionStats = { rawCount: ai.rawCount, cleanedCount: ai.cleanedCount };
+      } catch (aiError) {
+        console.error("AI keyword extraction failed, using curated fallback:", aiError);
+        extractionMode = "fallback";
+        weightedKeywords = fallbackExtractWeightedKeywords({
+          cleanedJd,
+          exclusionTokenSet,
+        });
+        extractionStats = {
+          rawCount: weightedKeywords.length,
+          cleanedCount: weightedKeywords.length,
+        };
+      }
 
-    try {
-      const ai = await extractWeightedKeywordsWithAI({
-        cleanedJd,
-        organization,
-        designation,
-        exclusionTokenSet,
-      });
-      weightedKeywords = ai.keywords;
-      extractionStats = { rawCount: ai.rawCount, cleanedCount: ai.cleanedCount };
-    } catch (aiError) {
-      console.error("AI keyword extraction failed, using curated fallback:", aiError);
-      extractionMode = "fallback";
-      weightedKeywords = fallbackExtractWeightedKeywords({
-        cleanedJd,
-        exclusionTokenSet,
-      });
-      extractionStats = {
-        rawCount: weightedKeywords.length,
-        cleanedCount: weightedKeywords.length,
-      };
+      if (weightedKeywords.length) {
+        if (KEYWORD_EXTRACTION_CACHE.size >= KEYWORD_CACHE_LIMIT) {
+          const firstKey = KEYWORD_EXTRACTION_CACHE.keys().next().value;
+          if (firstKey) KEYWORD_EXTRACTION_CACHE.delete(firstKey);
+        }
+        KEYWORD_EXTRACTION_CACHE.set(keywordCacheKey, {
+          weightedKeywords,
+          mode: extractionMode,
+          stats: extractionStats,
+          cachedAt: Date.now(),
+        });
+      }
     }
 
     if (!weightedKeywords.length) {

@@ -30,7 +30,7 @@ const Navbar = ({ isHome = false }) => {
       return;
     }
     setAuthenticated(false);
-    toast.info('Logging out…');
+    toast.info('You have been logged out');
     setTimeout(() => {
       router.push('/');
     }, 2000)

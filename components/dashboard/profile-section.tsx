@@ -271,7 +271,6 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
         photo_url: uploadedPhotoPath,
       });
 
-      console.log('profilePayload.experience_years', typeof profilePayload.experience_years);
       const { error: updateError } = await supabase.auth.updateUser({
         email: profilePayload.email,
         data: {

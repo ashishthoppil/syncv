@@ -76,7 +76,8 @@ ALTER TABLE profiles
   ADD COLUMN IF NOT EXISTS experience_years INT,
   ADD COLUMN IF NOT EXISTS photo_url TEXT,
   ADD COLUMN IF NOT EXISTS resume_language TEXT,
-  ADD COLUMN IF NOT EXISTS date_format TEXT;
+  ADD COLUMN IF NOT EXISTS date_format TEXT,
+  ADD COLUMN IF NOT EXISTS plan TEXT;
 
 -- Job tracker additions for storing generated resume/cover-letter outputs
 ALTER TABLE job_tracker
@@ -86,3 +87,51 @@ ALTER TABLE job_tracker
   ADD COLUMN IF NOT EXISTS generated_cover_letter_text TEXT,
   ADD COLUMN IF NOT EXISTS generated_resume_updated_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS generated_cover_letter_updated_at TIMESTAMPTZ;
+
+-- Subscriptions table for Razorpay plan access control
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  plan_key TEXT NOT NULL,
+  plan_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'created',
+  razorpay_subscription_id TEXT UNIQUE NOT NULL,
+  razorpay_payment_id TEXT,
+  current_period_end TIMESTAMPTZ,
+  canceled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_created_at ON subscriptions(created_at DESC);
+
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own subscriptions"
+  ON subscriptions
+  FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own subscriptions"
+  ON subscriptions
+  FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own subscriptions"
+  ON subscriptions
+  FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own subscriptions"
+  ON subscriptions
+  FOR DELETE
+  USING (auth.uid() = user_id);
+
+DROP TRIGGER IF EXISTS update_subscriptions_updated_at ON subscriptions;
+CREATE TRIGGER update_subscriptions_updated_at
+  BEFORE UPDATE ON subscriptions
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();

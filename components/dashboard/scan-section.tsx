@@ -112,6 +112,7 @@ type ScanSectionProps = {
   guestTrial?: boolean;
   hideTopHeading?: boolean;
   className?: string;
+  subscriptionLocked?: boolean;
 };
 
 type GuestTrialStage = "none" | "analyzed" | "optimized";
@@ -122,6 +123,7 @@ export const ScanSection = ({
   guestTrial = false,
   hideTopHeading = false,
   className,
+  subscriptionLocked = false,
 }: ScanSectionProps = {}) => {
   const router = useRouter();
   const [form, setForm] = useState(initialFormState);
@@ -990,6 +992,28 @@ export const ScanSection = ({
     finalScore !== null && initialScanScore !== null
       ? finalScore - initialScanScore
       : null;
+
+  if (subscriptionLocked && !guestTrial) {
+    return (
+      <section className="space-y-8">
+        {!hideTopHeading ? (
+          <div>
+            <h1 className="text-3xl font-semibold text-slate-900">Scan</h1>
+            <p className="text-sm text-slate-500">
+              Analyze your resume against a target role and improve ATS performance.
+            </p>
+          </div>
+        ) : null}
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-amber-900">Subscription Required</h2>
+          <p className="mt-2 text-sm text-amber-800">
+            Please subscribe to a plan to optimize your resume.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   const summaryPanel = (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-slate-900">Scan summary</h2>
@@ -1098,7 +1122,7 @@ export const ScanSection = ({
         </div>
       ) : null}
 
-      {result?.experienceAnalysis && (
+      {/* {result?.experienceAnalysis && (
         <div className="mt-4 rounded-xl border border-slate-100 p-4 text-sm text-slate-600">
           <p className="font-semibold text-slate-900">Experience analysis</p>
           <p className="mt-2">
@@ -1116,9 +1140,9 @@ export const ScanSection = ({
             </span>
           </p>
         </div>
-      )}
+      )} */}
 
-      {result?.achievementAnalysis && (
+      {/* {result?.achievementAnalysis && (
         <div className="mt-4 rounded-xl border border-slate-100 p-4 text-sm text-slate-600">
           <p className="font-semibold text-slate-900">Achievement analysis</p>
           <p className="mt-2">
@@ -1128,7 +1152,7 @@ export const ScanSection = ({
             </span>
           </p>
         </div>
-      )}
+      )} */}
 
       {result?.sectionAnalysis?.foundSections && (
         <div className="mt-4 rounded-xl border border-slate-100 p-4 text-sm text-slate-600">
@@ -1840,33 +1864,35 @@ export const ScanSection = ({
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <h4 className="text-sm font-semibold text-slate-900">Resume preview</h4>
                     </div>
-                    <div className="max-h-[60vh] overflow-auto rounded-lg bg-slate-50 p-4">
-                      <p className="mb-2 text-xs text-slate-500">
-                        Click and edit directly in the preview, then re-evaluate score when ready.
-                      </p>
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-8 rounded-full px-3 text-xs font-semibold"
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            applyPreviewCommand("bold");
-                          }}
-                        >
-                          Bold
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-8 rounded-full px-3 text-xs italic"
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            applyPreviewCommand("italic");
-                          }}
-                        >
-                          Italic
-                        </Button>
+                    <div className="max-h-[60vh] overflow-auto rounded-lg bg-slate-50 p-4 pt-0">
+                      <div className="sticky top-0 z-20 -mx-4 mb-2 border-b border-slate-200 bg-slate-50 px-4 pb-2 pt-1">
+                        <p className="mb-2 text-xs text-slate-500">
+                          Click and edit directly in the preview, then re-evaluate score when ready.
+                        </p>
+                        <div className="flex flex-wrap items-center">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 rounded-r border-r-0 px-3 text-xs font-semibold"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              applyPreviewCommand("bold");
+                            }}
+                          >
+                            Bold
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="h-8 rounded-l px-3 text-xs italic"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              applyPreviewCommand("italic");
+                            }}
+                          >
+                            Italic
+                          </Button>
+                        </div>
                       </div>
                       <div
                         ref={editableResumePreviewRef}

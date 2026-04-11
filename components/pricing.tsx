@@ -35,7 +35,7 @@ const plans = [
   },
   {
     name: "Pro",
-    price: 849,
+    price: 749,
     isRecommended: true,
     description:
       "Best value for serious applicants who need faster and fuller workflow support.",

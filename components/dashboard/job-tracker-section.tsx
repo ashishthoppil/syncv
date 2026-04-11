@@ -26,7 +26,11 @@ type Job = {
 
 const STATUS_OPTIONS = ["Applied", "Interviewing", "Offer", "Rejected"];
 
-export const JobTrackerSection = () => {
+type JobTrackerSectionProps = {
+  subscriptionLocked?: boolean;
+};
+
+export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSectionProps = {}) => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
@@ -337,6 +341,25 @@ export const JobTrackerSection = () => {
         </div>
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+        </div>
+      </section>
+    );
+  }
+
+  if (subscriptionLocked) {
+    return (
+      <section className="space-y-8 max-w-6xl mx-auto">
+        <div>
+          <h1 className="text-3xl font-semibold text-slate-900">Job Tracker</h1>
+          <p className="text-sm text-slate-500">
+            Keep tabs on every opportunity you are pursuing.
+          </p>
+        </div>
+        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-amber-900">Subscription Required</h2>
+          <p className="mt-2 text-sm text-amber-800">
+            Please subscribe to a plan to optimize your resume.
+          </p>
         </div>
       </section>
     );

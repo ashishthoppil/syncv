@@ -290,10 +290,6 @@ const Template = ({ resume, setResumeResult }) => {
                                                         onChange={e => setExperience(prev => {
                                                             const updatedData = prev.map((element, i) => {
                                                                 if (i === index) {
-                                                                    console.log('updatedData', {
-                                                                        ...element,
-                                                                        company: e.target.value,
-                                                                    });
                                                                     return {
                                                                         ...element,
                                                                         company: e.target.value,
@@ -393,7 +389,6 @@ const Template = ({ resume, setResumeResult }) => {
                                                                         }
                                                                         
                                                                     })
-                                                                    console.log('updatedDataupdatedData', updatedData);
                                                                     return updatedData
                                                                 })} 
                                                             />
