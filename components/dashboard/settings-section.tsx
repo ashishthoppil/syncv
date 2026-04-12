@@ -5,7 +5,7 @@ import { SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import swal from "sweetalert";
 
@@ -16,41 +16,6 @@ type SubscriptionView = {
   status: string;
   subscriptionId: string | null;
 };
-
-type RazorpayPaymentResponse = {
-  razorpay_payment_id: string;
-  razorpay_subscription_id: string;
-  razorpay_signature: string;
-};
-
-type RazorpayCheckoutOptions = {
-  key: string;
-  subscription_id: string;
-  name: string;
-  description: string;
-  prefill?: {
-    email?: string;
-    name?: string;
-    contact?: string;
-  };
-  theme?: {
-    color?: string;
-  };
-  handler?: (paymentResponse: RazorpayPaymentResponse) => void | Promise<void>;
-  modal?: {
-    ondismiss?: () => void | Promise<void>;
-  };
-};
-
-type RazorpayConstructor = new (options: RazorpayCheckoutOptions) => {
-  open: () => void;
-};
-
-declare global {
-  interface Window {
-    Razorpay?: RazorpayConstructor;
-  }
-}
 
 const initialSubscription: SubscriptionView = {
   hasActivePlan: false,
@@ -76,6 +41,8 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionView>(initialSubscription);
+  const [paymentPollingPlanName, setPaymentPollingPlanName] = useState<string | null>(null);
+  const pollingIntervalRef = useRef<number | null>(null);
   const [loading, setLoading] = useState(false);
 
   const languageOptions = [
@@ -183,19 +150,55 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
     }
   };
 
-  const ensureRazorpayLoaded = async () => {
-    if (typeof window === "undefined") return false;
-    if (window.Razorpay) return true;
+  useEffect(() => {
+    if (!paymentPollingPlanName || !currentUserId) return;
 
-    return new Promise<boolean>((resolve) => {
-      const script = document.createElement("script");
-      script.src = "https://checkout.razorpay.com/v1/checkout.js";
-      script.async = true;
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  };
+    let attempts = 0;
+    const maxAttempts = 150;
+
+    const stopPolling = () => {
+      if (pollingIntervalRef.current) {
+        window.clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      setPaymentPollingPlanName(null);
+      setPlanActionLoading(null);
+    };
+
+    const pollSubscription = async () => {
+      try {
+        attempts += 1;
+        const response = await fetch(`/api/subscription/status?userId=${currentUserId}`);
+        const result = await response.json();
+        if (result?.success) {
+          setSubscription(result.data);
+          if (result.data?.hasActivePlan) {
+            stopPolling();
+            toast.success(`${paymentPollingPlanName} plan activated.`);
+            await onSubscriptionChange?.();
+            return;
+          }
+        }
+
+        if (attempts >= maxAttempts) {
+          stopPolling();
+          toast.info("Payment is still pending. Refresh after completing payment.");
+        }
+      } catch (error) {
+        console.error("Failed to poll subscription status:", error);
+      }
+    };
+
+    pollSubscription();
+    pollingIntervalRef.current = window.setInterval(pollSubscription, 4000);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        window.clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [currentUserId, onSubscriptionChange, paymentPollingPlanName]);
 
   const handleSelectPlan = async (planKey: string) => {
     const plan = SUBSCRIPTION_PLANS.find((item) => item.key === planKey);
@@ -209,6 +212,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
     }
 
     setPlanActionLoading(plan.key);
+    let startedPolling = false;
     try {
       const response = await fetch("/api/subscription/create", {
         method: "POST",
@@ -225,59 +229,28 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
         return;
       }
 
-      const sdkLoaded = await ensureRazorpayLoaded();
-      if (!sdkLoaded) {
-        toast.error("Unable to load Razorpay checkout.");
+      const paymentUrl = result?.data?.url;
+      if (!paymentUrl) {
+        toast.error("Payment URL missing. Please try again.");
         return;
       }
 
-      const options = {
-        key: result.data.keyId,
-        subscription_id: result.data.subscriptionId,
-        name: "SyncV",
-        description: `${plan.name} plan`,
-        prefill: result.data.prefill || {},
-        theme: { color: "#0f172a" },
-        handler: async (paymentResponse: RazorpayPaymentResponse) => {
-          try {
-            const verifyResponse = await fetch("/api/subscription/verify", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(paymentResponse),
-            });
-            const verifyResult = await verifyResponse.json();
-            if (!verifyResult.success) {
-              toast.error(verifyResult.message || "Payment verification failed.");
-              return;
-            }
-            toast.success(`${plan.name} plan activated.`);
-            await loadSubscriptionStatus(currentUserId);
-            await onSubscriptionChange?.();
-          } catch (error) {
-            console.error(error);
-            toast.error("Payment verification failed.");
-          }
-        },
-        modal: {
-          ondismiss: async () => {
-            await loadSubscriptionStatus(currentUserId);
-            await onSubscriptionChange?.();
-          },
-        },
-      };
-
-      if (!window.Razorpay) {
-        toast.error("Unable to initialize Razorpay checkout.");
-        return;
+      const openedWindow = window.open(paymentUrl, "_blank");
+      if (!openedWindow) {
+        window.location.href = paymentUrl;
       }
-      const razorpay = new window.Razorpay(options);
-      razorpay.open();
+
+      startedPolling = true;
+      setPaymentPollingPlanName(plan.name);
+      toast.info("Complete payment in Razorpay. We'll activate your plan automatically.");
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : "Unable to start subscription.";
       toast.error(message);
     } finally {
-      setPlanActionLoading(null);
+      if (!startedPolling) {
+        setPlanActionLoading(null);
+      }
     }
   };
 

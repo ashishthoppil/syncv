@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { PLAN_BY_PLAN_ID, PLAN_BY_KEY } from "@/lib/subscription-plans";
 import {
   getActiveSubscriptionForUser,
+  getLatestSubscriptionForUser,
   getSupabaseAdminClient,
   mapPlanDetails,
 } from "@/lib/server/subscriptions";
@@ -15,7 +16,7 @@ const getRazorpayAuthHeader = () => {
     throw new Error("Missing Razorpay API credentials.");
   }
   const token = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-  return { keyId, authHeader: `Basic ${token}` };
+  return `Basic ${token}`;
 };
 
 const cancelRazorpaySubscription = async (subscriptionId, authHeader) => {
@@ -37,6 +38,23 @@ const cancelRazorpaySubscription = async (subscriptionId, authHeader) => {
   throw new Error(`Razorpay cancel failed: ${text}`);
 };
 
+const fetchRazorpaySubscription = async (subscriptionId, authHeader) => {
+  const response = await fetch(`${razorpayBaseUrl}/subscriptions/${subscriptionId}`, {
+    method: "GET",
+    headers: {
+      Authorization: authHeader,
+      "Content-Type": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Razorpay fetch subscription failed: ${text}`);
+  }
+
+  return response.json();
+};
+
 export async function POST(request) {
   try {
     const { userId, planKey, planId } = await request.json();
@@ -55,7 +73,7 @@ export async function POST(request) {
       );
     }
 
-    const { keyId, authHeader } = getRazorpayAuthHeader();
+    const authHeader = getRazorpayAuthHeader();
     const supabase = getSupabaseAdminClient();
 
     const activeSubscription = await getActiveSubscriptionForUser(supabase, userId);
@@ -71,6 +89,53 @@ export async function POST(request) {
         { success: false, message: `You are already on the ${selectedPlan.name} plan.` },
         { status: 409 }
       );
+    }
+
+    const latestSubscription = await getLatestSubscriptionForUser(supabase, userId);
+    const latestPlan = latestSubscription
+      ? mapPlanDetails({
+          planId: latestSubscription.plan_id,
+          planKey: latestSubscription.plan_key,
+        })
+      : null;
+    const latestStatus = String(latestSubscription?.status || "").toLowerCase();
+
+    if (
+      latestSubscription?.razorpay_subscription_id &&
+      latestPlan?.key === selectedPlan.key &&
+      !["cancelled", "completed", "expired"].includes(latestStatus)
+    ) {
+      const existingRazorpaySubscription = await fetchRazorpaySubscription(
+        latestSubscription.razorpay_subscription_id,
+        authHeader
+      );
+      if (existingRazorpaySubscription?.short_url) {
+        return NextResponse.json({
+          success: true,
+          data: {
+            subscriptionId: existingRazorpaySubscription.id,
+            url: existingRazorpaySubscription.short_url,
+            plan: selectedPlan,
+          },
+        });
+      }
+    }
+
+    if (
+      latestSubscription?.razorpay_subscription_id &&
+      latestPlan?.key &&
+      latestPlan.key !== selectedPlan.key &&
+      !["cancelled", "completed", "expired"].includes(latestStatus)
+    ) {
+      await cancelRazorpaySubscription(latestSubscription.razorpay_subscription_id, authHeader);
+      await supabase
+        .from("subscriptions")
+        .update({
+          status: "cancelled",
+          canceled_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", latestSubscription.id);
     }
 
     if (activeSubscription?.razorpay_subscription_id) {
@@ -115,9 +180,9 @@ export async function POST(request) {
     if (!razorpaySubscriptionId) {
       throw new Error("Razorpay did not return a subscription id.");
     }
-
-    const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId);
-    if (userError) throw userError;
+    if (!created?.short_url) {
+      throw new Error("Razorpay did not return a payment URL.");
+    }
 
     const now = new Date().toISOString();
     const row = {
@@ -144,17 +209,9 @@ export async function POST(request) {
     return NextResponse.json({
       success: true,
       data: {
-        keyId,
         subscriptionId: razorpaySubscriptionId,
+        url: created.short_url,
         plan: selectedPlan,
-        prefill: {
-          email: userData?.user?.email || "",
-          name:
-            userData?.user?.user_metadata?.full_name ||
-            userData?.user?.user_metadata?.name ||
-            "",
-          contact: userData?.user?.user_metadata?.phone || "",
-        },
       },
     });
   } catch (error) {
@@ -167,4 +224,3 @@ export async function POST(request) {
     );
   }
 }
-
