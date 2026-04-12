@@ -15,6 +15,7 @@ import { ProfileSection } from "@/components/dashboard/profile-section";
 import { Loader2, LogOut, LayoutDashboard } from "lucide-react";
 import { toast } from "react-toastify";
 import { Logo } from "@/components/navbar/logo";
+import { SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
 
 const sectionMap = {
   scan: ScanSection,
@@ -55,9 +56,20 @@ const DashboardPageContent = () => {
     setSubscriptionLoading(true);
     try {
       const response = await fetch(`/api/subscription/status?userId=${userId}`);
-      const result = await response.json();
-      if (result.success) {
-        setSubscription(result.data);
+      const json = await response.json();
+      if (response.ok) {
+        const subscriptionData = json?.data || null;
+        const matchedPlan =
+          SUBSCRIPTION_PLANS.find((plan) => plan.planId === subscriptionData?.plan_id) ||
+          SUBSCRIPTION_PLANS.find((plan) => plan.key === subscriptionData?.plan_key);
+        const normalizedStatus = String(subscriptionData?.status || "none").toLowerCase();
+
+        setSubscription({
+          hasActivePlan: normalizedStatus === "active" || normalizedStatus === "authenticated",
+          planKey: matchedPlan?.key || subscriptionData?.plan_key || null,
+          planName: matchedPlan?.name || null,
+          status: normalizedStatus,
+        });
       } else {
         setSubscription({
           hasActivePlan: false,

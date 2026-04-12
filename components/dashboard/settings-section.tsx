@@ -5,7 +5,7 @@ import { SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import swal from "sweetalert";
 
@@ -15,6 +15,13 @@ type SubscriptionView = {
   planName: string | null;
   status: string;
   subscriptionId: string | null;
+};
+
+type SubscriptionRecord = {
+  status?: string | null;
+  plan_key?: string | null;
+  plan_id?: string | null;
+  razorpay_subscription_id?: string | null;
 };
 
 const initialSubscription: SubscriptionView = {
@@ -77,21 +84,37 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   ];
 
   const dateFormats = ["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD", "DD Mon YYYY"];
+  const mapSubscriptionView = (record: SubscriptionRecord | null): SubscriptionView => {
+    if (!record) return initialSubscription;
 
-  const loadSubscriptionStatus = async (userId: string) => {
+    const matchedPlan =
+      SUBSCRIPTION_PLANS.find((plan) => plan.planId === record.plan_id) ||
+      SUBSCRIPTION_PLANS.find((plan) => plan.key === record.plan_key);
+    const normalizedStatus = String(record.status || "none").toLowerCase();
+
+    return {
+      hasActivePlan: normalizedStatus === "active" || normalizedStatus === "authenticated",
+      planKey: matchedPlan?.key || record.plan_key || null,
+      planName: matchedPlan?.name || null,
+      status: normalizedStatus,
+      subscriptionId: record.razorpay_subscription_id || null,
+    };
+  };
+
+  const loadSubscriptionStatus = useCallback(async (userId: string) => {
     setSubscriptionLoading(true);
     try {
       const response = await fetch(`/api/subscription?userId=${userId}`);
-      const result = await response.json();
-      if (result.success) {
-        setSubscription(result.data);
+      const json = await response.json();
+      if (response.ok) {
+        setSubscription(mapSubscriptionView(json.data || null));
       }
     } catch (error) {
       console.error("Failed to load subscription status:", error);
     } finally {
       setSubscriptionLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -122,7 +145,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
     };
 
     loadSettings();
-  }, []);
+  }, [loadSubscriptionStatus]);
 
   const handleSaveSettings = async () => {
     const {
@@ -169,10 +192,10 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
       try {
         attempts += 1;
         const response = await fetch(`/api/subscription?userId=${currentUserId}`);
-        const result = await response.json();
-        if (result?.success) {
-          setSubscription(result.data);
-          if (result.data?.hasActivePlan) {
+        const json = await response.json();
+        if (response.ok) {
+          setSubscription(mapSubscriptionView(json.data || null));
+          if (json.data?.status === "active") {
             stopPolling();
             toast.success(`${paymentPollingPlanName} plan activated.`);
             await onSubscriptionChange?.();
@@ -225,19 +248,10 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
       });
       const json = await response.json();
       if (!response.ok) {
-        toast.error(json.error || "Unable to start payment.");
+        toast(json.error || "Unable to start payment.");
         return;
-      }
-
-      const paymentUrl = json?.url;
-      if (!paymentUrl) {
-        toast.error("Payment URL missing. Please try again.");
-        return;
-      }
-
-      const openedWindow = window.open(paymentUrl, "_blank");
-      if (!openedWindow) {
-        window.location.href = paymentUrl;
+      } else {
+        window.open(json.url);
       }
 
       startedPolling = true;
