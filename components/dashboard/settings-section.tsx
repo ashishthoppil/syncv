@@ -81,7 +81,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   const loadSubscriptionStatus = async (userId: string) => {
     setSubscriptionLoading(true);
     try {
-      const response = await fetch(`/api/subscription/status?userId=${userId}`);
+      const response = await fetch(`/api/subscription?userId=${userId}`);
       const result = await response.json();
       if (result.success) {
         setSubscription(result.data);
@@ -168,7 +168,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
     const pollSubscription = async () => {
       try {
         attempts += 1;
-        const response = await fetch(`/api/subscription/status?userId=${currentUserId}`);
+        const response = await fetch(`/api/subscription?userId=${currentUserId}`);
         const result = await response.json();
         if (result?.success) {
           setSubscription(result.data);
@@ -214,7 +214,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
     setPlanActionLoading(plan.key);
     let startedPolling = false;
     try {
-      const response = await fetch("/api/subscription/create", {
+      const response = await fetch("/api/razorpay/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -223,13 +223,13 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
           planId: plan.planId,
         }),
       });
-      const result = await response.json();
-      if (!result.success) {
-        toast.error(result.message || "Unable to start subscription.");
+      const json = await response.json();
+      if (!response.ok) {
+        toast.error(json.error || "Unable to start payment.");
         return;
       }
 
-      const paymentUrl = result?.data?.url;
+      const paymentUrl = json?.url;
       if (!paymentUrl) {
         toast.error("Payment URL missing. Please try again.");
         return;
