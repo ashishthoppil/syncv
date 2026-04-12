@@ -72,6 +72,9 @@ export async function POST(request) {
       customer_notify: 0,
     });
 
+    console.log('existingSubscription', created);
+
+
     if (!created?.id || !created?.short_url) {
       throw new Error("Razorpay did not return required subscription details.");
     }
