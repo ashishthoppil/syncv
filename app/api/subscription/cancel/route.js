@@ -1,3 +1,4 @@
+import Razorpay from "razorpay";
 import { NextResponse } from "next/server";
 import {
   getActiveSubscriptionForUser,
@@ -5,35 +6,30 @@ import {
   getSupabaseAdminClient,
 } from "@/lib/server/subscriptions";
 
-const razorpayBaseUrl = "https://api.razorpay.com/v1";
-
-const getRazorpayAuthHeader = () => {
+const getRazorpayClient = () => {
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
   if (!keyId || !keySecret) {
     throw new Error("Missing Razorpay API credentials.");
   }
-  const token = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-  return `Basic ${token}`;
+  return new Razorpay({
+    key_id: keyId,
+    key_secret: keySecret,
+  });
 };
 
-const cancelRazorpaySubscription = async (subscriptionId, authHeader) => {
-  const response = await fetch(`${razorpayBaseUrl}/subscriptions/${subscriptionId}/cancel`, {
-    method: "POST",
-    headers: {
-      Authorization: authHeader,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ cancel_at_cycle_end: 0 }),
-  });
-
-  if (response.ok) return;
-
-  const text = await response.text();
-  if (response.status === 400 && /already cancelled|already completed|not active/i.test(text)) {
+const cancelRazorpaySubscription = async (subscriptionId, razorpay) => {
+  try {
+    await razorpay.subscriptions.cancel(subscriptionId, { cancel_at_cycle_end: 0 });
     return;
+  } catch (error) {
+    const description =
+      error?.error?.description || error?.description || error?.message || String(error);
+    if (/already cancelled|already completed|not active/i.test(description)) {
+      return;
+    }
+    throw new Error(`Razorpay cancel failed: ${description}`);
   }
-  throw new Error(`Razorpay cancel failed: ${text}`);
 };
 
 export async function POST(request) {
@@ -58,8 +54,8 @@ export async function POST(request) {
     }
 
     if (latestSubscription.razorpay_subscription_id) {
-      const authHeader = getRazorpayAuthHeader();
-      await cancelRazorpaySubscription(latestSubscription.razorpay_subscription_id, authHeader);
+      const razorpay = getRazorpayClient();
+      await cancelRazorpaySubscription(latestSubscription.razorpay_subscription_id, razorpay);
     }
 
     const now = new Date().toISOString();
@@ -90,4 +86,3 @@ export async function POST(request) {
     );
   }
 }
-
