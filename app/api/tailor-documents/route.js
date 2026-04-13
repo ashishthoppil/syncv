@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getPlanForUser, getSupabaseAdminClient } from "@/lib/server/subscriptions";
 
 const normalizeText = (value = "") =>
   value
@@ -741,6 +742,7 @@ export async function POST(req) {
     }
 
     const {
+      userId = "",
       resume,
       jd,
       organization = "",
@@ -755,6 +757,7 @@ export async function POST(req) {
       careerChangeApproved = false,
       resumeRoleFamily = "",
       targetRoleFamily = "",
+      includeCoverLetter = true,
     } = await req.json();
 
     if (!resume || !jd) {
@@ -762,6 +765,21 @@ export async function POST(req) {
         success: false,
         message: "Resume and job description are required.",
       });
+    }
+
+    let shouldGenerateCoverLetter = Boolean(includeCoverLetter);
+    if (userId) {
+      const supabase = getSupabaseAdminClient();
+      const activePlan = await getPlanForUser(supabase, userId);
+      if (!activePlan) {
+        return NextResponse.json({
+          success: false,
+          message: "Please subscribe to a plan to optimize your resume.",
+        });
+      }
+      if (!activePlan.allowsCoverLetter) {
+        shouldGenerateCoverLetter = false;
+      }
     }
 
     const safeMissing = Array.isArray(missingKeywords)
@@ -941,47 +959,50 @@ export async function POST(req) {
       hasKeyword(finalResume, keyword)
     );
 
-    const coverLetterPrompt = [
-      "You are an ATS-focused cover letter writer.",
-      "Generate a tailored cover letter for the target role.",
-      "Hard rules:",
-      "- Keep content truthful and grounded in the provided resume.",
-      "- Do not invent fake employers, titles, education, or certifications.",
-      "- Cover letter length: 250-350 words.",
-      "- Structure: opening, role fit paragraph, impact paragraph, closing.",
-      "- Mention the organization name explicitly.",
-      "- Do NOT include heading text like 'Tailored Cover Letter'.",
-      "- Do NOT use placeholders like [Candidate Address], [Date], [Your Name].",
-      "- Keep output plain text, no markdown fences.",
-      "",
-      `Organization: ${organization}`,
-      `Designation: ${designation}`,
-      "",
-      "Job Description:",
-      jd.slice(0, 7000),
-      "",
-      "Optimized Resume:",
-      finalResume.slice(0, 9000),
-    ].join("\n");
+    let finalCoverLetter = "";
+    if (shouldGenerateCoverLetter) {
+      const coverLetterPrompt = [
+        "You are an ATS-focused cover letter writer.",
+        "Generate a tailored cover letter for the target role.",
+        "Hard rules:",
+        "- Keep content truthful and grounded in the provided resume.",
+        "- Do not invent fake employers, titles, education, or certifications.",
+        "- Cover letter length: 250-350 words.",
+        "- Structure: opening, role fit paragraph, impact paragraph, closing.",
+        "- Mention the organization name explicitly.",
+        "- Do NOT include heading text like 'Tailored Cover Letter'.",
+        "- Do NOT use placeholders like [Candidate Address], [Date], [Your Name].",
+        "- Keep output plain text, no markdown fences.",
+        "",
+        `Organization: ${organization}`,
+        `Designation: ${designation}`,
+        "",
+        "Job Description:",
+        jd.slice(0, 7000),
+        "",
+        "Optimized Resume:",
+        finalResume.slice(0, 9000),
+      ].join("\n");
 
-    const coverLetterRaw = await generateWithModel({
-      apiKey,
-      prompt: coverLetterPrompt,
-      maxTokens: 1200,
-    });
+      const coverLetterRaw = await generateWithModel({
+        apiKey,
+        prompt: coverLetterPrompt,
+        maxTokens: 1200,
+      });
 
-    let finalCoverLetter = stripPlaceholdersAndTemplateLabels(coverLetterRaw);
-    if (organization && !finalCoverLetter.toLowerCase().includes(organization.toLowerCase())) {
-      finalCoverLetter = `I am excited to apply for this role at ${organization}.\n\n${finalCoverLetter}`;
+      finalCoverLetter = stripPlaceholdersAndTemplateLabels(coverLetterRaw);
+      if (organization && !finalCoverLetter.toLowerCase().includes(organization.toLowerCase())) {
+        finalCoverLetter = `I am excited to apply for this role at ${organization}.\n\n${finalCoverLetter}`;
+      }
+      finalCoverLetter = stripPlaceholdersAndTemplateLabels(finalCoverLetter);
+      finalCoverLetter = enforceCoverLetterStructure({
+        rawCoverLetter: finalCoverLetter,
+        organization,
+        candidateName,
+        email: candidateEmail,
+        phone: candidatePhone,
+      });
     }
-    finalCoverLetter = stripPlaceholdersAndTemplateLabels(finalCoverLetter);
-    finalCoverLetter = enforceCoverLetterStructure({
-      rawCoverLetter: finalCoverLetter,
-      organization,
-      candidateName,
-      email: candidateEmail,
-      phone: candidatePhone,
-    });
     finalResume = stripPlaceholdersAndTemplateLabels(finalResume);
     finalResume = removeCandidateNameLine(finalResume, candidateName);
     finalResume = removeInjectedTargetDesignationLines(

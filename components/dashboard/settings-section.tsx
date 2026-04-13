@@ -22,6 +22,11 @@ type SubscriptionRecord = {
   plan_key?: string | null;
   plan_id?: string | null;
   razorpay_subscription_id?: string | null;
+  hasActivePlan?: boolean;
+  planKey?: string | null;
+  planId?: string | null;
+  planName?: string | null;
+  subscriptionId?: string | null;
 };
 
 const initialSubscription: SubscriptionView = {
@@ -88,16 +93,20 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
     if (!record) return initialSubscription;
 
     const matchedPlan =
-      SUBSCRIPTION_PLANS.find((plan) => plan.planId === record.plan_id) ||
-      SUBSCRIPTION_PLANS.find((plan) => plan.key === record.plan_key);
+      SUBSCRIPTION_PLANS.find((plan) => plan.planId === (record.plan_id || record.planId)) ||
+      SUBSCRIPTION_PLANS.find((plan) => plan.key === (record.plan_key || record.planKey));
     const normalizedStatus = String(record.status || "none").toLowerCase();
+    const hasActivePlan =
+      typeof record.hasActivePlan === "boolean"
+        ? record.hasActivePlan
+        : normalizedStatus === "active" || normalizedStatus === "authenticated";
 
     return {
-      hasActivePlan: normalizedStatus === "active" || normalizedStatus === "authenticated",
-      planKey: matchedPlan?.key || record.plan_key || null,
-      planName: matchedPlan?.name || null,
+      hasActivePlan,
+      planKey: matchedPlan?.key || record.plan_key || record.planKey || null,
+      planName: matchedPlan?.name || record.planName || null,
       status: normalizedStatus,
-      subscriptionId: record.razorpay_subscription_id || null,
+      subscriptionId: record.razorpay_subscription_id || record.subscriptionId || null,
     };
   };
 

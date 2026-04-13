@@ -15,7 +15,6 @@ import { ProfileSection } from "@/components/dashboard/profile-section";
 import { Loader2, LogOut, LayoutDashboard } from "lucide-react";
 import { toast } from "react-toastify";
 import { Logo } from "@/components/navbar/logo";
-import { SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
 
 const sectionMap = {
   scan: ScanSection,
@@ -46,6 +45,11 @@ const DashboardPageContent = () => {
     planKey: null,
     planName: null,
     status: "none",
+    allowsJobTracker: false,
+    allowsCoverLetter: false,
+    weeklyScanLimit: 0,
+    scansUsedThisWeek: 0,
+    scansRemainingThisWeek: 0,
   });
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const router = useRouter();
@@ -58,17 +62,17 @@ const DashboardPageContent = () => {
       const response = await fetch(`/api/subscription/status?userId=${userId}`);
       const json = await response.json();
       if (response.ok) {
-        const subscriptionData = json?.data || null;
-        const matchedPlan =
-          SUBSCRIPTION_PLANS.find((plan) => plan.planId === subscriptionData?.plan_id) ||
-          SUBSCRIPTION_PLANS.find((plan) => plan.key === subscriptionData?.plan_key);
-        const normalizedStatus = String(subscriptionData?.status || "none").toLowerCase();
-
+        const subscriptionData = json?.data || {};
         setSubscription({
-          hasActivePlan: normalizedStatus === "active" || normalizedStatus === "authenticated",
-          planKey: matchedPlan?.key || subscriptionData?.plan_key || null,
-          planName: matchedPlan?.name || null,
-          status: normalizedStatus,
+          hasActivePlan: Boolean(subscriptionData.hasActivePlan),
+          planKey: subscriptionData.planKey || null,
+          planName: subscriptionData.planName || null,
+          status: String(subscriptionData.status || "none"),
+          allowsJobTracker: Boolean(subscriptionData.allowsJobTracker),
+          allowsCoverLetter: Boolean(subscriptionData.allowsCoverLetter),
+          weeklyScanLimit: Number(subscriptionData.weeklyScanLimit || 0),
+          scansUsedThisWeek: Number(subscriptionData.scansUsedThisWeek || 0),
+          scansRemainingThisWeek: Number(subscriptionData.scansRemainingThisWeek || 0),
         });
       } else {
         setSubscription({
@@ -76,6 +80,11 @@ const DashboardPageContent = () => {
           planKey: null,
           planName: null,
           status: "none",
+          allowsJobTracker: false,
+          allowsCoverLetter: false,
+          weeklyScanLimit: 0,
+          scansUsedThisWeek: 0,
+          scansRemainingThisWeek: 0,
         });
       }
     } catch (error) {
@@ -85,6 +94,11 @@ const DashboardPageContent = () => {
         planKey: null,
         planName: null,
         status: "none",
+        allowsJobTracker: false,
+        allowsCoverLetter: false,
+        weeklyScanLimit: 0,
+        scansUsedThisWeek: 0,
+        scansRemainingThisWeek: 0,
       });
     } finally {
       setSubscriptionLoading(false);
@@ -110,12 +124,24 @@ const DashboardPageContent = () => {
 
   useEffect(() => {
     const sectionFromQuery = searchParams?.get("section");
-    if (sectionFromQuery && sectionMap[sectionFromQuery]) {
+    if (
+      sectionFromQuery &&
+      sectionMap[sectionFromQuery] &&
+      (sectionFromQuery !== "job-tracker" || subscription.allowsJobTracker)
+    ) {
       setActiveSection(sectionFromQuery);
+    } else if (sectionFromQuery === "job-tracker" && !subscription.allowsJobTracker) {
+      setActiveSection("settings");
+      router.replace("/scan?section=settings");
     }
-  }, [searchParams]);
+  }, [searchParams, subscription.allowsJobTracker, router]);
 
   const handleSectionChange = (sectionId) => {
+    if (sectionId === "job-tracker" && !subscription.allowsJobTracker) {
+      setActiveSection("settings");
+      router.replace("/scan?section=settings");
+      return;
+    }
     setActiveSection(sectionId);
     const query = sectionId === "scan" ? "" : `?section=${sectionId}`;
     router.replace(`/scan${query}`);
@@ -125,18 +151,30 @@ const DashboardPageContent = () => {
     const subscriptionLocked = subscriptionLoading || !subscription.hasActivePlan;
 
     if (activeSection === "scan") {
-      return <ScanSection subscriptionLocked={subscriptionLocked} />;
+      return (
+        <ScanSection
+          subscriptionLocked={subscriptionLocked}
+          planKey={subscription.planKey}
+          allowsCoverLetter={subscription.allowsCoverLetter}
+        />
+      );
     }
     if (activeSection === "profile") {
       return <ProfileSection user={user} />;
     }
     if (activeSection === "job-tracker") {
-      return <JobTrackerSection subscriptionLocked={subscriptionLocked} />;
+      return <JobTrackerSection subscriptionLocked={subscriptionLocked || !subscription.allowsJobTracker} />;
     }
     if (activeSection === "settings") {
       return <SettingsSection onSubscriptionChange={() => refreshSubscription(user?.id)} />;
     }
-    return <ScanSection subscriptionLocked={subscriptionLocked} />;
+    return (
+      <ScanSection
+        subscriptionLocked={subscriptionLocked}
+        planKey={subscription.planKey}
+        allowsCoverLetter={subscription.allowsCoverLetter}
+      />
+    );
   };
 
   const handleLogout = async () => {
@@ -153,6 +191,10 @@ const DashboardPageContent = () => {
     return <Loading />;
   }
 
+  const visibleSections = DASHBOARD_SECTIONS.filter(
+    (section) => section.id !== "job-tracker" || subscription.allowsJobTracker
+  );
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <aside className="hidden lg:flex lg:w-64 flex-col border-r border-slate-200 bg-white/90 px-4 py-6 backdrop-blur sticky top-0 h-screen">
@@ -165,6 +207,7 @@ const DashboardPageContent = () => {
         <DashboardSidebar
           activeSection={activeSection}
           onSelect={handleSectionChange}
+          sections={visibleSections}
         />
       </aside>
 
@@ -198,7 +241,7 @@ const DashboardPageContent = () => {
               Sections
             </p>
             <div className="flex flex-wrap gap-2">
-              {DASHBOARD_SECTIONS.map((section) => (
+              {visibleSections.map((section) => (
                 <Button
                   key={section.id}
                   variant={activeSection === section.id ? "default" : "outline"}

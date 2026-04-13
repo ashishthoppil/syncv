@@ -18,13 +18,15 @@ export const DASHBOARD_SECTIONS = [
 export const DashboardSidebar = ({
   activeSection,
   onSelect,
+  sections = DASHBOARD_SECTIONS,
 }: {
   activeSection: string;
   onSelect: (section: string) => void;
+  sections?: typeof DASHBOARD_SECTIONS;
 }) => {
   return (
     <nav className="flex flex-1 flex-col gap-2 mt-6">
-      {DASHBOARD_SECTIONS.map((section) => {
+      {sections.map((section) => {
         const Icon = section.icon;
         const isActive = activeSection === section.id;
         return (

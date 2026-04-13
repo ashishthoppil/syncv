@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  countWeeklyScans,
+  getPlanForUser,
+  getSupabaseAdminClient,
+} from "@/lib/server/subscriptions";
 
 const STOP_WORDS = new Set([
   "a",
@@ -1047,13 +1052,41 @@ const scoreResume = (resumeText, weightedKeywords, { jdText = "", targetRole = "
 
 export async function POST(req) {
   try {
-    const { resume, jd, organization, designation } = await req.json();
+    const {
+      resume,
+      jd,
+      organization,
+      designation,
+      userId = "",
+      skipUsageTracking = false,
+    } = await req.json();
 
     if (!resume || !jd) {
       return NextResponse.json({
         success: false,
         message: "Both resume and job description are required.",
       });
+    }
+
+    let activePlan = null;
+    let scansUsedThisWeek = 0;
+    if (userId) {
+      const supabase = getSupabaseAdminClient();
+      activePlan = await getPlanForUser(supabase, userId);
+      if (!activePlan) {
+        return NextResponse.json({
+          success: false,
+          message: "Please subscribe to a plan to optimize your resume.",
+        });
+      }
+
+      scansUsedThisWeek = await countWeeklyScans(supabase, userId);
+      if (!skipUsageTracking && scansUsedThisWeek >= activePlan.weeklyScanLimit) {
+        return NextResponse.json({
+          success: false,
+          message: `Weekly scan limit reached for ${activePlan.name} plan (${activePlan.weeklyScanLimit}/week).`,
+        });
+      }
     }
 
     const cleanedJd = preprocessJobDescription(jd);
@@ -1118,6 +1151,19 @@ export async function POST(req) {
       targetRole: designation || "",
     });
 
+    if (userId && activePlan && !skipUsageTracking) {
+      const supabase = getSupabaseAdminClient();
+      const { error: usageError } = await supabase.from("scan_usage").insert({
+        user_id: userId,
+        plan_key: activePlan.key,
+      });
+      if (usageError) {
+        console.error("Failed to store scan usage:", usageError);
+      } else {
+        scansUsedThisWeek += 1;
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: {
@@ -1126,6 +1172,14 @@ export async function POST(req) {
         designation: designation || "",
         extractionMode,
         extractionStats,
+        usage: activePlan
+          ? {
+              planKey: activePlan.key,
+              weeklyScanLimit: activePlan.weeklyScanLimit,
+              scansUsedThisWeek,
+              scansRemainingThisWeek: Math.max(0, activePlan.weeklyScanLimit - scansUsedThisWeek),
+            }
+          : null,
       },
     });
   } catch (error) {

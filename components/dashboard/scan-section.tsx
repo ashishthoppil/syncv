@@ -113,6 +113,8 @@ type ScanSectionProps = {
   hideTopHeading?: boolean;
   className?: string;
   subscriptionLocked?: boolean;
+  planKey?: string | null;
+  allowsCoverLetter?: boolean;
 };
 
 type GuestTrialStage = "none" | "analyzed" | "optimized";
@@ -124,6 +126,8 @@ export const ScanSection = ({
   hideTopHeading = false,
   className,
   subscriptionLocked = false,
+  planKey = null,
+  allowsCoverLetter = true,
 }: ScanSectionProps = {}) => {
   const router = useRouter();
   const [form, setForm] = useState(initialFormState);
@@ -242,6 +246,8 @@ export const ScanSection = ({
       keywords: ["operations", "coordinator", "administrator", "office assistant"],
     },
   ];
+  const isSpeedPlan = planKey === "speed";
+  const shouldAllowCoverLetter = !isSpeedPlan && allowsCoverLetter;
   const selectedTemplateConfig = getResumeTemplateConfig(selectedTemplate);
   const selectedTemplateTheme = resolveResumeTemplateTheme(
     selectedTemplate,
@@ -256,6 +262,13 @@ export const ScanSection = ({
         ...patch,
       },
     }));
+  };
+
+  const getSessionUserId = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return session?.user?.id || "";
   };
 
   const redirectGuestToSignUp = () => {
@@ -374,6 +387,7 @@ export const ScanSection = ({
           jd: form.jd,
           organization: form.organization,
           designation: form.designation,
+          userId: sessionUserId,
         }),
       });
       const data = await response.json();
@@ -388,32 +402,37 @@ export const ScanSection = ({
           return;
         }
 
-        // Save to job tracker
-        try {
-          const saveResponse = await fetch("/api/job-tracker", {
-            method: "POST",
-            body: JSON.stringify({
-              userId: sessionUserId,
-              organization: form.organization,
-              designation: form.designation,
-              initialScore: data.message.initialScore,
-              matchedKeywords: data.message.matchedKeywords,
-              missingKeywords: data.message.missingKeywords,
-              keywordUniverse: data.message.keywordUniverse,
-            }),
-          });
-          const saveData = await saveResponse.json();
-          if (saveData.success) {
-            setScanJobId(saveData.data?.id || null);
-            toast.success("Scan completed and saved to job tracker!");
-          } else {
+        if (!isSpeedPlan) {
+          // Save to job tracker
+          try {
+            const saveResponse = await fetch("/api/job-tracker", {
+              method: "POST",
+              body: JSON.stringify({
+                userId: sessionUserId,
+                organization: form.organization,
+                designation: form.designation,
+                initialScore: data.message.initialScore,
+                matchedKeywords: data.message.matchedKeywords,
+                missingKeywords: data.message.missingKeywords,
+                keywordUniverse: data.message.keywordUniverse,
+              }),
+            });
+            const saveData = await saveResponse.json();
+            if (saveData.success) {
+              setScanJobId(saveData.data?.id || null);
+              toast.success("Scan completed and saved to job tracker!");
+            } else {
+              setScanJobId(null);
+              toast.success("Scan completed! (Could not save to tracker)");
+            }
+          } catch (saveError) {
+            console.error("Error saving to job tracker:", saveError);
             setScanJobId(null);
             toast.success("Scan completed! (Could not save to tracker)");
           }
-        } catch (saveError) {
-          console.error("Error saving to job tracker:", saveError);
+        } else {
           setScanJobId(null);
-          toast.success("Scan completed! (Could not save to tracker)");
+          toast.success("Scan completed!");
         }
       } else {
         toast.error(data.message || "Unable to analyze the resume right now.");
@@ -615,6 +634,7 @@ export const ScanSection = ({
 
   const downloadPdf = async (type: "cv" | "cover") => {
     if (!tailoredDocs) return;
+    if (type === "cover" && !shouldAllowCoverLetter) return;
     setDownloadingType(type);
     try {
       const candidateName = extractCandidateName(form.resume);
@@ -724,6 +744,7 @@ export const ScanSection = ({
       const response = await fetch("/api/tailor-documents", {
         method: "POST",
         body: JSON.stringify({
+          userId: await getSessionUserId(),
           resume: form.resume,
           jd: form.jd,
           organization: form.organization,
@@ -740,6 +761,7 @@ export const ScanSection = ({
           resumeRoleFamily: fitInsight?.resumeFamilyId || "",
           targetRoleFamily: fitInsight?.targetFamilyId || "",
           profileContact: latestProfile,
+          includeCoverLetter: shouldAllowCoverLetter,
         }),
       });
       const data = await response.json();
@@ -768,6 +790,8 @@ export const ScanSection = ({
             jd: form.jd,
             organization: form.organization,
             designation: form.designation,
+            userId: await getSessionUserId(),
+            skipUsageTracking: true,
           }),
         });
         const finalScoreData = await finalScoreResponse.json();
@@ -788,7 +812,11 @@ export const ScanSection = ({
         persistGuestState("optimized");
       }
 
-      toast.success("Tailored CV and cover letter are ready.");
+      toast.success(
+        shouldAllowCoverLetter
+          ? "Tailored CV and cover letter are ready."
+          : "Tailored CV is ready."
+      );
     } catch (error) {
       console.error(error);
       toast.error("Unexpected error while generating tailored documents.");
@@ -887,6 +915,7 @@ export const ScanSection = ({
           jd: form.jd,
           organization: form.organization,
           designation: form.designation,
+          userId: await getSessionUserId(),
         }),
       });
       const data = await response.json();
@@ -1611,7 +1640,9 @@ export const ScanSection = ({
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
-                  Tailored CV & Cover Letter Preview
+                  {shouldAllowCoverLetter
+                    ? "Tailored CV & Cover Letter Preview"
+                    : "Tailored CV Preview"}
                 </h3>
                 <p className="text-xs text-slate-500">
                   Review the optimized drafts and download each document separately.
@@ -1665,21 +1696,23 @@ export const ScanSection = ({
                 >
                   Resume
                 </button>
-                <button
-                  type="button"
-                  className={cn(
-                    "rounded-full px-4 py-2 text-sm transition",
-                    previewView === "cover"
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  )}
-                  onClick={() => setPreviewView("cover")}
-                >
-                  Cover Letter
-                </button>
+                {shouldAllowCoverLetter ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      "rounded-full px-4 py-2 text-sm transition",
+                      previewView === "cover"
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    )}
+                    onClick={() => setPreviewView("cover")}
+                  >
+                    Cover Letter
+                  </button>
+                ) : null}
               </div>
 
-              {previewView === "resume" ? (
+              {previewView === "resume" || !shouldAllowCoverLetter ? (
                 <div className="grid gap-4 lg:grid-cols-[360px,1fr]">
                   <div className="rounded-xl border border-slate-200 p-4">
                     <div className="mb-3 space-y-3">

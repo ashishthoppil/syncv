@@ -135,3 +135,31 @@ CREATE TRIGGER update_subscriptions_updated_at
   BEFORE UPDATE ON subscriptions
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- Weekly scan usage tracking
+CREATE TABLE IF NOT EXISTS scan_usage (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  plan_key TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_scan_usage_user_id ON scan_usage(user_id);
+CREATE INDEX IF NOT EXISTS idx_scan_usage_created_at ON scan_usage(created_at DESC);
+
+ALTER TABLE scan_usage ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own scan usage"
+  ON scan_usage
+  FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own scan usage"
+  ON scan_usage
+  FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own scan usage"
+  ON scan_usage
+  FOR DELETE
+  USING (auth.uid() = user_id);
