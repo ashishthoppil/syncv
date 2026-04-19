@@ -41,24 +41,56 @@ export async function POST(request) {
     const appUrl =
       process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || new URL(request.url).origin;
     const welcomeEmailSentAt = new Date().toISOString();
+    let emailSent = false;
+    let metadataUpdated = false;
+    let warning = null;
 
-    await sendWelcomeEmail({
-      to: email,
-      appUrl: `${appUrl}/onboarding`,
-    });
-
-    const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
-      app_metadata: {
-        ...appMetadata,
-        welcome_email_sent_at: welcomeEmailSentAt,
-      },
-    });
-    if (updateError) {
-      throw updateError;
+    try {
+      await sendWelcomeEmail({
+        to: email,
+        appUrl: `${appUrl.replace(/\/$/, "")}/onboarding`,
+      });
+      emailSent = true;
+    } catch (emailError) {
+      warning =
+        emailError instanceof Error ? emailError.message : "Failed to send welcome email.";
+      console.warn("Welcome email send failed.", {
+        userId,
+        email,
+        error: warning,
+      });
     }
 
-    return NextResponse.json({ sent: true });
+    if (emailSent) {
+      const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
+        app_metadata: {
+          ...appMetadata,
+          welcome_email_sent_at: welcomeEmailSentAt,
+        },
+      });
+
+      if (updateError) {
+        warning =
+          updateError instanceof Error
+            ? updateError.message
+            : "Failed to update welcome email metadata.";
+        console.warn("Welcome email metadata update failed.", {
+          userId,
+          email,
+          error: warning,
+        });
+      } else {
+        metadataUpdated = true;
+      }
+    }
+
+    return NextResponse.json({
+      sent: emailSent,
+      metadataUpdated,
+      ...(warning ? { warning } : {}),
+    });
   } catch (error) {
+    console.error("Welcome email route failed.", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to send welcome email." },
       { status: 500 }
