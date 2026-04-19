@@ -1,0 +1,7 @@
+Gate,Criteria,Result (Pass/Fail),Owner,Notes
+Functional gate,All P0 tests passed,,,
+Defect gate,No open P0 defects and no unapproved open P1 defects,,,
+Billing gate,Subscription create/webhook/cancel flows validated in test mode,,,
+Data safety gate,Account delete and cross-user isolation validated,,,
+Performance/UX gate,No release-blocking regressions in core flows,,,
+Final go-live,QA + engineering + product approval captured,,,

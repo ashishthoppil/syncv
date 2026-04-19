@@ -35,7 +35,7 @@ export default function SignUp() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
     });
@@ -45,6 +45,20 @@ export default function SignUp() {
       toast.error(error.message);
       setLoading(false);
       return;
+    }
+
+    try {
+      if (data?.user?.id) {
+        await fetch("/api/auth/welcome-email", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ userId: data.user.id }),
+        });
+      }
+    } catch (welcomeEmailError) {
+      console.warn("Failed to trigger welcome email.", welcomeEmailError);
     }
 
     toast.success("Registered successfully! Let’s set up your profile.");

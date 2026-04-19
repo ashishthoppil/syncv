@@ -49,6 +49,20 @@ const AuthCallbackContent = () => {
           return;
         }
 
+        try {
+          if (session.user?.id) {
+            await fetch("/api/auth/welcome-email", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ userId: session.user.id }),
+            });
+          }
+        } catch (welcomeEmailError) {
+          console.warn("Failed to trigger welcome email.", welcomeEmailError);
+        }
+
         toast.success("Successfully signed in!");
         router.replace(next);
       } catch (err) {
