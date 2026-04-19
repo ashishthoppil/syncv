@@ -1,4 +1,4 @@
-# SyncV Pre-Prod QA Sheet
+# SynCV Pre-Prod QA Sheet
 
 ## Release Details
 | Field | Value |
