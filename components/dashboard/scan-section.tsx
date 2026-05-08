@@ -272,7 +272,7 @@ export const ScanSection = ({
   };
 
   const redirectGuestToSignUp = () => {
-    toast.info("Your free trial is complete. Please register to continue.");
+    toast.info("Your trial has ended. Register to proceed.");
     router.push("/sign-up");
   };
 
@@ -1243,15 +1243,6 @@ export const ScanSection = ({
         )}
       >
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
-          {guestTrial && (
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">Try an instant scan</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Fill the form below to run one quick resume analysis and optimization preview.
-              </p>
-            </div>
-          )}
-
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-600">
@@ -1277,7 +1268,7 @@ export const ScanSection = ({
                 Role / designation <span className="text-red-500">*</span>
               </label>
               <Input
-                placeholder="Senior Frontend Engineer"
+                placeholder="AI Engineer"
                 value={form.designation}
                 onChange={(event) =>
                   updateForm("designation", event.target.value)
@@ -1369,7 +1360,7 @@ export const ScanSection = ({
 
           <div className="flex flex-wrap gap-3">
             <Button
-              className="rounded-full"
+              className="rounded-full w-full md:w-auto"
               onClick={
                 guestTrial && guestTrialStage !== "none"
                   ? redirectGuestToSignUp
@@ -1392,13 +1383,21 @@ export const ScanSection = ({
             </Button>
             <Button
               variant="outline"
-              className="rounded-full"
+              className="rounded-full w-full md:w-auto"
               onClick={resetForm}
               disabled={isAnalyzing}
             >
               Clear inputs
             </Button>
           </div>
+          {guestTrial && (
+            <div className="">
+              <p className="mt-4 text-xs text-slate-500 text-center md:text-right font-medium">
+                You can run one guest scan and one guest optimization. To continue after that,
+                registration is required.
+              </p>
+            </div>
+          )}
         </div>
 
         {!guestTrial ? summaryPanel : null}

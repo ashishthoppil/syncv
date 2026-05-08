@@ -75,13 +75,16 @@
 
 /* Toastify: ensure all elements render in black while keeping default light background */
 .Toastify__toast {
-  color: #000;
+  color: #dedede;
+  font-size: 14px;
 }
 
-.Toastify__toast-icon svg,
+
 .Toastify__close-button {
-  color: #000;
-  opacity: 1;
+  color: #dedede;
+  padding-right: 3px;
+  padding-top: 3px;
+  display: none;
 }
 
 .Toastify__progress-bar {

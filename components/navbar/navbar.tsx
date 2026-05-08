@@ -51,14 +51,14 @@ const Navbar = ({ isHome = false }) => {
                 variant="outline"
                 size="sm"
                 onClick={() => router.push('/login')}
-                className="gap-1"
+                className="gap-1 border border-2 shadow-sm transition-transform duration-200 ease-out hover:scale-105 font-semibold"
               >
                 <LogInIcon className="h-4 w-4" /> Login
               </Button>
               <Button
                 size="sm"
                 onClick={() => router.push('/sign-up')}
-                className="gap-1"
+                className="gap-1 border border-2 shadow-sm transition-transform duration-200 ease-out hover:scale-105 font-semibold"
               >
                 <User2Icon className="h-4 w-4" /> Register
               </Button>
@@ -66,14 +66,14 @@ const Navbar = ({ isHome = false }) => {
           )}
           {authenticated ? 
           <>
-            <Button variant='link' onClick={() => router.push('/scan')} className="hidden sm:inline-flex">
+            <Button variant='link' onClick={() => router.push('/scan')} className="hidden sm:inline-flex transition-transform duration-200 ease-out hover:scale-105">
               Dashboard
             </Button>
             <Button className="hidden md:flex" onClick={() => signOut()}><LogOutIcon /> Logout</Button>
           </> : <></>}
           {/* Mobile Menu */}
           <div className="md:hidden">
-            <NavigationSheet />
+            <NavigationSheet isHome={isHome} />
           </div>
         </div>
       </div>

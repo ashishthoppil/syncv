@@ -96,7 +96,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.className} antialiased`}>
         <TooltipProvider>{children}</TooltipProvider>
-        <ToastContainer hideProgressBar />
+        <ToastContainer hideProgressBar theme="dark" />
       </body>
     </html>
   );

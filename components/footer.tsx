@@ -35,10 +35,6 @@ const footerLinks = [
     title: "Testimonials",
     href: "#testimonials",
   },
-  {
-    title: "Privacy",
-    href: "mailto:support@aligncv.com?subject=Privacy%20Policy%20Request",
-  },
 ];
 
 const Footer = () => {

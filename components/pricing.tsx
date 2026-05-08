@@ -45,7 +45,7 @@ const plans = [
       { title: "Cover letter generation", tooltip: tooltipContent.generation },
       { title: "Job tracking" },
       { title: "One click analysis and optimization" },
-      { title: "Free upgrade to top plan which will be introduced soon" },
+      { title: "Premium upgrade coming soon" },
     ],
     buttonText: "Choose Pro Plan",
     href: "/sign-up?plan=pro",
