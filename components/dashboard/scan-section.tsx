@@ -30,16 +30,15 @@ import {
   CheckCircle2,
   Circle,
   Download,
-  FileText,
   Loader2,
-  PartyPopperIcon,
   RefreshCcw,
-  ScanBarcode,
   ScanLine,
+  TrendingUp,
   UploadCloud,
   UserPlus,
   WandSparkles,
   X,
+  XCircleIcon,
 } from "lucide-react";
 
 type ScanSummary = {
@@ -1022,6 +1021,36 @@ export const ScanSection = ({
     value.trim()
   );
   const initialScanScore = result?.initialScore ?? null;
+  const scoreBand =
+    initialScanScore === null
+      ? {
+          textClass: "text-slate-900",
+          borderClass: "border-slate-900",
+          encouragement: "",
+        }
+      : initialScanScore < 55
+      ? {
+          textClass: "text-red-600",
+          borderClass: "border-red-600",
+          encouragement: "Do not worry, we have got you covered.",
+        }
+      : initialScanScore < 70
+      ? {
+          textClass: "text-orange-500",
+          borderClass: "border-orange-500",
+          encouragement: "You are close. A few focused tweaks can lift this quickly.",
+        }
+      : initialScanScore < 80
+      ? {
+          textClass: "text-yellow-500",
+          borderClass: "border-yellow-500",
+          encouragement: "Nice progress. Tighten the keyword match and your resume can get stronger.",
+        }
+      : {
+          textClass: "text-emerald-600",
+          borderClass: "border-emerald-600",
+          encouragement: "Your resume rocks already. You can still tweak it for the exact role.",
+        };
   const scoreDelta =
     finalScore !== null && initialScanScore !== null
       ? finalScore - initialScanScore
@@ -1060,30 +1089,36 @@ export const ScanSection = ({
   }
 
   const summaryPanel = (
-    <div className="rounded-3xl bg-white p-3 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-900">Scan summary</h2>
-      <p className="text-sm text-slate-500">
-        We compare your resume against every keyword found in the JD.
-      </p>
-
-      <div className="mt-6 rounded-3xl border border-slate-100 p-6 text-center">
-        <p className="text-xs uppercase tracking-wide text-slate-500">
+    <div style={{ height: '37rem' }} className="rounded-lg shadow-xl bg-white p-3 overflow-y-scroll">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold text-slate-900">Scan summary</h2>
+        <p className="text-sm text-slate-500 font-medium">
+          We compare your resume against every keyword found in the JD.
+        </p>
+      </div>
+      <div className="mt-6 rounded-lg border border-slate-200 p-6 text-center">
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
           Resume score
         </p>
-        <p className="mt-3 text-5xl font-semibold text-slate-900">
-          {result ? `${result.initialScore}/100` : "—"}
+        <p className={`my-10 text-5xl font-bold ${scoreBand.textClass}`}>
+          <span style={{ borderWidth: result ? '10px': '' }} className={`rounded-full p-3 ${scoreBand.borderClass}`}>{result ? `${result.initialScore}` : "—"}</span>
         </p>
-        <p className="mt-2 text-xs text-slate-500">
-          {result
-            ? `Based on ${result.keywordUniverse.length} extracted keywords.`
-            : "Fill the form and run a scan to see your score."}
-        </p>
+        <div className="mt-2 text-xs text-slate-500">
+          {result ? (
+            <div className="space-y-1">
+              <p>Based on {result.keywordUniverse.length} extracted keywords.</p>
+              <p className="font-medium text-sm">{scoreBand.encouragement}</p>
+            </div>
+          ) : (
+            "Fill the form and run a scan to see your score."
+          )}
+        </div>
       </div>
 
       {result && (
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <Button
-            className="w-full rounded-full"
+            className="w-full rounded-md"
             onClick={() => createTailoredDocuments()}
             disabled={isGeneratingDocs || isAnalyzing || isUploading}
           >
@@ -1106,7 +1141,7 @@ export const ScanSection = ({
         <div className="mt-6 space-y-6">
           <div>
             <div className="flex items-center gap-2">
-              <FileText className="h-4 w-4 text-emerald-500" />
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               <p className="text-sm font-semibold text-slate-900">
                 Matched keywords ({result.matchedKeywords.length})
               </p>
@@ -1131,7 +1166,7 @@ export const ScanSection = ({
 
           <div>
             <div className="flex items-center gap-2">
-              <ArrowRight className="h-4 w-4 text-red-500" />
+              <XCircleIcon className="h-4 w-4 text-red-500" />
               <p className="text-sm font-semibold text-slate-900">
                 Missing keywords ({result.missingKeywords.length})
               </p>
@@ -1237,17 +1272,17 @@ export const ScanSection = ({
     <section className={cn("space-y-8", className)}>
       {!hideTopHeading && (
         <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold text-slate-900">
-            Optimize your resume
+        <div className="flex flex-col gap-2">
+          <h1 className="flex gap-1 items-center text-3xl font-semibold text-slate-900">
+            <TrendingUp /> Optimize your resume
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 font-medium">
             Provide the target role, paste the JD, and let SynCV evaluate your resume.
           </p>
         </div>
 
-        <Button variant="outline" className="rounded-full" onClick={resetForm}>
-          <RefreshCcw className="mr-2 h-4 w-4" /> New Scan
+        <Button className="rounded-md" onClick={resetForm}>
+          <RefreshCcw className="h-4 w-4" /> New Scan
         </Button>
       </div>
       )}
@@ -1258,7 +1293,7 @@ export const ScanSection = ({
           guestTrial ? "grid-cols-1" : "xl:grid-cols-[1.5fr,1fr]"
         )}
       >
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+        <div className="rounded-lg shadow-xl bg-white p-6 shadow-sm space-y-6">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-600">
@@ -1300,15 +1335,15 @@ export const ScanSection = ({
             </div>
           </div>
 
-          <div className={cn("grid gap-4", guestTrial ? "md:grid-cols-2" : "grid-cols-1")}>
+          <div className={cn("grid gap-4", true ? "md:grid-cols-2" : "grid-cols-1")}>
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-600">
                 Job description <span className="text-red-500">*</span>
               </label>
               <textarea
                 className={cn(
-                  guestTrial ? "min-h-[180px]" : "min-h-[140px]",
-                  "w-full rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
+                  true ? "min-h-[180px]" : "min-h-[140px]",
+                  "w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
                   formErrors.jd &&
                     "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
                 )}
@@ -1327,7 +1362,7 @@ export const ScanSection = ({
               </label>
               <textarea
                 className={cn(
-                  "min-h-[180px] w-full rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
+                  "min-h-[180px] w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
                   formErrors.resume &&
                     "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
                 )}
@@ -1342,7 +1377,7 @@ export const ScanSection = ({
           </div>
 
           <div
-            className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500"
+            className="flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500"
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault();
@@ -1376,7 +1411,7 @@ export const ScanSection = ({
 
           <div className="flex flex-wrap gap-3">
             <Button
-              className="rounded-full w-full md:w-auto"
+              className="rounded-md w-full md:w-auto"
               onClick={
                 guestTrial && guestTrialStage !== "none"
                   ? redirectGuestToSignUp
@@ -1387,19 +1422,19 @@ export const ScanSection = ({
               }
             >
               {isAnalyzing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <ArrowRight className="mr-2 h-4 w-4" />
+                <ArrowRight className="h-4 w-4" />
               )}
               {isAnalyzing
                 ? analyzingLabels[analyzingLabelIndex]
                 : guestTrial && guestTrialStage !== "none"
                 ? "Trial used - Register to continue"
-                : "Analyze my resume"}
+                : "Analyze resume"}
             </Button>
             <Button
               variant="outline"
-              className="rounded-full w-full md:w-auto"
+              className="rounded-md w-full md:w-auto"
               onClick={resetForm}
               disabled={isAnalyzing}
             >
@@ -1569,7 +1604,7 @@ export const ScanSection = ({
 
       {isAnalyzing && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
             <h3 className="text-lg font-semibold text-slate-900">
               Analyzing your resume...
             </h3>

@@ -5,6 +5,29 @@ import WordExtractor from "word-extractor";
 
 const extractor = new WordExtractor();
 const SUPPORTED_FORMATS = ["pdf", "doc", "docx"];
+const PROFILE_LINK_DOMAINS = {
+  behance: ["behance.net"],
+  github: ["github.com"],
+  linkedin: ["linkedin.com"],
+};
+const NON_PORTFOLIO_DOMAINS = [
+  "linkedin.com",
+  "github.com",
+  "behance.net",
+  "dribbble.com",
+  "medium.com",
+  "gitlab.com",
+  "kaggle.com",
+  "leetcode.com",
+  "hackerrank.com",
+  "calendly.com",
+  "zoom.us",
+  "teams.microsoft.com",
+  "meet.google.com",
+  "docs.google.com",
+  "drive.google.com",
+  "dropbox.com",
+];
 
 const normalizeText = (value = "") =>
   value
@@ -12,6 +35,221 @@ const normalizeText = (value = "") =>
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]+/g, " ")
     .trim();
+
+const ensureString = (value = "") =>
+  typeof value === "string" || typeof value === "number"
+    ? String(value).trim()
+    : "";
+
+const extractFirstJsonObject = (text = "") => {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === "{") depth += 1;
+    if (char === "}") depth -= 1;
+
+    if (depth === 0) {
+      return text.slice(start, index + 1);
+    }
+  }
+
+  return null;
+};
+
+const stripTrailingUrlPunctuation = (value = "") =>
+  value.replace(/^[<(]+/g, "").replace(/[)\].,;:!?]+$/g, "");
+
+const normalizeProfileUrl = (value = "") => {
+  const trimmed = stripTrailingUrlPunctuation(ensureString(value));
+  if (!trimmed || /\s/.test(trimmed)) return "";
+  const withProtocol = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : /^www\./i.test(trimmed)
+    ? `https://${trimmed}`
+    : trimmed.includes(".")
+    ? `https://${trimmed}`
+    : "";
+
+  if (!withProtocol) return "";
+
+  try {
+    const parsed = new URL(withProtocol);
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return "";
+  }
+};
+
+const hostMatches = (host = "", domain = "") =>
+  host === domain || host.endsWith(`.${domain}`);
+
+const urlMatchesDomains = (url = "", domains = []) => {
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    return domains.some((domain) => hostMatches(host, domain));
+  } catch {
+    return false;
+  }
+};
+
+const normalizeDomainUrl = (value = "", domains = []) => {
+  const url = normalizeProfileUrl(value);
+  return url && urlMatchesDomains(url, domains) ? url : "";
+};
+
+const normalizePortfolioUrl = (value = "") => {
+  const url = normalizeProfileUrl(value);
+  if (!url) return "";
+  if (urlMatchesDomains(url, NON_PORTFOLIO_DOMAINS)) return "";
+  const path = decodeURIComponent(new URL(url).pathname).toLowerCase();
+  if (/(^|\/)(resume|cv)(\/|$)|(?:resume|cv)\.pdf$/i.test(path)) return "";
+  return url;
+};
+
+const normalizeExperienceYears = (value) => {
+  const rawValue = ensureString(value);
+  const numeric = Number(rawValue) || Number(rawValue.match(/\d+(?:\.\d+)?/)?.[0]);
+  if (!Number.isFinite(numeric) || numeric < 0) return "";
+  return String(Math.round(numeric));
+};
+
+const sanitizeProfile = (profile = {}) => {
+  const currentDesignation = ensureString(profile.currentDesignation);
+  const currentOrganization = ensureString(profile.currentOrganization);
+  const modelHeadline = ensureString(profile.headline);
+  const headline =
+    currentDesignation && currentOrganization
+      ? `${currentDesignation} @ ${currentOrganization}`
+      : modelHeadline.includes("@")
+      ? modelHeadline
+      : "";
+
+  return {
+    fullName: ensureString(profile.fullName),
+    email: ensureString(profile.email),
+    phone: ensureString(profile.phone),
+    headline,
+    behance: normalizeDomainUrl(profile.behance, PROFILE_LINK_DOMAINS.behance),
+    github: normalizeDomainUrl(profile.github, PROFILE_LINK_DOMAINS.github),
+    linkedin: normalizeDomainUrl(profile.linkedin, PROFILE_LINK_DOMAINS.linkedin),
+    portfolio: normalizePortfolioUrl(profile.portfolio),
+    otherLink: normalizeProfileUrl(profile.otherLink),
+    city: ensureString(profile.city),
+    country: ensureString(profile.country),
+    experienceYears: normalizeExperienceYears(
+      profile.experienceYears ?? profile.experience_years
+    ),
+  };
+};
+
+const extractProfileWithAI = async (resumeText = "") => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set.");
+  }
+
+  const prompt = [
+    "Extract structured profile data from this resume.",
+    "",
+    "Rules:",
+    "1) Use only facts explicitly present in the resume. Never invent values.",
+    "2) Return empty strings for absent or uncertain fields.",
+    '3) Professional headline must be exactly "Designation @ Organization". Use the current role when a role has Present/Current/Ongoing/Now/To Date. If no current role exists, use the latest dated role.',
+    "4) currentDesignation and currentOrganization should be the same role used to build headline.",
+    "5) Portfolio must be the exact portfolio/personal website/work-sample link from the resume. It may be a personal domain containing part of the candidate name.",
+    "6) Do not put LinkedIn, GitHub, Behance, Medium, Calendly, meeting, cloud document, or resume-file links in portfolio.",
+    "7) City and country must be the candidate location from contact/address/location text, not an employer or education location.",
+    "8) experienceYears must be total professional experience as a whole-number string. Prefer explicit total-years text; otherwise calculate from dated work history. Leave empty if unknown.",
+    "9) Preserve exact URL strings, adding https:// only when the resume omits a protocol.",
+    "",
+    "Return compact JSON only with this schema:",
+    JSON.stringify({
+      fullName: "string",
+      email: "string",
+      phone: "string",
+      currentDesignation: "string",
+      currentOrganization: "string",
+      headline: "Designation @ Organization",
+      behance: "string",
+      github: "string",
+      linkedin: "string",
+      portfolio: "string",
+      otherLink: "string",
+      city: "string",
+      country: "string",
+      experienceYears: "string",
+    }),
+    "",
+    "Resume text:",
+    resumeText.slice(0, 12000),
+  ].join("\n");
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 900,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You extract resume profile data with high precision. Return valid compact JSON only.",
+        },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("OpenAI returned empty profile extraction.");
+  }
+
+  const jsonBlock = extractFirstJsonObject(content);
+  if (!jsonBlock) {
+    throw new Error("OpenAI returned non-JSON profile extraction.");
+  }
+
+  return sanitizeProfile(JSON.parse(jsonBlock));
+};
 
 async function parsePdf(buffer) {
   const data = await PdfParse(buffer);
@@ -92,6 +330,7 @@ export async function POST(req) {
   try {
     const formData = await req.formData();
     const file = formData.get("file");
+    const shouldExtractProfile = formData.get("extractProfile") === "true";
 
     if (!file) {
       return NextResponse.json({
@@ -131,7 +370,13 @@ export async function POST(req) {
       });
     }
 
-    return NextResponse.json({ success: true, message: cleaned });
+    if (!shouldExtractProfile) {
+      return NextResponse.json({ success: true, message: cleaned });
+    }
+
+    const profile = await extractProfileWithAI(cleaned);
+
+    return NextResponse.json({ success: true, message: cleaned, profile });
   } catch (error) {
     return NextResponse.json({ success: false, message: error.message });
   }

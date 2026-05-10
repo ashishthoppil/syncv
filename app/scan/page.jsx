@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -206,6 +207,10 @@ const DashboardPageContent = () => {
   const visibleSections = DASHBOARD_SECTIONS.filter(
     (section) => section.id !== "job-tracker" || subscription.allowsJobTracker
   );
+  const scansRemaining = Number(subscription.scansRemainingThisWeek || 0);
+  const scansRemainingLabel = subscriptionLoading
+    ? "Loading scans"
+    : `${scansRemaining} scan${scansRemaining === 1 ? "" : "s"} left`;
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -231,6 +236,12 @@ const DashboardPageContent = () => {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="hidden sm:inline-flex whitespace-nowrap border-slate-200 bg-slate-50 px-3 py-1 text-slate-700"
+            >
+              {scansRemainingLabel}
+            </Badge>
             <Button
               variant="ghost"
               size="sm"
@@ -240,7 +251,7 @@ const DashboardPageContent = () => {
               <LayoutDashboard className="h-4 w-4" />
               Dashboard
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" onClick={handleLogout}>
+            <Button variant="outline" size="sm" className="gap-2 rounded-md shadow-md" onClick={handleLogout}>
               <LogOut className="h-4 w-4" />
               Logout
             </Button>

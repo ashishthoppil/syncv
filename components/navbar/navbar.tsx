@@ -6,7 +6,6 @@ import { NavMenu } from "./nav-menu";
 import { NavigationSheet } from "./navigation-sheet";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { isAuth } from "@/lib/utils";
 import { LogInIcon, LogOutIcon, User2Icon } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { toast } from "react-toastify";
@@ -14,11 +13,38 @@ import { toast } from "react-toastify";
 const Navbar = ({ isHome = false }) => {
   const router = useRouter();
   const [authenticated, setAuthenticated] = useState(false)
+  const [scansRemaining, setScansRemaining] = useState<number | null>(null)
 
   useEffect(() => {
     const checkAuth = async () => {
-      const result = await isAuth()
-      setAuthenticated(result)
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession()
+
+      if (error) {
+        console.error('Error fetching session:', error.message)
+        setAuthenticated(false)
+        setScansRemaining(null)
+        return
+      }
+
+      setAuthenticated(Boolean(session))
+
+      if (!session?.user?.id) {
+        setScansRemaining(null)
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/subscription/status?userId=${session.user.id}`)
+        const json = await response.json()
+        const remaining = Number(json?.data?.scansRemainingThisWeek || 0)
+        setScansRemaining(response.ok ? remaining : 0)
+      } catch (scanError) {
+        console.error('Error fetching scan balance:', scanError)
+        setScansRemaining(null)
+      }
     }
     checkAuth()
   }, [])
@@ -30,11 +56,17 @@ const Navbar = ({ isHome = false }) => {
       return;
     }
     setAuthenticated(false);
+    setScansRemaining(null);
     toast.info('You have been logged out');
     setTimeout(() => {
       router.push('/');
     }, 2000)
   }
+
+  const scansRemainingLabel =
+    scansRemaining === null
+      ? ""
+      : `${scansRemaining} scan${scansRemaining === 1 ? "" : "s"} left`;
   
   return (
     <nav className={`fixed z-10 top-6 inset-x-4 h-14 xs:h-16 backdrop-blur-sm max-w-screen-xl mx-auto rounded-full ${isHome ? 'bg-background/50 border border-slate-200 shadow-sm' : ''}`}>
@@ -66,6 +98,11 @@ const Navbar = ({ isHome = false }) => {
           )}
           {authenticated ? 
           <>
+            {scansRemainingLabel ? (
+              <span className="hidden sm:inline-flex whitespace-nowrap rounded-md border border-slate-200 bg-white/70 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                {scansRemainingLabel}
+              </span>
+            ) : null}
             <Button variant='link' onClick={() => router.push('/scan')} className="hidden sm:inline-flex transition-transform duration-200 ease-out hover:scale-105">
               Dashboard
             </Button>
