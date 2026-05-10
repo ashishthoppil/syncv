@@ -6,13 +6,14 @@ import {
   BriefcaseBusiness,
   Settings2,
   UserRound,
+  SettingsIcon,
 } from "lucide-react";
 
 export const DASHBOARD_SECTIONS = [
   { id: "scan", label: "Scan", icon: ScanLine },
   { id: "profile", label: "Profile", icon: UserRound },
   { id: "job-tracker", label: "Job Tracker", icon: BriefcaseBusiness },
-  { id: "settings", label: "Settings", icon: Settings2 },
+  { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export const DashboardSidebar = ({
@@ -35,7 +36,7 @@ export const DashboardSidebar = ({
             type="button"
             onClick={() => onSelect(section.id)}
             className={cn(
-              "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-colors",
+              "flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-colors",
               isActive
                 ? "bg-slate-900 text-white shadow-lg"
                 : "text-slate-600 hover:bg-slate-100"

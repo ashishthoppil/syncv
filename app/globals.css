@@ -75,8 +75,21 @@
 
 /* Toastify: ensure all elements render in black while keeping default light background */
 .Toastify__toast {
+  align-items: center;
   color: #dedede;
   font-size: 14px;
+}
+
+.Toastify__toast.syncv-toast--multiline {
+  align-items: flex-start;
+}
+
+.Toastify__toast-icon {
+  margin-top: 0;
+}
+
+.Toastify__toast.syncv-toast--multiline .Toastify__toast-icon {
+  margin-top: 1px;
 }
 
 

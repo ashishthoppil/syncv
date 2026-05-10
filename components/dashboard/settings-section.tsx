@@ -1,6 +1,11 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
@@ -8,6 +13,17 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import swal from "sweetalert";
+import {
+  AlertOctagonIcon,
+  CircleCheck,
+  CircleHelp,
+  CircleX,
+  MessageSquareWarning,
+  PlusCircleIcon,
+  SaveIcon,
+  Settings,
+  Trash2Icon,
+} from "lucide-react";
 
 type SubscriptionView = {
   hasActivePlan: boolean;
@@ -27,6 +43,11 @@ type SubscriptionRecord = {
   planId?: string | null;
   planName?: string | null;
   subscriptionId?: string | null;
+};
+
+type PlanFeature = {
+  title: string;
+  tooltip?: string;
 };
 
 const initialSubscription: SubscriptionView = {
@@ -89,6 +110,9 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   ];
 
   const dateFormats = ["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD", "DD Mon YYYY"];
+  const isUnavailableFeature = (feature: PlanFeature) =>
+    feature.title === "No job tracker" || feature.title === "No cover letter generation";
+
   const mapSubscriptionView = (record: SubscriptionRecord | null): SubscriptionView => {
     if (!record) return initialSubscription;
 
@@ -396,20 +420,22 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
 
   return (
     <section className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-semibold text-slate-900">Settings</h1>
-        <p className="text-sm text-slate-500">
+      <div className="flex flex-col gap-2">
+        <h1 className="flex gap-1 items-center text-3xl font-semibold text-slate-900">
+          <Settings />  Settings
+        </h1>
+        <p className="text-sm text-slate-500 font-medium">
           Control your preferences and privacy options.
         </p>
       </div>
 
-      <div className="space-y-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="space-y-6 rounded-lg shadow-xl bg-white p-6 shadow-sm">
         <div className="space-y-2">
           <label className="text-sm font-medium text-slate-600">
             Resume language
           </label>
           <select
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
             value={resumeLanguage}
             onChange={(e) => setResumeLanguage(e.target.value)}
             disabled={loading}
@@ -427,7 +453,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
             Date format
           </label>
           <select
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
             value={dateFormat}
             onChange={(e) => setDateFormat(e.target.value)}
             disabled={loading}
@@ -441,34 +467,38 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
         </div>
 
         <Button
-          className="rounded-full"
+          className="rounded-lg"
           onClick={handleSaveSettings}
           disabled={savingSettings}
         >
+          <SaveIcon />
           {savingSettings ? "Saving..." : "Save settings"}
         </Button>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Data controls</h2>
-        <p className="mt-2 text-sm text-slate-500">
-          Remove your saved scan history from the job tracker.
-        </p>
+      <div className="flex items-center justify-between rounded-lg shadow-xl bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold text-slate-900">Data controls</h2>
+          <p className="mt-2 text-sm text-slate-500">
+            Remove your saved scan history from the job tracker.
+          </p>
+        </div>
         <Button
           variant="outline"
-          className="mt-4 rounded-full"
+          className="mt-4 rounded-md"
           onClick={handleClearHistory}
           disabled={clearingHistory}
         >
+          <Trash2Icon />
           {clearingHistory ? "Deleting..." : "Delete all scan history"}
         </Button>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div id="dashboard-pricing" className="rounded-lg shadow-xl bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Plans</h2>
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <p className="mt-2 text-sm text-slate-500">
-            Current plan:{" "}
+            <span className="font-medium">Current plan:</span>{" "}
             <span className="font-medium text-slate-900">
               {subscriptionLoading
                 ? "Loading..."
@@ -497,7 +527,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           {SUBSCRIPTION_PLANS.map((plan) => {
             const isCurrent = subscription.planKey === plan.key && subscription.hasActivePlan;
-            let cta = `Choose ${plan.name}`;
+            let cta = `Choose ${plan.name} Plan`;
             if (isCurrent) {
               cta = "Current plan";
             } else if (subscription.planKey === "speed" && plan.key === "pro") {
@@ -510,20 +540,45 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
               <div
                 key={plan.key}
                 className={cn(
-                  "rounded-2xl border border-slate-200 p-4",
+                  "rounded-lg border border-slate-200 p-4",
                   isCurrent && "border-slate-900 bg-slate-50"
                 )}
               >
                 <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
                 <p className="mt-1 text-sm text-slate-500">{plan.description}</p>
                 <p className="mt-2 text-2xl font-bold text-slate-900">₹{plan.priceInr}</p>
-                <p className="text-xs text-slate-500">per month</p>
+                <p className="text-xs text-slate-500 font-medium">per month</p>
+                <ul className="mt-4 space-y-2 text-sm text-slate-700">
+                  {plan.features.map((feature: PlanFeature) => {
+                    const isUnavailable = isUnavailableFeature(feature);
+
+                    return (
+                      <li key={feature.title} className="flex items-start gap-2">
+                        {isUnavailable ? (
+                          <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                        ) : (
+                          <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                        )}
+                        <span className="leading-5">{feature.title}</span>
+                        {feature.tooltip ? (
+                          <Tooltip>
+                            <TooltipTrigger className="mt-0.5 cursor-help">
+                              <CircleHelp className="h-4 w-4 text-gray-500" />
+                            </TooltipTrigger>
+                            <TooltipContent>{feature.tooltip}</TooltipContent>
+                          </Tooltip>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
                 <Button
-                  className="mt-4 w-full rounded-full"
+                  className="mt-4 w-full rounded-md"
                   variant={isCurrent ? "outline" : "default"}
                   disabled={isCurrent || planActionLoading === plan.key}
                   onClick={() => handleSelectPlan(plan.key)}
                 >
+                  <PlusCircleIcon />
                   {planActionLoading === plan.key ? "Processing..." : cta}
                 </Button>
               </div>
@@ -532,18 +587,21 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
         </div>
       </div>
 
-      <div className="rounded-3xl border border-red-100 bg-red-50 p-6">
-        <h2 className="text-lg font-semibold text-red-900">Danger zone</h2>
-        <p className="mt-2 text-sm text-red-700">
-          Delete your account and all associated data. This action cannot be
-          undone.
-        </p>
+      <div className="flex items-center justify-between rounded-lg shadow-xl bg-red-50 p-6">
+        <div className="flex flex-col gap-2">
+          <h2 className="flex gap-1 items-center text-lg font-semibold text-red-900"><AlertOctagonIcon /> Danger zone</h2>
+          <p className="mt-2 text-sm text-red-700 font-medium">
+            Delete your account and all associated data. This action cannot be
+            undone.
+          </p>
+        </div>
         <Button
           variant="destructive"
-          className="mt-4 rounded-full"
+          className="mt-4 rounded-md"
           onClick={handleDeleteAccount}
           disabled={deletingAccount}
         >
+          <Trash2Icon />
           {deletingAccount ? "Deleting..." : "Delete account"}
         </Button>
       </div>

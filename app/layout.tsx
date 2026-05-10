@@ -1,8 +1,8 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ToastProvider } from "@/components/toast-provider";
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
-import { ToastContainer } from 'react-toastify';
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -96,7 +96,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${geistSans.className} antialiased`}>
         <TooltipProvider>{children}</TooltipProvider>
-        <ToastContainer hideProgressBar theme="dark" />
+        <ToastProvider />
       </body>
     </html>
   );

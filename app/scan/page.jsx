@@ -136,6 +136,18 @@ const DashboardPageContent = () => {
     }
   }, [searchParams, subscription.allowsJobTracker, router]);
 
+  useEffect(() => {
+    const scrollTarget = searchParams?.get("scrollTo");
+    if (!scrollTarget || activeSection !== "settings") return;
+
+    window.requestAnimationFrame(() => {
+      document.getElementById(scrollTarget)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }, [activeSection, searchParams]);
+
   const handleSectionChange = (sectionId) => {
     if (sectionId === "job-tracker" && !subscription.allowsJobTracker) {
       setActiveSection("settings");

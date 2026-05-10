@@ -5,9 +5,9 @@ import {
   NavigationMenuList,
 } from "@/components/ui/navigation-menu";
 import Link from "next/link";
-import type React from "react";
+import type { ComponentPropsWithoutRef } from "react";
 
-type NavMenuProps = React.ComponentPropsWithoutRef<typeof NavigationMenu> & {
+type NavMenuProps = ComponentPropsWithoutRef<typeof NavigationMenu> & {
   isHome?: boolean;
   onLinkClick?: () => void;
 };
@@ -26,27 +26,57 @@ export const NavMenu = ({
           <>
             <NavigationMenuItem className={itemClassName}>
               <NavigationMenuLink asChild>
-                <Link className="text-sm font-medium " href="#features" onClick={onLinkClick}>Features</Link>
+                <Link
+                  className="text-sm font-medium "
+                  href="#features"
+                  onClick={onLinkClick}
+                >
+                  Features
+                </Link>
               </NavigationMenuLink>
             </NavigationMenuItem>
             <NavigationMenuItem className={itemClassName}>
               <NavigationMenuLink asChild>
-                <Link className="text-sm font-medium" href="#pricing" onClick={onLinkClick}>Pricing</Link>
+                <Link
+                  className="text-sm font-medium"
+                  href="#pricing"
+                  onClick={onLinkClick}
+                >
+                  Pricing
+                </Link>
               </NavigationMenuLink>
             </NavigationMenuItem>
             <NavigationMenuItem className={itemClassName}>
               <NavigationMenuLink asChild>
-                <Link className="text-sm font-medium " href="#faq" onClick={onLinkClick}>FAQ</Link>
+                <Link
+                  className="text-sm font-medium "
+                  href="#faq"
+                  onClick={onLinkClick}
+                >
+                  FAQ
+                </Link>
               </NavigationMenuLink>
             </NavigationMenuItem>
             <NavigationMenuItem className={itemClassName}>
               <NavigationMenuLink asChild>
-                <Link className="text-sm font-medium " href="/scan" onClick={onLinkClick}>Scan</Link>
+                <Link
+                  className="text-sm font-medium "
+                  href="/scan"
+                  onClick={onLinkClick}
+                >
+                  Scan
+                </Link>
               </NavigationMenuLink>
             </NavigationMenuItem>
             <NavigationMenuItem className={itemClassName}>
               <NavigationMenuLink asChild>
-                <Link className="text-sm font-medium " href="#testimonials" onClick={onLinkClick}>Testimonials</Link>
+                <Link
+                  className="text-sm font-medium "
+                  href="#testimonials"
+                  onClick={onLinkClick}
+                >
+                  Testimonials
+                </Link>
               </NavigationMenuLink>
             </NavigationMenuItem>
           </>

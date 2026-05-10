@@ -24,6 +24,7 @@ import {
   ResumeTemplateThemeOverrides,
 } from "@/components/resume-templates/types";
 import {
+  AlertCircleIcon,
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
@@ -31,8 +32,12 @@ import {
   Download,
   FileText,
   Loader2,
+  PartyPopperIcon,
   RefreshCcw,
+  ScanBarcode,
+  ScanLine,
   UploadCloud,
+  UserPlus,
   WandSparkles,
   X,
 } from "lucide-react";
@@ -697,6 +702,15 @@ export const ScanSection = ({
       return;
     }
 
+    if (guestTrial && guestTrialStage === "optimized") {
+      redirectGuestToSignUp();
+      return;
+    }
+
+    if (guestTrial) {
+      setGuestSummaryOpen(false);
+    }
+
     if (!careerChangeApproved) {
       const fit = assessRoleFit(form.resume, form.designation);
       if (fit.shouldWarn) {
@@ -724,15 +738,6 @@ export const ScanSection = ({
     const keywordsForTailoring = careerChangeApproved
       ? selectedCareerKeywords || []
       : result.missingKeywords;
-
-    if (guestTrial && guestTrialStage === "optimized") {
-      redirectGuestToSignUp();
-      return;
-    }
-
-    if (guestTrial) {
-      setGuestSummaryOpen(false);
-    }
 
     setOptimizationStepIndex(0);
     setIsGeneratingDocs(true);
@@ -1026,25 +1031,36 @@ export const ScanSection = ({
     return (
       <section className="space-y-8">
         {!hideTopHeading ? (
-          <div>
-            <h1 className="text-3xl font-semibold text-slate-900">Scan</h1>
-            <p className="text-sm text-slate-500">
+          <div className="flex flex-col gap-2">
+            <h1 className="flex gap-1 items-center text-3xl font-semibold text-slate-900"><ScanLine /> Scan</h1>
+            <p className="text-sm text-slate-500 font-medium">
               Analyze your resume against a target role and improve ATS performance.
             </p>
           </div>
         ) : null}
-        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-amber-900">Subscription Required</h2>
-          <p className="mt-2 text-sm text-amber-800">
-            Please subscribe to a plan to optimize your resume.
-          </p>
+        <div className="flex justify-between items-center rounded-lg shadow-xl bg-amber-50 p-6 shadow-sm">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <AlertCircleIcon className="text-amber-700 h-5 w-5" />
+              <h2 className="text-xl font-semibold text-amber-700">Subscription Required</h2>
+            </div>
+            <p className="mt-2 text-sm font-normal text-amber-700">
+              Please subscribe to a plan to optimize your resume.
+            </p>
+          </div>
+          <Button onClick={() => {
+            router.push("/scan?section=settings&scrollTo=dashboard-pricing")
+          }} className="flex gap-2 bg-amber-700 hover:bg-amber-600 text-white hover:text-white rounded-lg" variant="outline">
+            <UserPlus />
+            <p>Subscribe</p>
+          </Button>
         </div>
       </section>
     );
   }
 
   const summaryPanel = (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="rounded-3xl bg-white p-3 shadow-sm">
       <h2 className="text-lg font-semibold text-slate-900">Scan summary</h2>
       <p className="text-sm text-slate-500">
         We compare your resume against every keyword found in the JD.
@@ -1420,7 +1436,7 @@ export const ScanSection = ({
       )}
 
       {showCareerWarning && fitInsight && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-500" />
@@ -1464,7 +1480,7 @@ export const ScanSection = ({
       )}
 
       {showCareerKeywordPicker && result && (
-        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/60 p-4">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 p-4">
           <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
