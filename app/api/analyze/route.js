@@ -98,6 +98,58 @@ const DOMAIN_SINGLE_WORD_ALLOWLIST = new Set([
   "gcp",
   "sql",
   "html",
+  "go",
+  "r",
+  "c",
+  "ci",
+  "cd",
+  "ml",
+  "ai",
+  "nlp",
+  "llm",
+  "git",
+  "npm",
+  "jvm",
+  "php",
+  "rb",
+  "rust",
+  "k8s",
+  "sre",
+  "seo",
+  "sem",
+  "crm",
+  "erp",
+  "etl",
+  "saas",
+  "paas",
+  "iaas",
+  "ios",
+  "tdd",
+  "bdd",
+  "oop",
+  "sso",
+  "jwt",
+  "oauth",
+  "rest",
+  "grpc",
+  "soap",
+  "dns",
+  "tcp",
+  "ssl",
+  "tls",
+  "vpc",
+  "ecs",
+  "eks",
+  "iam",
+  "sns",
+  "sqs",
+  "rds",
+  "s3",
+  "ec2",
+  "qa",
+  "bi",
+  "pm",
+  "po",
 ]);
 
 const GENERIC_NOISE_WORDS = new Set([
@@ -139,24 +191,85 @@ const JD_SECTION_NOISE_HEADERS = [
 ];
 
 const SEMANTIC_EQUIVALENTS = {
-  frontend: ["front-end", "ui", "client-side", "web-ui"],
-  backend: ["back-end", "server-side", "api"],
-  javascript: ["js", "ecmascript"],
+  frontend: ["front-end", "front end", "ui", "client-side", "client side", "web-ui"],
+  backend: ["back-end", "back end", "server-side", "server side", "api", "apis"],
+  fullstack: ["full-stack", "full stack", "fullstack development"],
+  javascript: ["js", "ecmascript", "es6", "es2015"],
   typescript: ["ts"],
-  react: ["reactjs", "react.js"],
+  react: ["reactjs", "react.js", "react native"],
   nextjs: ["next", "next.js"],
   nodejs: ["node", "node.js"],
-  postgres: ["postgresql"],
+  expressjs: ["express", "express.js"],
+  vue: ["vuejs", "vue.js"],
+  angular: ["angularjs", "angular.js"],
+  postgres: ["postgresql", "postgre sql"],
   mongodb: ["mongo", "mongo db"],
-  aws: ["amazon web services"],
+  mysql: ["my sql"],
+  redis: ["redis cache"],
+  elasticsearch: ["elastic search", "elastic"],
+  aws: ["amazon web services", "amazon aws"],
   gcp: ["google cloud", "google cloud platform"],
-  azure: ["microsoft azure"],
-  cicd: ["ci/cd", "continuous integration", "continuous delivery"],
-  k8s: ["kubernetes"],
-  ai: ["artificial intelligence"],
-  ml: ["machine learning"],
+  azure: ["microsoft azure", "azure cloud"],
+  cicd: ["ci/cd", "ci cd", "continuous integration", "continuous delivery", "continuous deployment"],
+  k8s: ["kubernetes", "kube"],
+  docker: ["containerization", "containers"],
+  terraform: ["iac", "infrastructure as code"],
+  ai: ["artificial intelligence", "a.i"],
+  ml: ["machine learning", "machine-learning"],
+  dl: ["deep learning", "deep-learning"],
+  nlp: ["natural language processing"],
+  cv: ["computer vision"],
   ui: ["user interface"],
   ux: ["user experience"],
+  oop: ["object-oriented programming", "object oriented programming"],
+  rest: ["restful", "rest api", "rest apis"],
+  graphql: ["graph ql"],
+  sql: ["structured query language"],
+  nosql: ["no-sql", "no sql"],
+  agile: ["scrum", "kanban", "agile methodology"],
+  tdd: ["test-driven development", "test driven development"],
+  bdd: ["behavior-driven development", "behavior driven development"],
+  sre: ["site reliability engineering", "site-reliability engineering"],
+  devops: ["dev ops", "dev-ops"],
+  saas: ["software as a service"],
+  paas: ["platform as a service"],
+  iaas: ["infrastructure as a service"],
+  etl: ["extract transform load"],
+  bi: ["business intelligence"],
+  crm: ["customer relationship management"],
+  erp: ["enterprise resource planning"],
+  seo: ["search engine optimization"],
+  sem: ["search engine marketing"],
+  sso: ["single sign-on", "single sign on"],
+  oauth: ["o-auth", "o auth"],
+  jwt: ["json web token", "json web tokens"],
+  tcp: ["tcp/ip", "transmission control protocol"],
+  ssl: ["tls", "ssl/tls"],
+  dns: ["domain name system"],
+  http: ["https", "http/2", "http2"],
+  jenkins: ["jenkins ci"],
+  github: ["github actions", "git hub"],
+  gitlab: ["gitlab ci"],
+  jira: ["atlassian jira"],
+  python: ["py"],
+  golang: ["go lang", "go"],
+  csharp: ["c#", "c-sharp", ".net"],
+  dotnet: [".net", "dot net"],
+  cplusplus: ["c++", "cpp"],
+  ruby: ["ruby on rails", "ror"],
+  rails: ["ruby on rails"],
+  swift: ["swiftui"],
+  kotlin: ["kotlin android"],
+  flutter: ["dart"],
+  pandas: ["pd"],
+  numpy: ["np"],
+  sklearn: ["scikit-learn", "scikit learn"],
+  pytorch: ["torch"],
+  tensorflow: ["tf", "tensor flow"],
+  hadoop: ["apache hadoop"],
+  spark: ["apache spark", "pyspark"],
+  kafka: ["apache kafka"],
+  airflow: ["apache airflow"],
 };
 
 const CURATED_FALLBACK_TERMS = [
@@ -288,7 +401,20 @@ const isGenericNoise = (keyword = "") => {
   if (!words.length) return true;
   if (words.length === 1 && GENERIC_NOISE_WORDS.has(words[0])) return true;
   if (words.every((w) => STOP_WORDS.has(w) || GENERIC_NOISE_WORDS.has(w))) return true;
-  if (words.length === 1 && words[0].length < 4 && !DOMAIN_SINGLE_WORD_ALLOWLIST.has(words[0])) return true;
+  if (
+    words.length === 1 &&
+    words[0].length < 2 &&
+    !DOMAIN_SINGLE_WORD_ALLOWLIST.has(words[0])
+  )
+    return true;
+  if (
+    words.length === 1 &&
+    words[0].length < 4 &&
+    !DOMAIN_SINGLE_WORD_ALLOWLIST.has(words[0]) &&
+    !/^[a-z]\+\+?$/i.test(words[0]) &&
+    !/^[a-z]#$/i.test(words[0])
+  )
+    return true;
 
   return false;
 };
@@ -404,11 +530,14 @@ const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designat
   const prompt = [
     "Extract meaningful resume-match keywords from this job description.",
     "Rules:",
-    "1) Include only skills, tools, frameworks, methods, engineering concepts, and qualifications that can be matched in resumes.",
+    "1) Include only skills, tools, frameworks, methods, engineering concepts, qualifications, and domain expertise that can be matched in resumes.",
     "2) Keep compounds and phrases intact. Never emit fragments like 'end', 'ies', 'best', or section words.",
     "3) Exclude organization names, locations, boilerplate, and application process language.",
     "4) Output compact JSON only.",
-    // "5) Max 20 keywords.",
+    "5) Return up to 40 distinct keywords, prioritized by impact on candidate fit.",
+    "6) Use weight 8-10 for must-have hard skills, 5-7 for important supporting skills, 1-4 for nice-to-have.",
+    "7) Set importance='required' for keywords explicitly listed as required/must-have/minimum; 'preferred' otherwise.",
+    "8) Provide common variants (spelling, abbreviations, plural/singular) in 'variants' to maximize resume matching.",
     `Organization context: ${organization || ""}`,
     `Designation context: ${designation || ""}`,
     "JSON schema:",
@@ -486,7 +615,7 @@ const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designat
       ...entry,
       variants: entry.variants.filter((variant) => isMeaningfulKeyword(variant, exclusionTokenSet)),
     }))
-    .slice(0, 30);
+    .slice(0, 50);
 
   return {
     keywords: dedupeKeywords(cleaned),
@@ -563,21 +692,88 @@ const findBestMatchForTerm = (term, resumeIndex) => {
 };
 
 const TITLE_SYNONYMS = {
-  software: ["developer", "programmer", "engineering"],
-  engineer: ["developer", "engineering"],
-  developer: ["engineer", "programmer"],
-  frontend: ["front-end", "ui", "client-side", "web"],
-  backend: ["back-end", "server-side", "api"],
-  fullstack: ["full-stack", "full", "stack"],
-  manager: ["lead", "head"],
-  product: ["pm"],
+  software: ["developer", "programmer", "engineering", "sde"],
+  engineer: ["developer", "engineering", "engr"],
+  developer: ["engineer", "programmer", "dev"],
+  frontend: ["front-end", "ui", "client-side", "web", "fe"],
+  backend: ["back-end", "server-side", "api", "be"],
+  fullstack: ["full-stack", "full", "stack", "fs"],
+  manager: ["lead", "head", "mgr"],
+  product: ["pm", "po", "owner"],
+  data: ["analytics", "bi", "ml", "ai"],
+  scientist: ["researcher", "analyst"],
+  analyst: ["analytics", "consultant"],
+  devops: ["sre", "site-reliability", "platform"],
+  cloud: ["aws", "gcp", "azure", "infrastructure"],
+  ml: ["machine-learning", "ai", "artificial-intelligence"],
+  ai: ["ml", "machine-learning"],
+  qa: ["quality-assurance", "tester", "test"],
+  security: ["cybersecurity", "infosec"],
+  ux: ["ui", "design", "experience"],
+  ui: ["ux", "design", "interface"],
+  designer: ["design", "ui", "ux"],
+  architect: ["lead", "principal"],
 };
 
-const TITLE_KEYWORDS =
-  /\b(software engineer|software developer|frontend developer|frontend engineer|backend developer|backend engineer|full[-\s]?stack developer|full[-\s]?stack engineer|product manager|project manager|qa engineer|data scientist|data analyst|devops engineer|ui\/ux designer|ux designer|ui designer)\b/gi;
+const TITLE_KEYWORDS = new RegExp(
+  "\\b(" +
+    [
+      "software\\s+engineer",
+      "software\\s+developer",
+      "software\\s+development\\s+engineer",
+      "sde",
+      "frontend\\s+(?:developer|engineer)",
+      "front[-\\s]?end\\s+(?:developer|engineer)",
+      "backend\\s+(?:developer|engineer)",
+      "back[-\\s]?end\\s+(?:developer|engineer)",
+      "full[-\\s]?stack\\s+(?:developer|engineer)",
+      "web\\s+(?:developer|engineer)",
+      "mobile\\s+(?:developer|engineer)",
+      "ios\\s+(?:developer|engineer)",
+      "android\\s+(?:developer|engineer)",
+      "product\\s+(?:manager|owner|analyst)",
+      "project\\s+(?:manager|coordinator)",
+      "program\\s+manager",
+      "delivery\\s+manager",
+      "scrum\\s+master",
+      "engineering\\s+manager",
+      "qa\\s+(?:engineer|analyst|tester|lead)",
+      "test\\s+(?:engineer|automation\\s+engineer|lead)",
+      "data\\s+(?:scientist|analyst|engineer|architect)",
+      "machine\\s+learning\\s+(?:engineer|scientist|researcher)",
+      "ml\\s+(?:engineer|scientist)",
+      "ai\\s+(?:engineer|researcher|scientist)",
+      "research\\s+(?:scientist|engineer)",
+      "devops\\s+(?:engineer|specialist)",
+      "site\\s+reliability\\s+engineer",
+      "sre",
+      "platform\\s+engineer",
+      "cloud\\s+(?:engineer|architect|consultant)",
+      "solutions?\\s+architect",
+      "systems?\\s+(?:engineer|architect|administrator|analyst)",
+      "network\\s+(?:engineer|administrator)",
+      "security\\s+(?:engineer|analyst|architect|specialist)",
+      "cyber\\s*security\\s+(?:analyst|engineer)",
+      "ui\\/?ux\\s+designer",
+      "ux\\s+(?:designer|researcher|engineer)",
+      "ui\\s+designer",
+      "product\\s+designer",
+      "graphic\\s+designer",
+      "business\\s+(?:analyst|intelligence)",
+      "financial\\s+analyst",
+      "marketing\\s+(?:manager|specialist|analyst)",
+      "operations\\s+(?:manager|analyst|specialist)",
+      "support\\s+(?:engineer|specialist|analyst)",
+      "consultant",
+      "specialist",
+      "intern",
+    ].join("|") +
+    ")\\b",
+  "gi"
+);
 
 const TITLE_LINE_HINT =
-  /\b(engineer|developer|manager|designer|analyst|architect|consultant|specialist|lead|officer)\b/i;
+  /\b(engineer|developer|programmer|manager|designer|analyst|architect|consultant|specialist|lead|officer|coordinator|administrator|scientist|researcher|director|head|associate|intern|tester|recruiter|trainer)\b/i;
 
 const TITLE_MODIFIERS = new Set([
   "senior",
@@ -593,30 +789,52 @@ const TITLE_MODIFIERS = new Set([
 
 const MONTH_MAP = {
   jan: 0,
+  january: 0,
   feb: 1,
+  february: 1,
   mar: 2,
+  march: 2,
   apr: 3,
+  april: 3,
   may: 4,
   jun: 5,
+  june: 5,
   jul: 6,
+  july: 6,
   aug: 7,
+  august: 7,
   sep: 8,
+  sept: 8,
+  september: 8,
   oct: 9,
+  october: 9,
   nov: 10,
+  november: 10,
   dec: 11,
+  december: 11,
 };
 
+const MONTH_TOKEN_PATTERN =
+  "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
+const PRESENT_TOKEN_PATTERN = "present|current|ongoing|now|to\\s+date|date|till\\s+date";
+const RANGE_SEPARATOR_PATTERN = "\\s*(?:[-–—]|to|until|through)\\s*";
+
 const SECTION_PATTERNS = {
-  summary: /^\s*summary\s*:?\s*$/im,
-  skills: /^\s*skills\s*:?\s*$/im,
-  experience: /^\s*experience\s*:?\s*$/im,
-  education: /^\s*education\s*:?\s*$/im,
-  projects: /^\s*projects?\s*:?\s*$/im,
+  summary:
+    /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about\s+me|objective|career\s+objective)\s*:?\s*$/im,
+  skills:
+    /^\s*(skills|technical\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise)\s*:?\s*$/im,
+  experience:
+    /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience)\s*:?\s*$/im,
+  education:
+    /^\s*(education|academic\s+background|academic\s+qualifications?|qualifications?|educational\s+background)\s*:?\s*$/im,
+  projects:
+    /^\s*(projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|selected\s+projects?|academic\s+projects?)\s*:?\s*$/im,
 };
 const EXPERIENCE_HEADER_PATTERN =
-  /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history)\s*:?\s*$/i;
+  /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience)\s*:?\s*$/i;
 const KNOWN_SECTION_HEADER_PATTERN =
-  /^\s*(summary|skills|experience|work\s+experience|professional\s+experience|employment\s+history|projects?|education|certifications?|languages?|language competencies)\s*:?\s*$/i;
+  /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about\s+me|objective|career\s+objective|skills|technical\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise|experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience|projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|selected\s+projects?|academic\s+projects?|education|academic\s+background|academic\s+qualifications?|qualifications?|educational\s+background|certifications?|licenses?|awards?|honors?|publications?|languages?|language\s+competencies|interests|hobbies|volunteer(?:\s+experience)?|references)\s*:?\s*$/i;
 const EDUCATION_CONTEXT_PATTERN =
   /\b(education|college|university|school|bachelor|master|phd|degree)\b/i;
 
@@ -712,8 +930,18 @@ const analyzeTitleMatch = (resumeText = "", targetRole = "") => {
   };
 };
 
-const toMonthIndex = (month = "jan") => MONTH_MAP[String(month).toLowerCase().slice(0, 3)] ?? 0;
+const toMonthIndex = (month = "jan") => {
+  const normalized = String(month || "").toLowerCase().trim();
+  if (!normalized) return 0;
+  if (normalized in MONTH_MAP) return MONTH_MAP[normalized];
+  const short = normalized.slice(0, 3);
+  return MONTH_MAP[short] ?? 0;
+};
 const toMonthNumber = (year, monthIndex) => year * 12 + monthIndex;
+const isPresentToken = (value = "") => {
+  const normalized = String(value || "").toLowerCase().trim();
+  return /^(present|current|ongoing|now|to\s+date|date|till\s+date)$/i.test(normalized);
+};
 
 const extractSectionText = (resumeText = "", sectionHeaderPattern = /^$/) => {
   const lines = String(resumeText || "").split("\n");
@@ -760,13 +988,15 @@ const parseDurationRanges = (resumeText = "") => {
     ranges.push([start, end]);
   };
 
-  const monthRangeRegex =
-    /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{4})\s*[-–]\s*(present|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+(\d{4}))\b/gi;
+  const monthRangeRegex = new RegExp(
+    `\\b(${MONTH_TOKEN_PATTERN})[\\s,]+(\\d{4})${RANGE_SEPARATOR_PATTERN}(${PRESENT_TOKEN_PATTERN}|(${MONTH_TOKEN_PATTERN})[\\s,]+(\\d{4}))\\b`,
+    "gi"
+  );
   let m;
   while ((m = monthRangeRegex.exec(experienceText)) !== null) {
     const startMonth = toMonthIndex(m[1]);
     const startYear = Number(m[2]);
-    if (String(m[3]).toLowerCase() === "present") {
+    if (isPresentToken(m[3])) {
       const now = new Date();
       pushRange(startYear, startMonth, now.getUTCFullYear(), now.getUTCMonth());
     } else {
@@ -776,15 +1006,17 @@ const parseDurationRanges = (resumeText = "") => {
     }
   }
 
-  const numericMonthRangeRegex =
-    /\b(0?[1-9]|1[0-2])[/-](19\d{2}|20\d{2})\s*[-–]\s*(present|(0?[1-9]|1[0-2])[/-](19\d{2}|20\d{2}))\b/gi;
+  const numericMonthRangeRegex = new RegExp(
+    `\\b(0?[1-9]|1[0-2])[/-](19\\d{2}|20\\d{2})${RANGE_SEPARATOR_PATTERN}(${PRESENT_TOKEN_PATTERN}|(0?[1-9]|1[0-2])[/-](19\\d{2}|20\\d{2}))\\b`,
+    "gi"
+  );
   let nm;
   while ((nm = numericMonthRangeRegex.exec(experienceText)) !== null) {
     if (!hasExperienceSection && hasEducationContextNearby(experienceText, nm.index)) continue;
 
     const startMonth = Number(nm[1]) - 1;
     const startYear = Number(nm[2]);
-    if (String(nm[3]).toLowerCase() === "present") {
+    if (isPresentToken(nm[3])) {
       const now = new Date();
       pushRange(startYear, startMonth, now.getUTCFullYear(), now.getUTCMonth());
     } else {
@@ -794,7 +1026,10 @@ const parseDurationRanges = (resumeText = "") => {
     }
   }
 
-  const yearRangeRegex = /\b(19\d{2}|20\d{2})\s*[-–]\s*(present|19\d{2}|20\d{2})\b/gi;
+  const yearRangeRegex = new RegExp(
+    `\\b(19\\d{2}|20\\d{2})${RANGE_SEPARATOR_PATTERN}(${PRESENT_TOKEN_PATTERN}|19\\d{2}|20\\d{2})\\b`,
+    "gi"
+  );
   let y;
   while ((y = yearRangeRegex.exec(experienceText)) !== null) {
     const charBeforeMatch = experienceText[Math.max(0, y.index - 1)];
@@ -802,7 +1037,7 @@ const parseDurationRanges = (resumeText = "") => {
     if (!hasExperienceSection && hasEducationContextNearby(experienceText, y.index)) continue;
 
     const startYear = Number(y[1]);
-    if (String(y[2]).toLowerCase() === "present") {
+    if (isPresentToken(y[2])) {
       const now = new Date();
       pushRange(startYear, 0, now.getUTCFullYear(), now.getUTCMonth());
     } else {
@@ -838,50 +1073,86 @@ const estimateTotalExperienceYears = (resumeText = "") => {
 const extractRequiredYearsFromJd = (jd = "") => {
   const text = String(jd || "");
   const patterns = [
-    /(\d+)\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?experience/gi,
-    /minimum\s+of\s+(\d+)\s*(?:\+)?\s*(?:years?|yrs?)/gi,
-    /at\s+least\s+(\d+)\s*(?:\+)?\s*(?:years?|yrs?)/gi,
+    /(\d+)\s*\+?\s*(?:years?|yrs?)\s+(?:of\s+)?(?:professional\s+|relevant\s+|industry\s+|hands[-\s]?on\s+)?experience/gi,
+    /(?:minimum|min\.?|at\s+least|over)\s+(?:of\s+)?(\d+)\s*(?:\+)?\s*(?:years?|yrs?)/gi,
+    /(\d+)\s*(?:[-–—]|to|through)\s*\d+\s*(?:\+)?\s*(?:years?|yrs?)/gi,
+    /experience\s*:\s*(\d+)\s*\+?\s*(?:years?|yrs?)/gi,
   ];
   const matches = [];
   patterns.forEach((regex) => {
     let m;
     while ((m = regex.exec(text)) !== null) {
-      matches.push(Number(m[1]));
+      const n = Number(m[1]);
+      if (!Number.isNaN(n) && n >= 0 && n <= 40) matches.push(n);
     }
   });
   if (!matches.length) return null;
-  return Math.max(...matches.filter((n) => !Number.isNaN(n)));
+  // Use the smallest required threshold (most JDs phrase it as "minimum X years")
+  return Math.min(...matches);
 };
 
 const analyzeExperience = (resumeText = "", jdText = "") => {
   const totalYears = estimateTotalExperienceYears(resumeText);
   const requiredYears = extractRequiredYearsFromJd(jdText);
   if (!requiredYears) {
+    // Smooth proportional curve when JD doesn't specify; reaches 90 at 6 years.
+    if (totalYears <= 0) {
+      return { score: 40, totalYears, requiredYears: null };
+    }
+    const curved = Math.min(95, 40 + Math.sqrt(totalYears) * 22);
     return {
-      score: totalYears > 0 ? 75 : 45,
+      score: clampScore(curved),
       totalYears,
       requiredYears: null,
     };
   }
-  const ratio = requiredYears === 0 ? 1 : totalYears / requiredYears;
+  if (requiredYears === 0) {
+    return { score: 100, totalYears, requiredYears };
+  }
+  const ratio = totalYears / requiredYears;
+  // Reward meeting threshold; cap overshooting at 100; penalize partial coverage gradually.
+  const score = ratio >= 1 ? 100 : Math.max(25, Math.round(ratio * 90 + 10));
   return {
-    score: clampScore(ratio * 100),
+    score: clampScore(score),
     totalYears,
     requiredYears,
   };
 };
 
+const ACTION_VERB_PATTERN =
+  /\b(led|managed|built|developed|designed|implemented|created|launched|delivered|architected|optimized|improved|reduced|increased|grew|drove|achieved|automated|streamlined|migrated|deployed|owned|spearheaded|mentored|coordinated|negotiated|saved|generated|boosted|accelerated|cut|scaled|engineered|established|introduced|refactored|integrated|orchestrated|maintained|resolved|prevented|expanded|standardized|simplified|enabled|trained|launched|championed)\b/i;
+
+const METRIC_PATTERN =
+  /(\d+(?:\.\d+)?\s*%|\$\s?\d+(?:\.\d+)?\s*[kmb]?|\b\d+(?:,\d{3})+\b|\b\d+(?:\.\d+)?\s*(x|times|hours|hrs|days|weeks|months|years|users|customers|clients|tickets|requests|transactions|deployments|releases|projects|teams|members|servers|nodes|pods|qps|rps|tps|ms|sec|seconds|minutes|gb|tb|mb)\b)/i;
+
 const analyzeAchievements = (resumeText = "") => {
-  const metricRegex =
-    /(\d+(?:\.\d+)?\s*%|\$\s?\d+(?:\.\d+)?\s*[kmb]?|\b\d+(?:\.\d+)?\s*(x|times|hours|hrs|days|months|years|users|customers|clients|tickets|requests|transactions|ms|sec|seconds)\b)/i;
   const lines = String(resumeText || "")
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  const bullets = lines.filter((line) => /^[-*•]\s+/.test(line));
-  const candidateLines = bullets.length ? bullets : lines;
-  const measurableBullets = candidateLines.filter((line) => metricRegex.test(line)).length;
-  const score = measurableBullets === 0 ? 25 : clampScore(35 + measurableBullets * 13);
+  const bullets = lines.filter((line) => /^[-*•◦▪▸‣]\s+/.test(line));
+  const candidateLines = bullets.length ? bullets : lines.filter((line) => line.length > 25);
+
+  if (!candidateLines.length) {
+    return {
+      score: 20,
+      measurableBullets: 0,
+      totalBulletLikeLines: 0,
+    };
+  }
+
+  const measurableBullets = candidateLines.filter((line) => METRIC_PATTERN.test(line)).length;
+  const actionVerbBullets = candidateLines.filter((line) => ACTION_VERB_PATTERN.test(line)).length;
+
+  const measurableRatio = measurableBullets / candidateLines.length;
+  const actionRatio = actionVerbBullets / candidateLines.length;
+
+  // Reward measurable outcomes (60% weight) and action verbs (40% weight)
+  // Anchor: 60% measurable + 80% action verbs ≈ 100 score
+  const base = measurableRatio * 60 + actionRatio * 40;
+  const volumeBonus = Math.min(15, measurableBullets * 2);
+  const score = clampScore(base + volumeBonus);
+
   return {
     score,
     measurableBullets,
@@ -928,7 +1199,7 @@ const isSkillLikeKeyword = (keywordObj = {}) => {
   if (words.some((w) => Object.prototype.hasOwnProperty.call(SEMANTIC_EQUIVALENTS, canonical(w)))) {
     return true;
   }
-  return /\b(api|cloud|database|framework|language|testing|automation|frontend|backend|devops|engineering|development)\b/i.test(
+  return /\b(api|cloud|database|framework|library|language|testing|automation|frontend|backend|fullstack|devops|engineering|development|architecture|infrastructure|pipeline|deployment|container|orchestration|microservices|monitoring|observability|analytics|visualization|modeling|design|workflow|integration|messaging|queue|cache|storage|kubernetes|docker|terraform|ansible|jenkins|sql|nosql|warehouse|etl|data|machine\s*learning|deep\s*learning|nlp|computer\s*vision|tensorflow|pytorch|sklearn|pandas|numpy|spark|hadoop|kafka|graphql|rest|grpc|websocket|oauth|jwt|saml|encryption|security|compliance|agile|scrum|kanban|ci\/cd|tdd|bdd)\b/i.test(
     keyword
   );
 };

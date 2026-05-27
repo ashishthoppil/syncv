@@ -920,6 +920,7 @@ export const ScanSection = ({
           organization: form.organization,
           designation: form.designation,
           userId: await getSessionUserId(),
+          skipUsageTracking: true,
         }),
       });
       const data = await response.json();
@@ -1089,7 +1090,7 @@ export const ScanSection = ({
   }
 
   const summaryPanel = (
-    <div style={{ height: '37rem' }} className="rounded-lg shadow-xl bg-white p-3 overflow-y-scroll">
+    <div style={{ height: '34rem' }} className="rounded-lg shadow-xl bg-white p-3 overflow-y-scroll">
       <div className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-slate-900">Scan summary</h2>
         <p className="text-sm text-slate-500 font-medium">
@@ -1342,7 +1343,7 @@ export const ScanSection = ({
               </label>
               <textarea
                 className={cn(
-                  true ? "min-h-[180px]" : "min-h-[140px]",
+                  true ? "min-h-[140px]" : "min-h-[140px]",
                   "w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
                   formErrors.jd &&
                     "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
@@ -1362,7 +1363,7 @@ export const ScanSection = ({
               </label>
               <textarea
                 className={cn(
-                  "min-h-[180px] w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
+                  "min-h-[140px] w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
                   formErrors.resume &&
                     "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
                 )}

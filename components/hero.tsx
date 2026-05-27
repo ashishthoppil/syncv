@@ -18,8 +18,8 @@ const Hero = () => {
             Turn Your Resume Into an Interview-Winning Machine
           </h1>
           <p className="text-center mt-6 max-w-[70ch] text-base text-slate-700 sm:text-lg">
-            Build targeted resumes and cover letters quickly, apply faster, and win more
-            interview calls.
+            AI resume optimizer and ATS score checker. Build tailored resumes and cover
+            letters in seconds, beat applicant tracking systems, and win more interview calls.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button size="lg" className="w-full  md:w-auto  rounded-full text-base" asChild>

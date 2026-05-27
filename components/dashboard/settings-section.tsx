@@ -23,6 +23,7 @@ import {
   SaveIcon,
   Settings,
   Trash2Icon,
+  UserMinus,
 } from "lucide-react";
 
 type SubscriptionView = {
@@ -435,10 +436,10 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
             Resume language
           </label>
           <select
-            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+            className="bg-slate-200 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
             value={resumeLanguage}
             onChange={(e) => setResumeLanguage(e.target.value)}
-            disabled={loading}
+            disabled={true}
           >
             {languageOptions.map((lang) => (
               <option key={lang} value={lang}>
@@ -515,10 +516,11 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
           {subscription.hasActivePlan ? (
             <Button
               variant="outline"
-              className="rounded-full"
+              className="rounded-md"
               onClick={handleUnsubscribe}
               disabled={unsubscribing}
             >
+              <UserMinus />
               {unsubscribing ? "Unsubscribing..." : "Unsubscribe"}
             </Button>
           ) : null}

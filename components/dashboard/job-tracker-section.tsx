@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { FormEvent, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { supabase } from "@/lib/supabaseClient";
-import { Download, Loader2, Trash2 } from "lucide-react";
+import { Download, List, Loader2, SaveIcon, Trash2 } from "lucide-react";
 import swal from "sweetalert";
 
 type Job = {
@@ -367,16 +367,16 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
 
   return (
     <section className="space-y-8 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-semibold text-slate-900">Job Tracker</h1>
+      <div className="flex flex-col gap-2">
+        <h1 className="flex items-center gap-1 text-3xl font-semibold text-slate-900"><List /> Job Tracker</h1>
         <p className="text-sm text-slate-500">
           Keep tabs on every opportunity you are pursuing.
         </p>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-lg shadow-xl bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">Add a role</h2>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-500 font-medium">
           Manually add jobs or they will be saved automatically when you run a scan.
         </p>
 
@@ -403,7 +403,7 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
             onChange={(event) =>
               setNewJob((prev) => ({ ...prev, status: event.target.value }))
             }
-            className="h-9 w-full rounded-full border border-input bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {STATUS_OPTIONS.map((status) => (
               <option key={status} value={status}>
@@ -412,14 +412,14 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
             ))}
           </select>
           <div className="md:col-span-3">
-            <Button type="submit" className="w-full rounded-full md:w-auto">
-              Save Job
+            <Button type="submit" className="w-full rounded-md md:w-auto">
+              <SaveIcon />Save Job
             </Button>
           </div>
         </form>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-0 shadow-sm">
+      <div className="rounded-lg shadow-xl bg-white p-0 shadow-sm">
         <div className="grid grid-cols-[2fr,1.5fr,1.5fr,0.8fr,1fr,0.5fr] items-center border-b px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 max-sm:hidden">
           <span>Organization</span>
           <span>Role</span>
@@ -450,12 +450,12 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                   </p>
                 </div>
                 <p className="flex items-center text-sm text-slate-600">{job.designation}</p>
-                <div className="flex flex-wrap gap-2 sm:items-center">
+                <div className="flex flex-wrap sm:items-center">
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={downloading === `${job.id}-resume`}
-                    className="gap-0"
+                    className="gap-0 rounded-md rounded-r-none"
                     onClick={() => downloadGeneratedDocument(job, "resume")}
                   >
                     {downloading === `${job.id}-resume` ? (
@@ -463,13 +463,13 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                     ) : (
                       <Download className="mr-1 h-4 w-4" />
                     )}
-                    CV
+                    Resume
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     disabled={downloading === `${job.id}-cover`}
-                    className="gap-0"
+                    className="gap-0 rounded-md rounded-l-none border-l-0"
                     onClick={() => downloadGeneratedDocument(job, "cover")}
                   >
                     {downloading === `${job.id}-cover` ? (
@@ -477,7 +477,7 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                     ) : (
                       <Download className="mr-1 h-4 w-4" />
                     )}
-                    Letter
+                    Cover
                   </Button>
                 </div>
                 <div className="flex items-center justify-start">
@@ -496,7 +496,7 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                       updateStatus(job.id, event.target.value)
                     }
                     disabled={updating === job.id}
-                    className="h-9 rounded-full border border-input bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                    className="h-9 rounded-md border border-input bg-white px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                   >
                     {STATUS_OPTIONS.map((status) => (
                       <option key={status} value={status}>

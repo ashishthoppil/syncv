@@ -284,7 +284,6 @@ const formatTodayDate = () =>
     day: "2-digit",
     month: "long",
     year: "numeric",
-    timeZone: "Asia/Kolkata",
   });
 
 const enforceCoverLetterStructure = ({
@@ -299,10 +298,14 @@ const enforceCoverLetterStructure = ({
     body ||
     "I am writing to express my interest in this opportunity and how my background aligns with the role requirements.";
   const safeName = candidateName || "Candidate Name";
-  const safeEmail = email || "email@example.com";
-  const safePhone = phone || "+91XXXXXXXXXX";
+  const safeEmail = email || "";
+  const safePhone = phone || "";
   const orgLine = organization || "Company Name";
   const date = formatTodayDate();
+
+  const footerLines = ["Yours sincerely,", safeName];
+  if (safeEmail) footerLines.push(safeEmail);
+  if (safePhone) footerLines.push(safePhone);
 
   return [
     `Hiring Manager,                                ${date}`,
@@ -310,10 +313,7 @@ const enforceCoverLetterStructure = ({
     "",
     safeBody,
     "",
-    "Your's Faithfully,",
-    safeName,
-    safeEmail,
-    safePhone,
+    ...footerLines,
   ].join("\n");
 };
 
@@ -695,7 +695,7 @@ const parseEducationFromSection = (sectionLines = []) => {
 };
 
 
-const generateWithModel = async ({ apiKey, prompt, maxTokens = 1800 }) => {
+const generateWithModel = async ({ apiKey, prompt, maxTokens = 3500, systemPrompt }) => {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -710,7 +710,8 @@ const generateWithModel = async ({ apiKey, prompt, maxTokens = 1800 }) => {
         {
           role: "system",
           content:
-            "Write truthful ATS-focused resumes and cover letters. Return plain text only.",
+            systemPrompt ||
+            "You are an expert ATS resume writer with deep knowledge of recruiting, applicant tracking systems, and modern hiring practices. Produce truthful, factually grounded resumes and cover letters. Never invent employers, titles, dates, certifications, or accomplishments. Return plain text only - no markdown fences or commentary.",
         },
         { role: "user", content: prompt },
       ],
@@ -827,59 +828,72 @@ export async function POST(req) {
     ).slice(0, 8);
 
     const resumePrompt = [
-      "You are an ATS-focused resume writer.",
-      "Generate an updated CV text tailored to the JD.",
+      "You are an expert ATS-focused resume writer specializing in highly relevant, role-targeted resumes.",
+      "Rewrite the candidate's resume to maximize ATS match against the target role while remaining 100% truthful.",
       "",
-      "Hard rules:",
-      "- Integrate missing keywords only where they naturally fit.",
-      "- Do NOT add fake claims or fake experience.",
-      "- Keep content truthful and professional.",
-      "- Do NOT change existing organizations/employers, job titles/designations, education qualifications, or certifications.",
-      "- Keep all existing organization names and designations from resume as-is.",
-      "- Preserve all professional links from the original resume (LinkedIn, GitHub, Behance, portfolio, and similar).",
-      "- Preserve candidate contact information (email, phone, social links) from the original resume.",
+      "OUTPUT STRUCTURE (use these exact uppercase section headers, in this order, each on its own line):",
+      "SUMMARY",
+      "SKILLS",
+      "EXPERIENCE",
+      "PROJECTS    (include only if the original resume mentions projects)",
+      "EDUCATION",
+      "CERTIFICATIONS    (include only if the original resume mentions certifications)",
+      "",
+      "PER-SECTION RULES:",
+      "1. SUMMARY: 2-4 sentence professional summary targeting the role. Mention the target designation if it fits the candidate's background. Weave in 3-5 high-priority matched + missing keywords naturally.",
+      "2. SKILLS: Comma-separated list grouped logically (e.g., Languages, Frameworks, Tools, Cloud). Include every matched keyword and every missing keyword that has evidence in the candidate's original resume.",
+      "3. EXPERIENCE: For each role, format the header as 'Designation | Company | Location | Duration'. Then 3-6 bullets using strong action verbs and quantified impact (numbers, %, scale). Integrate missing keywords ONLY where they describe actual past work. Never invent metrics or claims.",
+      "4. PROJECTS: Each project must have a clear name on one line, followed by 1-3 bullets describing scope and impact. Add keywords only where the project truly used them.",
+      "5. EDUCATION: 'Qualification | Institution | Duration' header, optional detail bullets for honors/coursework.",
+      "6. CERTIFICATIONS: Bullet list with cert name + issuer (+ year if known).",
+      "",
+      "HARD CONSTRAINTS (zero tolerance):",
+      "- Never invent employers, dates, titles, certifications, degrees, or quantified achievements.",
+      "- Preserve every original employer name, job title, dates, education qualification, and certification VERBATIM.",
+      "- Preserve all contact info and professional links from the original resume.",
+      "- Use bullets prefixed with '- ' (hyphen + space). No emojis, no tables, no columns, no unicode bullets, no decorative symbols.",
+      "- Bold employer names and designations with markdown **...**.",
+      "- Do not include the candidate's name in the resume body (it will be added by the template).",
+      "- Plain text output only - no markdown fences, no preamble, no commentary.",
+      "- Keep total length appropriate to the candidate's experience: <=1 page text equivalent for <5 yrs, <=2 pages for senior.",
       careerChangeApproved
-        ? "- Only include missing keywords explicitly approved by the candidate."
-        : "",
-      careerChangeApproved ? "- In career-change mode, do not add skills unless hands-on evidence exists in the original resume." : "",
-      "- Keep resume concise and ATS-friendly with clear section headings and bullet points.",
-      "- Use this CV structure exactly: SUMMARY, SKILLS, EXPERIENCE, PROJECTS (optional), EDUCATION.",
-      "- Bold company names and designations in resume using markdown **...**.",
-      "- Do not include candidate name in the resume body output.",
-      "- Do not use decorative symbols or unusual characters.",
-      "- Improve resume quality based on analyzer feedback while staying truthful.",
-      "- If career-change mode is on, emphasize transferable strengths without falsifying role history.",
-      "- Keep output plain text, no markdown fences.",
+        ? "- CAREER-CHANGE MODE: Include only candidate-approved keywords; emphasize transferable skills truthfully. Never claim experience the candidate does not have."
+        : "- Integrate every missing keyword that the candidate plausibly has hands-on experience with.",
       "",
-      `Organization: ${organization}`,
-      `Designation: ${designation}`,
-      `Career-change mode approved by candidate: ${careerChangeApproved ? "Yes" : "No"}`,
+      "QUALITY TARGETS:",
+      "- Every bullet should start with an action verb (led, built, designed, optimized, reduced, increased, etc.).",
+      "- At least 60% of EXPERIENCE bullets must include a quantified outcome (%, $, time, scale, users).",
+      "- Address each analyzer suggestion and formatting warning below.",
+      "",
+      `Target organization: ${organization}`,
+      `Target designation: ${designation}`,
+      `Career-change mode approved: ${careerChangeApproved ? "Yes" : "No"}`,
       `User-approved keywords for career change: ${selectedFromMissing.join(", ") || "None selected"}`,
       `Role transition context: ${roleTransition}`,
-      `Matched keywords: ${safeMatched.join(", ") || "None"}`,
+      `Already-matched keywords (keep referenced): ${safeMatched.join(", ") || "None"}`,
       `Missing keywords to incorporate: ${missingForCareerChange.join(", ") || "None"}`,
       `Analyzer suggestions: ${safeSuggestions.join(" | ") || "None"}`,
-      `ATS formatting warnings to address: ${safeFormattingWarnings.join(" | ") || "None"}`,
-      `Current score breakdown: ${JSON.stringify(safeScoreBreakdown)}`,
+      `ATS formatting warnings to fix: ${safeFormattingWarnings.join(" | ") || "None"}`,
+      `Score breakdown to improve: ${JSON.stringify(safeScoreBreakdown)}`,
       `Title analysis: ${JSON.stringify(safeTitleAnalysis)}`,
-      `Must preserve these titles: ${originalTitles.join(" | ") || "None"}`,
-      `Must preserve these organizations: ${originalOrganizations.join(" | ") || "None"}`,
-      `Factual experience baseline (must not omit): ${JSON.stringify(factualExperienceBaseline.slice(0, 8))}`,
-      `Factual education baseline (must not omit): ${JSON.stringify(factualEducationBaseline.slice(0, 8))}`,
+      `Original titles (preserve exactly): ${originalTitles.join(" | ") || "None"}`,
+      `Original organizations (preserve exactly): ${originalOrganizations.join(" | ") || "None"}`,
+      `Factual experience baseline (preserve every role; never omit): ${JSON.stringify(factualExperienceBaseline.slice(0, 10))}`,
+      `Factual education baseline (preserve every entry): ${JSON.stringify(factualEducationBaseline.slice(0, 8))}`,
       "",
-      "Return only the optimized resume text.",
+      "Return only the optimized resume text following the structure above.",
       "",
       "Job Description:",
       jd.slice(0, 7000),
       "",
       "Current Resume:",
-      resume.slice(0, 7000),
+      resume.slice(0, 9000),
     ].join("\n");
 
     const optimizedResumeRaw = await generateWithModel({
       apiKey,
       prompt: resumePrompt,
-      maxTokens: 1800,
+      maxTokens: 3500,
     });
 
     const optimizedResume = stripPlaceholdersAndTemplateLabels(
@@ -900,20 +914,25 @@ export async function POST(req) {
     let finalResume = optimizedResume;
     if (uncoveredAfterPass1.length) {
       const revisionPrompt = [
-        "Revise the resume text below to naturally include all required missing keywords.",
-        "Do not invent fake projects/roles. Keep claims realistic.",
-        "Keep the same CV structure and improve ATS readability.",
-        `Must include these keywords naturally: ${uncoveredAfterPass1.join(", ")}`,
+        "Revise the resume below to naturally include EVERY one of the listed keywords without losing truthfulness.",
+        "Integration rules:",
+        "- Add keywords that describe tools/frameworks/technologies to the SKILLS section.",
+        "- Add keywords that describe methods/practices to EXPERIENCE bullets where the candidate actually performed that work.",
+        "- Never fabricate companies, dates, titles, projects, certifications, or numeric outcomes.",
+        "- Preserve the existing SUMMARY/SKILLS/EXPERIENCE/PROJECTS/EDUCATION/CERTIFICATIONS structure.",
+        "- Keep all bullets starting with '- ' and starting with action verbs.",
+        "- Maintain plain text, no markdown fences.",
+        `Required missing keywords to add: ${uncoveredAfterPass1.join(", ")}`,
         "Return only the revised resume text.",
         "",
         "Current optimized resume:",
-        optimizedResume.slice(0, 9000),
+        optimizedResume.slice(0, 12000),
       ].join("\n");
 
       const revised = await generateWithModel({
         apiKey,
         prompt: revisionPrompt,
-        maxTokens: 1200,
+        maxTokens: 3000,
       });
       const revisedResume = normalizeModelResumeOutput(revised);
       if (revisedResume) {
@@ -930,21 +949,25 @@ export async function POST(req) {
 
     if (missingProtectedTitles.length || missingProtectedOrgs.length) {
       const preservePrompt = [
-        "Revise this resume preserving original factual history.",
-        "Do not alter existing employers, designations, education, or certifications.",
-        `Restore these missing original titles exactly: ${missingProtectedTitles.join(" | ") || "None"}`,
-        `Restore these missing original organizations exactly: ${missingProtectedOrgs.join(" | ") || "None"}`,
-        "Keep resume ATS-friendly and keep missing-keyword improvements where truthful.",
+        "Restore the original factual history below into this resume draft.",
+        "Strict rules:",
+        "- Do NOT change any other employers, designations, education entries, or certifications already present.",
+        "- Restore each missing item exactly as written, in the correct chronological order.",
+        "- Keep the SUMMARY/SKILLS/EXPERIENCE/PROJECTS/EDUCATION/CERTIFICATIONS structure intact.",
+        "- Retain all keyword improvements from the current draft where they remain truthful.",
+        "- Bullets start with '- ' and an action verb. No markdown fences.",
+        `Restore these original titles exactly: ${missingProtectedTitles.join(" | ") || "None"}`,
+        `Restore these original organizations exactly: ${missingProtectedOrgs.join(" | ") || "None"}`,
         "Return only the revised resume text.",
         "",
         "Current resume draft:",
-        finalResume.slice(0, 9000),
+        finalResume.slice(0, 12000),
       ].join("\n");
 
       const preserved = await generateWithModel({
         apiKey,
         prompt: preservePrompt,
-        maxTokens: 1200,
+        maxTokens: 3000,
       });
       const preservedResume = normalizeModelResumeOutput(preserved);
       if (preservedResume) {
@@ -962,17 +985,21 @@ export async function POST(req) {
     let finalCoverLetter = "";
     if (shouldGenerateCoverLetter) {
       const coverLetterPrompt = [
-        "You are an ATS-focused cover letter writer.",
-        "Generate a tailored cover letter for the target role.",
+        "You are an expert cover letter writer crafting concise, role-tailored cover letters.",
+        "Generate a cover letter for the target role grounded in the resume below.",
+        "Structure (four short paragraphs):",
+        "1. Opening (2-3 sentences): name the organization and designation, briefly state interest and a high-level value statement.",
+        "2. Role fit (3-4 sentences): cite 2-3 specific skills/experiences from the resume that map to the JD's top requirements.",
+        "3. Impact (2-3 sentences): reference one quantified achievement from the resume showing relevant impact.",
+        "4. Closing (1-2 sentences): express enthusiasm and a clear call to action.",
         "Hard rules:",
-        "- Keep content truthful and grounded in the provided resume.",
-        "- Do not invent fake employers, titles, education, or certifications.",
-        "- Cover letter length: 250-350 words.",
-        "- Structure: opening, role fit paragraph, impact paragraph, closing.",
-        "- Mention the organization name explicitly.",
-        "- Do NOT include heading text like 'Tailored Cover Letter'.",
-        "- Do NOT use placeholders like [Candidate Address], [Date], [Your Name].",
-        "- Keep output plain text, no markdown fences.",
+        "- 250-350 words total.",
+        "- Truthful and grounded ONLY in the resume content. Do not invent employers, titles, schools, certifications, or metrics.",
+        "- Explicitly mention the organization name at least once in the opening paragraph.",
+        "- Do not include any salutation (Dear/Hiring Manager), date, address, sign-off, or candidate name - these are added separately.",
+        "- Do not include heading text like 'Tailored Cover Letter' or 'Cover Letter'.",
+        "- Do not use placeholders like [Candidate Address], [Date], [Your Name], [Company].",
+        "- Plain text only, no markdown fences, no bullet points.",
         "",
         `Organization: ${organization}`,
         `Designation: ${designation}`,
@@ -987,12 +1014,19 @@ export async function POST(req) {
       const coverLetterRaw = await generateWithModel({
         apiKey,
         prompt: coverLetterPrompt,
-        maxTokens: 1200,
+        maxTokens: 1500,
       });
 
       finalCoverLetter = stripPlaceholdersAndTemplateLabels(coverLetterRaw);
       if (organization && !finalCoverLetter.toLowerCase().includes(organization.toLowerCase())) {
-        finalCoverLetter = `I am excited to apply for this role at ${organization}.\n\n${finalCoverLetter}`;
+        // Splice org reference into the first paragraph naturally rather than prepending.
+        const paragraphs = finalCoverLetter.split(/\n{2,}/);
+        if (paragraphs.length > 0) {
+          const opening = paragraphs[0];
+          const designationFragment = designation ? `${designation} role` : "role";
+          paragraphs[0] = `${opening.replace(/\.$/, "")} at ${organization} for the ${designationFragment}.`;
+          finalCoverLetter = paragraphs.join("\n\n");
+        }
       }
       finalCoverLetter = stripPlaceholdersAndTemplateLabels(finalCoverLetter);
       finalCoverLetter = enforceCoverLetterStructure({
