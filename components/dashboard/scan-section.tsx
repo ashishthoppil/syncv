@@ -216,11 +216,34 @@ export const ScanSection = ({
       keywords: [
         "software engineer",
         "software developer",
-        "developer",
+        "software development engineer",
         "frontend engineer",
+        "frontend developer",
+        "front-end engineer",
+        "front-end developer",
         "backend engineer",
-        "full stack",
+        "backend developer",
+        "back-end engineer",
+        "back-end developer",
+        "full stack engineer",
+        "full stack developer",
+        "full-stack engineer",
+        "full-stack developer",
+        "fullstack engineer",
+        "fullstack developer",
         "web engineer",
+        "web developer",
+        "mobile developer",
+        "android developer",
+        "ios developer",
+        "devops engineer",
+        "site reliability engineer",
+        "platform engineer",
+        "cloud engineer",
+        "qa engineer",
+        "test engineer",
+        "automation engineer",
+        "sde",
       ],
     },
     {
@@ -229,25 +252,118 @@ export const ScanSection = ({
       keywords: [
         "project manager",
         "project coordinator",
+        "project lead",
         "program manager",
         "delivery manager",
         "scrum master",
+        "agile coach",
+        "release manager",
+        "technical program manager",
+        "engineering program manager",
+        "pmo",
       ],
     },
     {
       id: "product-management",
       label: "Product",
-      keywords: ["product manager", "product owner", "product coordinator"],
+      keywords: [
+        "product manager",
+        "product owner",
+        "product coordinator",
+        "product analyst",
+        "associate product manager",
+        "senior product manager",
+        "group product manager",
+      ],
     },
     {
       id: "education",
       label: "Education",
-      keywords: ["teacher", "professor", "tutor", "lecturer", "educator"],
+      keywords: [
+        "teacher",
+        "professor",
+        "tutor",
+        "lecturer",
+        "educator",
+        "instructor",
+        "teaching assistant",
+        "academic coordinator",
+        "head of department",
+        "principal",
+      ],
     },
     {
       id: "operations",
       label: "Operations",
-      keywords: ["operations", "coordinator", "administrator", "office assistant"],
+      keywords: [
+        "operations manager",
+        "operations analyst",
+        "operations specialist",
+        "operations associate",
+        "operations coordinator",
+        "ops manager",
+        "business operations",
+        "office manager",
+        "office administrator",
+        "administrative assistant",
+        "office assistant",
+      ],
+    },
+    {
+      id: "data",
+      label: "Data",
+      keywords: [
+        "data scientist",
+        "data analyst",
+        "data engineer",
+        "data architect",
+        "machine learning engineer",
+        "ml engineer",
+        "ai engineer",
+        "research scientist",
+        "analytics engineer",
+        "business intelligence analyst",
+        "bi analyst",
+      ],
+    },
+    {
+      id: "design",
+      label: "Design",
+      keywords: [
+        "ui designer",
+        "ux designer",
+        "ui/ux designer",
+        "product designer",
+        "graphic designer",
+        "visual designer",
+        "interaction designer",
+      ],
+    },
+    {
+      id: "marketing",
+      label: "Marketing",
+      keywords: [
+        "marketing manager",
+        "marketing analyst",
+        "marketing specialist",
+        "digital marketing",
+        "seo specialist",
+        "content marketing",
+        "growth marketing",
+      ],
+    },
+    {
+      id: "sales",
+      label: "Sales",
+      keywords: [
+        "sales manager",
+        "sales executive",
+        "account executive",
+        "account manager",
+        "business development",
+        "sales representative",
+        "sales associate",
+      ],
     },
   ];
   const isSpeedPlan = planKey === "speed";
@@ -550,24 +666,124 @@ export const ScanSection = ({
     }
   }, []);
 
-  const detectRoleFamily = (text: string) => {
-    const normalized = text.toLowerCase();
-    let best: { id: string; label: string; score: number } | null = null;
-    for (const family of roleFamilies) {
-      let score = 0;
-      for (const keyword of family.keywords) {
-        if (normalized.includes(keyword)) score += 1;
-      }
-      if (!best || score > best.score) {
-        best = { id: family.id, label: family.label, score };
+  const PRESENT_INDICATORS =
+    /\b(present|current|currently|ongoing|now|to\s+date|till\s+date)\b/i;
+  const EXPERIENCE_HEADER_RE =
+    /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience)\s*:?\s*$/i;
+  const OTHER_SECTION_HEADER_RE =
+    /^\s*(summary|professional\s+summary|profile|education|academic\s+background|skills|technical\s+skills|projects?|certifications?|languages?|awards?|publications?|interests|hobbies|volunteer)\s*:?\s*$/i;
+  const ROLE_TITLE_HINT_RE =
+    /\b(engineer|developer|programmer|manager|designer|analyst|architect|consultant|specialist|lead|officer|coordinator|administrator|scientist|researcher|director|head|associate|intern|tutor|teacher|professor|lecturer|instructor|educator|owner|executive|representative|trainer|recruiter|tester)\b/i;
+
+  const stripBoldMarkers = (s: string) => s.replace(/\*\*/g, "").trim();
+
+  const extractTitleCandidate = (rawLine: string): string => {
+    let cleaned = stripBoldMarkers(rawLine);
+    cleaned = cleaned.replace(/^[-*•◦▪]\s*/, "").trim();
+    if (!cleaned) return "";
+    if (EXPERIENCE_HEADER_RE.test(cleaned) || OTHER_SECTION_HEADER_RE.test(cleaned)) {
+      return "";
+    }
+    // If the line has separators, look at the part that contains a role hint.
+    const parts = cleaned.split(/\s*\|\s*|\s+at\s+|\s+@\s+|\s+-\s+/i);
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (
+        trimmed &&
+        trimmed.length < 80 &&
+        ROLE_TITLE_HINT_RE.test(trimmed) &&
+        !/\d{4}/.test(trimmed) // Avoid lines that are mostly dates
+      ) {
+        return trimmed;
       }
     }
-    if (!best || best.score === 0) return null;
-    return best;
+    if (
+      cleaned.length < 100 &&
+      ROLE_TITLE_HINT_RE.test(cleaned) &&
+      !/^\d/.test(cleaned)
+    ) {
+      return cleaned;
+    }
+    return "";
+  };
+
+  const extractLatestDesignation = (resumeText: string): string => {
+    const lines = resumeText.split("\n").map((line) => line.trim());
+
+    // Strategy 1: Find a line containing Present/Current/etc. The current title is
+    // most often on the same line; otherwise check the previous 2 or next line.
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!PRESENT_INDICATORS.test(lines[i])) continue;
+      const sameLine = extractTitleCandidate(lines[i]);
+      if (sameLine) return sameLine;
+      for (let j = Math.max(0, i - 2); j < i; j += 1) {
+        const candidate = extractTitleCandidate(lines[j]);
+        if (candidate) return candidate;
+      }
+      if (i + 1 < lines.length) {
+        const next = extractTitleCandidate(lines[i + 1]);
+        if (next) return next;
+      }
+    }
+
+    // Strategy 2: First title-like line after the EXPERIENCE section header.
+    const expIdx = lines.findIndex((l) => EXPERIENCE_HEADER_RE.test(l));
+    if (expIdx >= 0) {
+      for (let i = expIdx + 1; i < Math.min(lines.length, expIdx + 20); i += 1) {
+        if (OTHER_SECTION_HEADER_RE.test(lines[i])) break;
+        const candidate = extractTitleCandidate(lines[i]);
+        if (candidate) return candidate;
+      }
+    }
+
+    // Strategy 3: First title-like line anywhere in the resume.
+    for (const line of lines) {
+      const candidate = extractTitleCandidate(line);
+      if (candidate) return candidate;
+    }
+
+    return "";
+  };
+
+  const detectRoleFamily = (text: string) => {
+    if (!text) return null;
+    const normalized =
+      " " +
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9\s+#./-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() +
+      " ";
+    let best:
+      | { id: string; label: string; score: number; matched: string }
+      | null = null;
+    for (const family of roleFamilies) {
+      for (const keyword of family.keywords) {
+        const padded = ` ${keyword.toLowerCase()} `;
+        if (!normalized.includes(padded)) continue;
+        // Specificity = number of words in the matched phrase. The more specific
+        // the phrase that matches, the more confident we are about the family.
+        const specificity = keyword.split(/\s+/).length;
+        if (!best || specificity > best.score) {
+          best = {
+            id: family.id,
+            label: family.label,
+            score: specificity,
+            matched: keyword,
+          };
+        }
+      }
+    }
+    if (!best) return null;
+    return { id: best.id, label: best.label, score: best.score };
   };
 
   const assessRoleFit = (resumeText: string, targetDesignation: string) => {
-    const resumeFamily = detectRoleFamily(resumeText);
+    const latestDesignation = extractLatestDesignation(resumeText);
+    // Detect family from the latest designation only. If we cannot determine the
+    // latest designation, suppress the warning rather than risk a false positive.
+    const resumeFamily = detectRoleFamily(latestDesignation);
     const targetFamily = detectRoleFamily(targetDesignation);
 
     if (!resumeFamily || !targetFamily) {
@@ -1102,7 +1318,7 @@ export const ScanSection = ({
           Resume score
         </p>
         <p className={`my-10 text-5xl font-bold ${scoreBand.textClass}`}>
-          <span style={{ borderWidth: result ? '10px': '' }} className={`rounded-full p-3 ${scoreBand.borderClass}`}>{result ? `${result.initialScore}` : "—"}</span>
+          <span style={{ borderWidth: result ? '10px': '' }} className={`rounded-full p-3 px-5 ${scoreBand.borderClass}`}>{result ? `${result.initialScore}` : "—"}</span>
         </p>
         <div className="mt-2 text-xs text-slate-500">
           {result ? (
