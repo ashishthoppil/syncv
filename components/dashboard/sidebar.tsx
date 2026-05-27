@@ -4,7 +4,6 @@ import { cn } from "@/lib/utils";
 import {
   ScanLine,
   BriefcaseBusiness,
-  Settings2,
   UserRound,
   SettingsIcon,
 } from "lucide-react";

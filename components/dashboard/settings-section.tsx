@@ -18,7 +18,6 @@ import {
   CircleCheck,
   CircleHelp,
   CircleX,
-  MessageSquareWarning,
   PlusCircleIcon,
   SaveIcon,
   Settings,
