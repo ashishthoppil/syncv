@@ -779,26 +779,99 @@ export const ScanSection = ({
     return { id: best.id, label: best.label, score: best.score };
   };
 
-  const assessRoleFit = (resumeText: string, targetDesignation: string) => {
-    const latestDesignation = extractLatestDesignation(resumeText);
-    // Detect family from the latest designation only. If we cannot determine the
-    // latest designation, suppress the warning rather than risk a false positive.
-    const resumeFamily = detectRoleFamily(latestDesignation);
-    const targetFamily = detectRoleFamily(targetDesignation);
+  const detectFamiliesFromJd = (jdText: string) => {
+    if (!jdText) return [] as Array<{ id: string; label: string; score: number }>;
+    const normalized =
+      " " +
+      jdText
+        .toLowerCase()
+        .replace(/[^a-z0-9\s+#./-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() +
+      " ";
+    // Score by counting weighted occurrences of family keywords across the JD.
+    // Weight = phrase specificity (word count) so "project manager" outweighs
+    // a stray "manager" mention.
+    const scores: Record<string, { label: string; score: number }> = {};
+    for (const family of roleFamilies) {
+      for (const keyword of family.keywords) {
+        const padded = ` ${keyword.toLowerCase()} `;
+        let occurrences = 0;
+        let idx = normalized.indexOf(padded);
+        while (idx !== -1) {
+          occurrences += 1;
+          idx = normalized.indexOf(padded, idx + padded.length);
+        }
+        if (!occurrences) continue;
+        const specificity = keyword.split(/\s+/).length;
+        const weighted = occurrences * specificity;
+        const existing = scores[family.id];
+        if (!existing) {
+          scores[family.id] = { label: family.label, score: weighted };
+        } else {
+          existing.score += weighted;
+        }
+      }
+    }
+    return Object.entries(scores)
+      .map(([id, info]) => ({ id, label: info.label, score: info.score }))
+      .sort((a, b) => b.score - a.score);
+  };
 
-    if (!resumeFamily || !targetFamily) {
+  const assessRoleFit = (
+    resumeText: string,
+    targetDesignation: string,
+    jdText: string = ""
+  ) => {
+    const latestDesignation = extractLatestDesignation(resumeText);
+    const resumeFamily = detectRoleFamily(latestDesignation);
+    if (!resumeFamily) {
       return { shouldWarn: false };
     }
-    if (resumeFamily.id === targetFamily.id) {
+
+    const targetFromDesignation = detectRoleFamily(targetDesignation);
+    const targetFromJd = detectFamiliesFromJd(jdText);
+
+    // Build the set of plausible target families. If the user mistyped the
+    // designation (e.g. "Product" instead of "Project"), the JD body usually
+    // still mentions the real role - so any family with a strong JD signal
+    // should be treated as a legitimate target.
+    const candidateTargets = new Set<string>();
+    if (targetFromDesignation) candidateTargets.add(targetFromDesignation.id);
+
+    const topJdScore = targetFromJd[0]?.score ?? 0;
+    for (const fam of targetFromJd) {
+      // Include the top JD family, plus any family at >= 50% of its score.
+      if (fam.score >= Math.max(2, topJdScore * 0.5)) {
+        candidateTargets.add(fam.id);
+      }
+    }
+
+    if (candidateTargets.size === 0) {
+      return { shouldWarn: false };
+    }
+
+    if (candidateTargets.has(resumeFamily.id)) {
+      return { shouldWarn: false };
+    }
+
+    // Pick the warning's "target" label: prefer designation, else strongest JD signal.
+    const primaryTarget =
+      targetFromDesignation ||
+      (targetFromJd[0]
+        ? { id: targetFromJd[0].id, label: targetFromJd[0].label }
+        : null);
+
+    if (!primaryTarget) {
       return { shouldWarn: false };
     }
 
     return {
       shouldWarn: true,
       resumeFamilyId: resumeFamily.id,
-      targetFamilyId: targetFamily.id,
+      targetFamilyId: primaryTarget.id,
       resumeFamilyLabel: resumeFamily.label,
-      targetFamilyLabel: targetFamily.label,
+      targetFamilyLabel: primaryTarget.label,
     };
   };
 
@@ -927,7 +1000,7 @@ export const ScanSection = ({
     }
 
     if (!careerChangeApproved) {
-      const fit = assessRoleFit(form.resume, form.designation);
+      const fit = assessRoleFit(form.resume, form.designation, form.jd);
       if (fit.shouldWarn) {
         setFitInsight({
           resumeFamilyId: fit.resumeFamilyId as string,
@@ -1318,7 +1391,7 @@ export const ScanSection = ({
           Resume score
         </p>
         <p className={`my-10 text-5xl font-bold ${scoreBand.textClass}`}>
-          <span style={{ borderWidth: result ? '10px': '' }} className={`rounded-full p-3 px-5 ${scoreBand.borderClass}`}>{result ? `${result.initialScore}` : "—"}</span>
+          <span style={{ borderWidth: result ? '10px': '' }} className={`rounded-full p-3 ${scoreBand.borderClass}`}>{result ? `${result.initialScore}` : "—"}</span>
         </p>
         <div className="mt-2 text-xs text-slate-500">
           {result ? (
