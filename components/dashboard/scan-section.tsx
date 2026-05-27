@@ -1391,7 +1391,7 @@ export const ScanSection = ({
           Resume score
         </p>
         <p className={`my-10 text-5xl font-bold ${scoreBand.textClass}`}>
-          <span style={{ borderWidth: result ? '10px': '' }} className={`rounded-full p-3 ${scoreBand.borderClass}`}>{result ? `${result.initialScore}` : "—"}</span>
+          <span className={`rounded-full p-3`}>{result ? `${result.initialScore}` : "—"}</span>
         </p>
         <div className="mt-2 text-xs text-slate-500">
           {result ? (
