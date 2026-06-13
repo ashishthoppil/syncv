@@ -751,6 +751,8 @@ export async function POST(req) {
       missingKeywords = [],
       selectedMissingKeywords = [],
       matchedKeywords = [],
+      weightedKeywords = [],
+      hasSummary = false,
       analysisSuggestions = [],
       formattingWarnings = [],
       scoreBreakdown = null,
@@ -827,6 +829,19 @@ export async function POST(req) {
       extractSectionsFromText(resume).education || resume.split("\n")
     ).slice(0, 8);
 
+    const safeWeightedKeywords = Array.isArray(weightedKeywords) ? weightedKeywords : [];
+    const matchedKeywordSet = new Set(safeMatched.map((k) => k.toLowerCase()));
+    // Summary must only reference skills the candidate already has — never inject missing keywords.
+    // Use the highest-weight matched keywords as the hint so the summary stays honest.
+    const highPriorityMatchedKeywords = safeWeightedKeywords
+      .filter((k) => matchedKeywordSet.has(k.keyword.toLowerCase()))
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 3)
+      .map((k) => k.keyword);
+    const summaryKeywordHint = highPriorityMatchedKeywords.length
+      ? highPriorityMatchedKeywords.join(", ")
+      : safeMatched.slice(0, 3).join(", ") || "none";
+
     const resumePrompt = [
       "You are an expert ATS-focused resume writer specializing in highly relevant, role-targeted resumes.",
       "Rewrite the candidate's resume to maximize ATS match against the target role while remaining 100% truthful.",
@@ -840,7 +855,9 @@ export async function POST(req) {
       "CERTIFICATIONS    (include only if the original resume mentions certifications)",
       "",
       "PER-SECTION RULES:",
-      "1. SUMMARY: 2-4 sentence professional summary targeting the role. Mention the target designation if it fits the candidate's background. Weave in 3-5 high-priority matched + missing keywords naturally.",
+      hasSummary
+        ? `1. SUMMARY (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
+        : `1. SUMMARY (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
       "2. SKILLS: Comma-separated list grouped logically (e.g., Languages, Frameworks, Tools, Cloud). Include every matched keyword and every missing keyword that has evidence in the candidate's original resume.",
       "3. EXPERIENCE: For each role, format the header as 'Designation | Company | Location | Duration'. Then 3-6 bullets using strong action verbs and quantified impact (numbers, %, scale). Integrate missing keywords ONLY where they describe actual past work. Never invent metrics or claims.",
       "4. PROJECTS: Each project must have a clear name on one line, followed by 1-3 bullets describing scope and impact. Add keywords only where the project truly used them.",

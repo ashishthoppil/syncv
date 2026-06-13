@@ -1160,11 +1160,84 @@ const analyzeAchievements = (resumeText = "") => {
   };
 };
 
+const PROSE_MIN_LENGTH = 50;
+const SUMMARY_MAX_INFERRED_LINES = 12;
+
+const isContactOrLinkLine = (line = "") => {
+  if (line.length < 2) return true;
+  if (/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(line)) return true;
+  if (/(?:\+?\d[\d\s\-().]{6,}\d)/.test(line)) return true;
+  if (/https?:\/\/|linkedin\.com|github\.com|behance\.net|www\./i.test(line)) return true;
+  // Short line with no sentence punctuation and starts with a capital — likely name or location
+  if (line.length <= 50 && !/[.!?]/.test(line) && /^[A-Z]/.test(line)) return true;
+  return false;
+};
+
+const isSkillsListLine = (line = "") => {
+  const parts = line.split(",").map((p) => p.trim()).filter(Boolean);
+  return parts.length >= 4 && parts.every((p) => p.split(/\s+/).length <= 3);
+};
+
+const isProseLikeLine = (line = "") => {
+  if (line.length < PROSE_MIN_LENGTH) return false;
+  if (/^[-*•◦▪▸‣]\s+/.test(line)) return false;
+  // Lines with two or more year mentions are date ranges, not prose
+  const yearMatches = (line.match(/\b(19|20)\d{2}\b/g) || []).length;
+  if (yearMatches >= 2) return false;
+  if (isSkillsListLine(line)) return false;
+  // Pipe-separated taglines (e.g. "Skill A | Skill B | Skill C") are not prose
+  if ((line.match(/\|/g) || []).length >= 2) return false;
+  return true;
+};
+
+// How many lines from the top to scan in the space-stripped fallback path.
+const EARLY_LINES_WINDOW = 30;
+
+// Detects a summary paragraph that has no explicit section heading.
+// Primary path: look at the content block before the first recognised section
+// header and check whether it contains prose-like sentences.
+// Fallback path: handles PDFs where spaces are stripped during extraction,
+// which makes multi-word headers (e.g. "WORK EXPERIENCE" → "WORKEXPERIENCE")
+// invisible to the header regex. In that case we scan the first
+// EARLY_LINES_WINDOW lines for sentence-like content (long lines that contain
+// sentence-ending punctuation) as a reliable signal that a summary exists.
+const detectImpliedSummary = (resumeText = "") => {
+  const lines = String(resumeText || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const firstSectionIdx = lines.findIndex((line) => KNOWN_SECTION_HEADER_PATTERN.test(line));
+
+  if (firstSectionIdx > 0) {
+    const preSection = lines.slice(0, firstSectionIdx);
+    const candidates = preSection.filter((line) => !isContactOrLinkLine(line));
+    const proseLines = candidates.filter(isProseLikeLine);
+    if (proseLines.length >= 1 && proseLines.length <= SUMMARY_MAX_INFERRED_LINES) {
+      return true;
+    }
+  }
+
+  // Fallback: scan early lines for sentence-like prose regardless of header detection.
+  const earlyNonContact = lines
+    .slice(0, EARLY_LINES_WINDOW)
+    .filter((line) => !isContactOrLinkLine(line));
+  const sentenceLikeLines = earlyNonContact.filter(
+    (line) => isProseLikeLine(line) && /[.!]/.test(line)
+  );
+  return sentenceLikeLines.length >= 1;
+};
+
 const detectSections = (resumeText = "") => {
   const found = {};
   Object.entries(SECTION_PATTERNS).forEach(([section, regex]) => {
     found[section] = regex.test(resumeText);
   });
+
+  if (!found.summary) {
+    found.summary = detectImpliedSummary(resumeText);
+  }
+
   const presentCount = Object.values(found).filter(Boolean).length;
   const score = clampScore((presentCount / Object.keys(SECTION_PATTERNS).length) * 100);
   return { score, foundSections: found };

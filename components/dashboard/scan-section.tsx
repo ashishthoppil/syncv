@@ -41,12 +41,20 @@ import {
   XCircleIcon,
 } from "lucide-react";
 
+type WeightedKeyword = {
+  keyword: string;
+  weight: number;
+  importance: "required" | "preferred";
+  variants: string[];
+};
+
 type ScanSummary = {
   initialScore: number;
   finalAtsScore?: number;
   matchedKeywords: string[];
   missingKeywords: string[];
   keywordUniverse: string[];
+  weightedKeywords?: WeightedKeyword[];
   scoreBreakdown?: {
     keywordMatch: number;
     skillsCoverage: number;
@@ -1045,6 +1053,8 @@ export const ScanSection = ({
           missingKeywords: keywordsForTailoring,
           selectedMissingKeywords: careerChangeApproved ? keywordsForTailoring : [],
           matchedKeywords: result.matchedKeywords,
+          weightedKeywords: result.weightedKeywords || [],
+          hasSummary: result.sectionAnalysis?.foundSections?.summary ?? false,
           analysisSuggestions: result.suggestions || [],
           formattingWarnings: result.formattingWarnings || [],
           scoreBreakdown: result.scoreBreakdown || null,
