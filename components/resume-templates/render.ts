@@ -988,7 +988,7 @@ const renderResumeBodyFromText = (
     sectionLines.forEach((line) => {
       const cleanLine = stripMarkdownBold(line).trim();
       const isBulletLine = /^[-*•]\s+/.test(cleanLine);
-      const deBulleted = cleanLine.replace(/^[-*•]\s+/, "").trim();
+      // const deBulleted = cleanLine.replace(/^[-*•]\s+/, "").trim();
 
       if (isBulletLine) {
         bullets.push(cleanLine);
