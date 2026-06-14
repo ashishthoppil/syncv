@@ -389,7 +389,12 @@ const resumeSectionsToText = (payload = {}) => {
   const certifications = ensureStringArray(payload?.certifications);
 
   if (summary) blocks.push("SUMMARY", summary);
-  if (skills.length) blocks.push("SKILLS", skills.join(", "));
+  if (skills.length) {
+    // Categorized skill lines (e.g. "Languages: JavaScript, TypeScript") must
+    // stay on separate lines. A flat list of individual skills is joined inline.
+    const looksCategorized = skills.some((skill) => /^[^,]+:\s/.test(skill));
+    blocks.push("SKILLS", skills.join(looksCategorized ? "\n" : ", "));
+  }
   if (experience.length) {
     blocks.push("EXPERIENCE");
     experience.forEach((item) => {
@@ -694,8 +699,48 @@ const parseEducationFromSection = (sectionLines = []) => {
   return entries;
 };
 
+// Extracts project entries (name + bullets) from the PROJECTS section of a raw
+// resume so the model can be told to preserve them. Project names are heading
+// lines (no leading bullet glyph); indented/bulleted lines are scope details.
+const parseProjectsFromSection = (sectionLines = []) => {
+  const entries = [];
+  let current = null;
+  const bulletRegex = /^[-*•▪◦·]\s+/;
 
-const generateWithModel = async ({ apiKey, prompt, maxTokens = 3500, systemPrompt }) => {
+  const flush = () => {
+    if (current && current.name) entries.push(current);
+    current = null;
+  };
+
+  for (const raw of sectionLines) {
+    const line = ensureString(raw);
+    if (!line) continue;
+
+    if (bulletRegex.test(line)) {
+      const bullet = ensureString(line.replace(bulletRegex, ""));
+      if (current && bullet) current.bullets.push(bullet);
+      continue;
+    }
+
+    // A non-bulleted line starts a new project. Keep only the project name
+    // (drop any trailing tech/link descriptor after a separator) for the baseline.
+    flush();
+    const name = ensureString(line.split(/\s+[|–—]\s+/)[0]);
+    current = { name, bullets: [] };
+  }
+
+  flush();
+  return entries;
+};
+
+
+const generateWithModel = async ({
+  apiKey,
+  prompt,
+  maxTokens = 3500,
+  systemPrompt,
+  jsonMode = false,
+}) => {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -706,6 +751,7 @@ const generateWithModel = async ({ apiKey, prompt, maxTokens = 3500, systemPromp
       model: "gpt-4o-mini",
       temperature: 0.2,
       max_tokens: maxTokens,
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
       messages: [
         {
           role: "system",
@@ -828,6 +874,10 @@ export async function POST(req) {
     const factualEducationBaseline = parseEducationFromSection(
       extractSectionsFromText(resume).education || resume.split("\n")
     ).slice(0, 8);
+    const factualProjectsBaseline = parseProjectsFromSection(
+      extractSectionsFromText(resume).projects || []
+    ).slice(0, 8);
+    const hasProjectsSection = factualProjectsBaseline.length > 0;
 
     const safeWeightedKeywords = Array.isArray(weightedKeywords) ? weightedKeywords : [];
     const matchedKeywordSet = new Set(safeMatched.map((k) => k.toLowerCase()));
@@ -846,32 +896,36 @@ export async function POST(req) {
       "You are an expert ATS-focused resume writer specializing in highly relevant, role-targeted resumes.",
       "Rewrite the candidate's resume to maximize ATS match against the target role while remaining 100% truthful.",
       "",
-      "OUTPUT STRUCTURE (use these exact uppercase section headers, in this order, each on its own line):",
-      "SUMMARY",
-      "SKILLS",
-      "EXPERIENCE",
-      "PROJECTS    (include only if the original resume mentions projects)",
-      "EDUCATION",
-      "CERTIFICATIONS    (include only if the original resume mentions certifications)",
+      "OUTPUT FORMAT: Return a SINGLE valid JSON object (no markdown, no code fences, no commentary) with EXACTLY this shape:",
+      "{",
+      '  "summary": "string",',
+      '  "skills": ["Category: item, item, item", "..."],',
+      '  "experience": [{ "designation": "string", "company": "string", "location": "string", "duration": "string", "bullets": ["string", "..."] }],',
+      '  "projects": [{ "name": "string", "bullets": ["string", "..."] }],',
+      '  "education": [{ "qualification": "string", "institution": "string", "duration": "string", "details": ["string"] }],',
+      '  "certifications": ["string"]',
+      "}",
+      "Keep designation, company, location, and duration as SEPARATE fields — never concatenate them into one string. Bullets and details are plain strings with NO leading dash or bullet character. Omit projects/certifications entirely if the original resume doesn't mention them. Do not add any keys beyond those listed.",
       "",
       "PER-SECTION RULES:",
       hasSummary
-        ? `1. SUMMARY (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
-        : `1. SUMMARY (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
-      "2. SKILLS: Comma-separated list grouped logically (e.g., Languages, Frameworks, Tools, Cloud). Include every matched keyword and every missing keyword that has evidence in the candidate's original resume.",
-      "3. EXPERIENCE: For each role, format the header as 'Designation | Company | Location | Duration'. Then 3-6 bullets using strong action verbs and quantified impact (numbers, %, scale). Integrate missing keywords ONLY where they describe actual past work. Never invent metrics or claims.",
-      "4. PROJECTS: Each project must have a clear name on one line, followed by 1-3 bullets describing scope and impact. Add keywords only where the project truly used them.",
-      "5. EDUCATION: 'Qualification | Institution | Duration' header, optional detail bullets for honors/coursework.",
-      "6. CERTIFICATIONS: Bullet list with cert name + issuer (+ year if known).",
+        ? `1. summary (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
+        : `1. summary (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
+      "2. skills: An array of 3-6 strings, each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Certifications, Systems/EMR, Patient Care; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. Include every matched keyword and every missing keyword that has evidence in the candidate's original resume. List concrete, recognizable hard skills, tools, and certifications. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player'); genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
+      "3. experience: An array of role objects. Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Provide 3-6 bullets per role, each starting with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
+      hasProjectsSection
+        ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Add keywords only where the project truly used them. Never drop a project to save space."
+        : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
+      "5. education: Each object has qualification, institution, duration as separate fields, plus optional detail strings for honors/coursework.",
+      "6. certifications: Array of strings, each 'Cert name — Issuer (year if known)'. If the original resume includes a verification/credential URL for a certification or course, append it to that string EXACTLY as written (e.g. 'Front-End Web Development with React — Coursera — https://coursera.org/verify/ABC123'). Never invent, guess, or shorten URLs — include one only if it is present in the original resume.",
       "",
       "HARD CONSTRAINTS (zero tolerance):",
       "- Never invent employers, dates, titles, certifications, degrees, or quantified achievements.",
       "- Preserve every original employer name, job title, dates, education qualification, and certification VERBATIM.",
       "- Preserve all contact info and professional links from the original resume.",
-      "- Use bullets prefixed with '- ' (hyphen + space). No emojis, no tables, no columns, no unicode bullets, no decorative symbols.",
-      "- Bold employer names and designations with markdown **...**.",
-      "- Do not include the candidate's name in the resume body (it will be added by the template).",
-      "- Plain text output only - no markdown fences, no preamble, no commentary.",
+      "- Bullets are plain strings with no leading dash, bullet glyph, emoji, or decorative symbol (the template adds bullet styling).",
+      "- Do not include the candidate's name anywhere in the JSON (it will be added by the template).",
+      "- Output must be a single valid JSON object only — no markdown fences, no preamble, no commentary.",
       "- Keep total length appropriate to the candidate's experience: <=1 page text equivalent for <5 yrs, <=2 pages for senior.",
       careerChangeApproved
         ? "- CAREER-CHANGE MODE: Include only candidate-approved keywords; emphasize transferable skills truthfully. Never claim experience the candidate does not have."
@@ -879,7 +933,7 @@ export async function POST(req) {
       "",
       "QUALITY TARGETS:",
       "- Every bullet should start with an action verb (led, built, designed, optimized, reduced, increased, etc.).",
-      "- At least 60% of EXPERIENCE bullets must include a quantified outcome (%, $, time, scale, users).",
+      "- Aim for at least 60% of EXPERIENCE bullets to include a quantified outcome (%, $, time, scale, users) drawn from or genuinely supported by the resume — prioritize surfacing real numbers over adding more bullets. Do not fabricate figures to hit this target.",
       "- Address each analyzer suggestion and formatting warning below.",
       "",
       `Target organization: ${organization}`,
@@ -897,8 +951,11 @@ export async function POST(req) {
       `Original organizations (preserve exactly): ${originalOrganizations.join(" | ") || "None"}`,
       `Factual experience baseline (preserve every role; never omit): ${JSON.stringify(factualExperienceBaseline.slice(0, 10))}`,
       `Factual education baseline (preserve every entry): ${JSON.stringify(factualEducationBaseline.slice(0, 8))}`,
+      hasProjectsSection
+        ? `Factual projects baseline (the original resume HAS a projects section — you MUST include every one of these projects; never omit the projects section): ${JSON.stringify(factualProjectsBaseline)}`
+        : "Factual projects baseline: None (original resume has no projects section).",
       "",
-      "Return only the optimized resume text following the structure above.",
+      "Return only the JSON object following the schema above.",
       "",
       "Job Description:",
       jd.slice(0, 7000),
@@ -911,6 +968,7 @@ export async function POST(req) {
       apiKey,
       prompt: resumePrompt,
       maxTokens: 3500,
+      jsonMode: true,
     });
 
     const optimizedResume = stripPlaceholdersAndTemplateLabels(
@@ -989,6 +1047,29 @@ export async function POST(req) {
       const preservedResume = normalizeModelResumeOutput(preserved);
       if (preservedResume) {
         finalResume = stripPlaceholdersAndTemplateLabels(preservedResume);
+      }
+    }
+
+    // Safety net: the original resume had a projects section but the model
+    // dropped it across the passes. Re-inject the original projects verbatim so
+    // the section is never silently lost.
+    if (hasProjectsSection && !/^projects\s*:?\s*$/im.test(finalResume)) {
+      const projectLines = ["PROJECTS"];
+      factualProjectsBaseline.forEach((project) => {
+        if (project.name) projectLines.push(project.name);
+        project.bullets.forEach((bullet) => projectLines.push(`- ${bullet}`));
+      });
+      const projectBlock = projectLines.join("\n");
+      const lines = finalResume.split("\n");
+      // Prefer to slot projects right before EDUCATION (or CERTIFICATIONS).
+      const anchorIdx = lines.findIndex((line) =>
+        /^(education|certifications)\s*:?\s*$/i.test(line.trim())
+      );
+      if (anchorIdx >= 0) {
+        lines.splice(anchorIdx, 0, projectBlock, "");
+        finalResume = lines.join("\n").trim();
+      } else {
+        finalResume = `${finalResume.trim()}\n\n${projectBlock}`.trim();
       }
     }
 

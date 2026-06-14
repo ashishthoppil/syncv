@@ -1986,7 +1986,7 @@ export const ScanSection = ({
 
       {previewOpen && tailoredDocs && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-md bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
@@ -2037,7 +2037,7 @@ export const ScanSection = ({
                 <button
                   type="button"
                   className={cn(
-                    "rounded-full px-4 py-2 text-sm transition",
+                    "rounded-md px-4 py-2 text-sm transition",
                     previewView === "resume"
                       ? "bg-slate-900 text-white"
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -2050,7 +2050,7 @@ export const ScanSection = ({
                   <button
                     type="button"
                     className={cn(
-                      "rounded-full px-4 py-2 text-sm transition",
+                      "rounded-md px-4 py-2 text-sm transition",
                       previewView === "cover"
                         ? "bg-slate-900 text-white"
                         : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -2070,7 +2070,7 @@ export const ScanSection = ({
                         <h4 className="text-sm font-semibold text-slate-900">Resume setup</h4>
                         <Button
                           variant="outline"
-                          className="rounded-full"
+                          className="rounded-md"
                           disabled={
                             guestTrial ||
                             downloadingType === "cv" ||
@@ -2097,7 +2097,7 @@ export const ScanSection = ({
                             type="button"
                             onClick={() => setSelectedTemplate(template.id)}
                             className={cn(
-                              "rounded-full border px-3 py-1 text-xs font-medium transition",
+                              "rounded-md border px-3 py-1 text-xs font-medium transition",
                               selectedTemplate === template.id
                                 ? "border-slate-900 bg-slate-900 text-white"
                                 : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
@@ -2116,7 +2116,7 @@ export const ScanSection = ({
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 rounded-full px-3 text-xs"
+                            className="h-7 rounded-md px-3 text-xs"
                             onClick={resetTemplateOverrides}
                           >
                             Reset
@@ -2256,7 +2256,7 @@ export const ScanSection = ({
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-8 rounded-r border-r-0 px-3 text-xs font-semibold"
+                            className="h-8 rounded-r rounder-md border-r-0 px-3 text-xs font-semibold"
                             onMouseDown={(event) => {
                               event.preventDefault();
                               applyPreviewCommand("bold");
@@ -2267,7 +2267,7 @@ export const ScanSection = ({
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-8 rounded-l px-3 text-xs italic"
+                            className="h-8 rounded-l rounded-md px-3 text-xs italic"
                             onMouseDown={(event) => {
                               event.preventDefault();
                               applyPreviewCommand("italic");
@@ -2292,7 +2292,7 @@ export const ScanSection = ({
                         <div className="pointer-events-none sticky bottom-3 mt-3 flex justify-end">
                           <Button
                             type="button"
-                            className="pointer-events-auto rounded-full shadow-md"
+                            className="pointer-events-auto rounded-md shadow-md"
                             onClick={reevaluateEditedResumeScore}
                             disabled={isComputingFinalScore}
                           >
@@ -2314,7 +2314,7 @@ export const ScanSection = ({
                     </h4>
                     <Button
                       variant="outline"
-                      className="rounded-full"
+                      className="rounded-md"
                       disabled={
                         guestTrial ||
                         downloadingType === "cv" ||

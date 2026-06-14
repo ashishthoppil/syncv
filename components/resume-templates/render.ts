@@ -42,19 +42,120 @@ const cleanSkillLabel = (skill: string) =>
     .replace(/^[-*•]\s*/, "")
     .trim();
 
-const toUniqueSkillItems = (skills: string[] = []) =>
-  Array.from(
-    new Set(
-      skills
-        .map(cleanSkillLabel)
-        .flatMap((skill) =>
-          skill
-            .split(/,(?![^()]*\))/)
-            .map((part) => part.trim())
-            .filter(Boolean)
-        )
-    )
+const normalizeSkillKey = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+// Generic trailing words that don't change the underlying skill, used so
+// "Git workflows" collapses onto "Git" during de-duplication.
+const GENERIC_TRAILING_SKILL_WORDS = new Set([
+  "workflows",
+  "workflow",
+  "skills",
+  "skill",
+  "abilities",
+  "ability",
+  "proficiency",
+  "knowledge",
+  "expertise",
+]);
+
+const canonicalSkillKey = (skill: string) => {
+  const words = normalizeSkillKey(skill).split(" ").filter(Boolean);
+  while (
+    words.length > 1 &&
+    GENERIC_TRAILING_SKILL_WORDS.has(words[words.length - 1])
+  ) {
+    words.pop();
+  }
+  return words.join(" ");
+};
+
+// Profession-agnostic filler that ATS doesn't score as a hard skill. Kept
+// deliberately narrow so genuine soft skills (Leadership, Communication,
+// Teamwork, Time Management) survive.
+const FILLER_SKILL_PHRASES = [
+  "product mindset",
+  "ownership mindset",
+  "product thinking",
+  "growth mindset",
+  "problem solving",
+  "analytical thinking",
+  "critical thinking",
+  "knowledge sharing",
+  "technical enhancements",
+  "fast paced",
+  "attention to detail",
+  "team player",
+  "hard working",
+  "hardworking",
+  "self motivated",
+  "self starter",
+  "go getter",
+  "results driven",
+  "results oriented",
+  "detail oriented",
+];
+
+const FILLER_SKILL_WORDS = new Set(["passionate", "dynamic", "proactive"]);
+
+const isFillerSkill = (skill: string) => {
+  const norm = normalizeSkillKey(skill);
+  if (!norm) return true;
+  if (FILLER_SKILL_WORDS.has(norm)) return true;
+  return FILLER_SKILL_PHRASES.some(
+    (phrase) => norm === phrase || norm.includes(phrase)
   );
+};
+
+const splitSkillItems = (value: string) =>
+  value
+    .split(/,(?![^()]*\))/)
+    .map(cleanSkillLabel)
+    .filter(Boolean);
+
+type SkillCategory = { label: string | null; items: string[] };
+
+const SKILL_LABEL_PATTERN = /^([A-Za-z][A-Za-z0-9 &/+().-]{0,38}?):\s*(.*)$/;
+
+const parseSkillCategories = (skillLines: string[] = []): SkillCategory[] => {
+  const categories: SkillCategory[] = [];
+  const byLabel = new Map<string, SkillCategory>();
+  const seen = new Set<string>();
+
+  const addItems = (label: string | null, rawItems: string[]) => {
+    const cleaned = rawItems.filter((item) => !isFillerSkill(item));
+    if (!cleaned.length) return;
+    const key = label ? label.toLowerCase() : "__uncategorized__";
+    let category = byLabel.get(key);
+    if (!category) {
+      category = { label, items: [] };
+      byLabel.set(key, category);
+      categories.push(category);
+    }
+    cleaned.forEach((item) => {
+      const canon = canonicalSkillKey(item);
+      if (!canon || seen.has(canon)) return;
+      seen.add(canon);
+      category!.items.push(item);
+    });
+  };
+
+  skillLines.forEach((rawLine) => {
+    const line = cleanSkillLabel(rawLine);
+    if (!line) return;
+    const match = line.match(SKILL_LABEL_PATTERN);
+    if (match && match[2]) {
+      addItems(match[1].trim(), splitSkillItems(match[2]));
+    } else {
+      addItems(null, splitSkillItems(line));
+    }
+  });
+
+  return categories.filter((category) => category.items.length);
+};
 
 const normalizeExperienceBullets = (bullets: string[] = []) => {
   const merged: string[] = [];
@@ -92,6 +193,372 @@ const isRoleHeaderLine = (line: string) =>
   line.includes("|") ||
   /\b(engineer|developer|manager|coordinator|analyst|consultant|specialist)\b/i.test(line);
 
+const DATE_LIKE_PATTERN =
+  /\b(19|20)\d{2}\b|present|current|(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+
+const MONTH = "(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?";
+const DATE_TOKEN = `(?:${MONTH}\\s+\\d{4}|\\d{1,2}\\/\\d{2,4}|(?:19|20)\\d{2})`;
+// Matches a trailing date range or single date at the end of a header line,
+// e.g. "Sep 2024 - Jan 2025", "2020 - Present", "Jul 2022".
+const DURATION_TAIL_PATTERN = new RegExp(
+  `\\s*(${DATE_TOKEN}\\s*(?:[-–—]|to)\\s*(?:present|current|${DATE_TOKEN})|${DATE_TOKEN})\\s*$`,
+  "i"
+);
+
+// Common job-title nouns across professions, used only as a fallback to split
+// a delimiter-less "Designation Company" header.
+const ROLE_NOUNS = new Set([
+  "developer","engineer","manager","analyst","designer","consultant","lead",
+  "architect","intern","specialist","coordinator","director","officer",
+  "administrator","scientist","associate","executive","accountant","nurse",
+  "teacher","writer","strategist","recruiter","technician","supervisor",
+  "head","president","founder","owner","agent","representative","assistant",
+  "programmer","trainee","editor","marketer","planner","advisor","instructor",
+  "artist","therapist","pharmacist","physician","attorney","clerk",
+]);
+
+type ExperienceEntry = {
+  designation: string;
+  company: string;
+  location: string;
+  duration: string;
+  bullets: string[];
+};
+
+// Fallback for headers with no pipes: split "Frontend Developer Acme Corp"
+// into designation + company using the last recognizable role noun.
+const splitDesignationCompany = (text: string) => {
+  const words = text.split(/\s+/).filter(Boolean);
+  let roleEnd = -1;
+  words.forEach((word, index) => {
+    const key = word.toLowerCase().replace(/[^a-z]/g, "");
+    if (ROLE_NOUNS.has(key)) roleEnd = index;
+  });
+  if (roleEnd === -1 || roleEnd === words.length - 1) {
+    return { designation: text, company: "" };
+  }
+  return {
+    designation: words.slice(0, roleEnd + 1).join(" "),
+    company: words.slice(roleEnd + 1).join(" "),
+  };
+};
+
+// Splits a header into structured parts. Prefers the pipe-delimited
+// "Designation | Company | Location | Duration" format, but degrades
+// gracefully to best-effort parsing when the model omits the pipes.
+const parseExperienceHeader = (line: string): ExperienceEntry => {
+  const cleanLine = stripMarkdownBold(line).trim();
+  const entry: ExperienceEntry = {
+    designation: "",
+    company: "",
+    location: "",
+    duration: "",
+    bullets: [],
+  };
+
+  if (cleanLine.includes("|")) {
+    const parts = cleanLine
+      .split("|")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const durationIdx = parts.findIndex((part) => DATE_LIKE_PATTERN.test(part));
+    if (durationIdx !== -1) {
+      entry.duration = parts.splice(durationIdx, 1)[0];
+    }
+    entry.designation = parts.shift() || "";
+    entry.company = parts.shift() || "";
+    entry.location = parts.join(", ");
+    return entry;
+  }
+
+  // No pipes — best-effort parse from a natural-language header.
+  let rest = cleanLine;
+  const durationMatch = rest.match(DURATION_TAIL_PATTERN);
+  if (durationMatch) {
+    entry.duration = durationMatch[1].trim();
+    rest = rest.slice(0, durationMatch.index ?? rest.length).trim();
+  }
+
+  const { designation, company } = splitDesignationCompany(rest);
+  entry.designation = designation;
+
+  // Peel a trailing "City, Region" location off the company text.
+  const commaIdx = company.indexOf(",");
+  if (commaIdx !== -1) {
+    const beforeComma = company.slice(0, commaIdx).trim();
+    const afterComma = company.slice(commaIdx); // keeps the comma
+    const beforeWords = beforeComma.split(/\s+/).filter(Boolean);
+    const city = beforeWords.pop() || "";
+    entry.company = beforeWords.join(" ");
+    entry.location = `${city}${afterComma}`.trim();
+  } else {
+    entry.company = company;
+  }
+
+  return entry;
+};
+
+const parseExperienceEntries = (lines: string[] = []): ExperienceEntry[] => {
+  const entries: ExperienceEntry[] = [];
+  let current: ExperienceEntry | null = null;
+
+  lines.forEach((rawLine) => {
+    const clean = stripMarkdownBold(rawLine).trim();
+    if (!clean) return;
+    const isBullet = /^[-*•]\s+/.test(clean);
+    const deBulleted = clean.replace(/^[-*•]\s+/, "").trim();
+
+    const startsNewEntry =
+      !isBullet &&
+      (clean.includes("|") ||
+        (isRoleHeaderLine(clean) && (!current || current.bullets.length > 0)));
+
+    if (startsNewEntry) {
+      current = parseExperienceHeader(clean);
+      entries.push(current);
+      return;
+    }
+
+    if (!current) {
+      current = {
+        designation: deBulleted,
+        company: "",
+        location: "",
+        duration: "",
+        bullets: [],
+      };
+      entries.push(current);
+      return;
+    }
+
+    current.bullets.push(deBulleted);
+  });
+
+  return entries;
+};
+
+const DEGREE_PATTERN =
+  /\b(bachelor|master|associate|diploma|ph\.?d|doctorate|mba|m\.?sc|b\.?sc|b\.?tech|m\.?tech|b\.?e|m\.?e|bca|mca|b\.?a|m\.?a|b\.?com|m\.?com|ll\.?b|ll\.?m|bba|hsc|sslc)\b/i;
+const INSTITUTION_PATTERN =
+  /\b(university|college|institute|institution|school|academy|polytechnic|seminary)\b/i;
+
+const isEducationHeaderLine = (line: string) =>
+  line.includes("|") || DEGREE_PATTERN.test(line) || INSTITUTION_PATTERN.test(line);
+
+type EducationEntry = {
+  qualification: string;
+  institution: string;
+  duration: string;
+  details: string[];
+};
+
+// Splits an education header into structured parts. Prefers the pipe-delimited
+// "Qualification | Institution | Duration" format, with a best-effort fallback
+// for plain-text headers that lack pipes.
+const parseEducationHeader = (line: string): EducationEntry => {
+  const cleanLine = stripMarkdownBold(line).trim();
+  const entry: EducationEntry = {
+    qualification: "",
+    institution: "",
+    duration: "",
+    details: [],
+  };
+
+  if (cleanLine.includes("|")) {
+    const parts = cleanLine
+      .split("|")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const durationIdx = parts.findIndex((part) => DATE_LIKE_PATTERN.test(part));
+    if (durationIdx !== -1) {
+      entry.duration = parts.splice(durationIdx, 1)[0];
+    }
+    entry.qualification = parts.shift() || "";
+    entry.institution = parts.join(", ");
+    return entry;
+  }
+
+  // No pipes — peel the trailing duration, then split qualification from the
+  // institution at the institution keyword (capturing up to 2 preceding
+  // proper-noun words, e.g. "Mahatma Gandhi University").
+  let rest = cleanLine;
+  const durationMatch = rest.match(DURATION_TAIL_PATTERN);
+  if (durationMatch) {
+    entry.duration = durationMatch[1].trim();
+    rest = rest.slice(0, durationMatch.index ?? rest.length).trim();
+  }
+
+  const words = rest.split(/\s+/).filter(Boolean);
+  let kwIdx = -1;
+  words.forEach((word, index) => {
+    if (
+      /^(university|college|institute|institution|school|academy|polytechnic|seminary)[,.]?$/i.test(
+        word
+      )
+    ) {
+      kwIdx = index;
+    }
+  });
+
+  if (kwIdx !== -1) {
+    let start = kwIdx;
+    let taken = 0;
+    while (start - 1 >= 0 && taken < 2 && /^[A-Z]/.test(words[start - 1])) {
+      start -= 1;
+      taken += 1;
+    }
+    entry.institution = words.slice(start).join(" ");
+    entry.qualification = words.slice(0, start).join(" ").trim();
+  } else {
+    entry.qualification = rest;
+  }
+
+  return entry;
+};
+
+const parseEducationEntries = (lines: string[] = []): EducationEntry[] => {
+  const entries: EducationEntry[] = [];
+  let current: EducationEntry | null = null;
+
+  lines.forEach((rawLine) => {
+    const clean = stripMarkdownBold(rawLine).trim();
+    if (!clean) return;
+    const isBullet = /^[-*•]\s+/.test(clean);
+    const deBulleted = clean.replace(/^[-*•]\s+/, "").trim();
+
+    if (!isBullet && isEducationHeaderLine(clean)) {
+      current = parseEducationHeader(clean);
+      entries.push(current);
+      return;
+    }
+
+    if (!current) {
+      current = parseEducationHeader(clean);
+      entries.push(current);
+      return;
+    }
+
+    current.details.push(deBulleted);
+  });
+
+  return entries;
+};
+
+type ProjectEntry = {
+  name: string;
+  meta: string; // tech stack / role descriptor following the name
+  href: string; // optional project/demo/repo link
+  bullets: string[];
+};
+
+const PROJECT_URL_PATTERN = /(https?:\/\/[^\s)]+|www\.[^\s)]+)/i;
+
+// A project header is a short label-like line (not a full sentence) that
+// introduces a new project. Description sentences and bullets are not headers.
+const isProjectHeaderLine = (line: string) => {
+  const text = line.replace(PROJECT_URL_PATTERN, "").trim();
+  if (!text) return true; // a bare link line still starts/decorates an entry
+  return text.length <= 90 && !/[.?!]$/.test(text);
+};
+
+// Splits a project header into name + optional tech/role meta + optional link.
+const parseProjectHeader = (rawLine: string): ProjectEntry => {
+  let text = rawLine.trim();
+  let href = "";
+
+  const urlMatch = text.match(PROJECT_URL_PATTERN);
+  if (urlMatch) {
+    href = normalizeLinkHref(urlMatch[1]);
+    text = text.replace(urlMatch[1], "").trim();
+  }
+  // Drop separators left dangling once the URL is removed.
+  text = text.replace(/[\s\-–—|:]+$/g, "").replace(/^[\s\-–—|:]+/g, "").trim();
+
+  let name = text;
+  let meta = "";
+  const sepMatch = text.match(/\s+[|–—]\s+|\s+-\s+/);
+  if (sepMatch && sepMatch.index !== undefined) {
+    name = text.slice(0, sepMatch.index).trim();
+    meta = text.slice(sepMatch.index + sepMatch[0].length).trim();
+  }
+
+  return { name, meta, href, bullets: [] };
+};
+
+const parseProjectEntries = (lines: string[] = []): ProjectEntry[] => {
+  const entries: ProjectEntry[] = [];
+  let current: ProjectEntry | null = null;
+
+  lines.forEach((rawLine) => {
+    const clean = stripMarkdownBold(rawLine).trim();
+    if (!clean) return;
+    const isBullet = /^[-*•]\s+/.test(clean);
+    const deBulleted = clean.replace(/^[-*•]\s+/, "").trim();
+
+    if (!isBullet && isProjectHeaderLine(clean)) {
+      current = parseProjectHeader(clean);
+      entries.push(current);
+      return;
+    }
+
+    if (!current) {
+      // Description-style first line with no header — synthesize an entry.
+      current = { name: "", meta: "", href: "", bullets: [deBulleted] };
+      entries.push(current);
+      return;
+    }
+
+    current.bullets.push(deBulleted);
+  });
+
+  return entries;
+};
+
+// A line inside the certifications block that is really a sub-grouping label
+// (e.g. "COURSES", "Licenses & Certifications") rather than a certification.
+const CERT_SUBHEADING_PATTERN =
+  /^(courses?|online courses?|certifications?|licen[cs]es?|trainings?|workshops?|moocs?|professional development|(?:courses?|licen[cs]es?|certifications?)\s*(?:&|and)\s*(?:courses?|licen[cs]es?|certifications?))$/i;
+
+// Trailing "anchor" text that points at a credential link (e.g. "- Credentials").
+const CERT_LABEL_PATTERN =
+  /[\s\-–—|:]*(credentials?|verify(?:\s+\w+)?|view\s+(?:certificate|credential)|link)[\s:.\-–—]*$/i;
+
+type CertificationLine =
+  | { kind: "heading"; text: string }
+  | { kind: "item"; text: string; href: string; label: string };
+
+const parseCertificationLine = (rawLine: string): CertificationLine | null => {
+  const clean = stripMarkdownBold(rawLine)
+    .replace(/^[-*•]\s+/, "")
+    .trim();
+  if (!clean) return null;
+
+  const headingCandidate = clean.replace(/[:•\-\s]+$/g, "").trim();
+  if (CERT_SUBHEADING_PATTERN.test(headingCandidate)) {
+    return { kind: "heading", text: headingCandidate };
+  }
+
+  let text = clean;
+  let href = "";
+  const urlMatch = text.match(/(https?:\/\/[^\s)]+|www\.[^\s)]+)/i);
+  if (urlMatch) {
+    href = normalizeLinkHref(urlMatch[1]);
+    const at = urlMatch.index ?? 0;
+    text = (text.slice(0, at) + text.slice(at + urlMatch[0].length)).trim();
+  }
+
+  let label = "";
+  const labelMatch = text.match(CERT_LABEL_PATTERN);
+  if (labelMatch) {
+    label = labelMatch[1].trim();
+    text = text.slice(0, labelMatch.index).trim();
+  }
+  // Tidy any separator left dangling after stripping the URL/label.
+  text = text.replace(/[\s\-–—|:]+$/g, "").trim();
+
+  return { kind: "item", text, href, label };
+};
+
 const normalizeHeader = (line: string) =>
   stripMarkdownBold(line)
     .replace(/^[-*•·▪◦]+\s*/, "")
@@ -115,6 +582,23 @@ const HEADER_ALIASES: Record<string, string> = {
   education: "education",
   certifications: "certifications",
   certification: "certifications",
+  courses: "certifications",
+  course: "certifications",
+  "online courses": "certifications",
+  "courses & certifications": "certifications",
+  "courses and certifications": "certifications",
+  "certifications & courses": "certifications",
+  "certifications and courses": "certifications",
+  "licenses & certifications": "certifications",
+  "licenses and certifications": "certifications",
+  "licences & certifications": "certifications",
+  "licences and certifications": "certifications",
+  "certifications & licenses": "certifications",
+  "certifications and licenses": "certifications",
+  "professional development": "certifications",
+  training: "certifications",
+  trainings: "certifications",
+  workshops: "certifications",
   languages: "languages",
   language: "languages",
   "languages known": "languages",
@@ -144,6 +628,22 @@ const normalizeLinkHref = (value: string) => {
   }
   return "";
 };
+
+// Canonical form used for de-duplication: lowercased, no protocol/www/trailing slash.
+const canonicalizeContactValue = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/+$/, "")
+    .trim();
+
+// Clean, ATS-friendly visible label: drop protocol + www. + trailing slash, keep the path.
+const displayLabelForUrl = (value: string) =>
+  value
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/+$/, "");
 
 const extractKnownProfileLinks = (text = ""): KnownProfileLinks => {
   const content = stripMarkdownBold(text);
@@ -183,7 +683,13 @@ const extractContactItems = (
   const seen = new Set<string>();
 
   const addItem = (item: ContactItem) => {
-    const key = `${item.kind}:${item.label.toLowerCase()}`;
+    // A candidate realistically has one profile per network, so dedup those by
+    // kind alone — this catches www. vs non-www and http vs https variants that
+    // a label-based key would miss. Everything else dedups on a canonical value.
+    const key =
+      item.kind === "linkedin" || item.kind === "github" || item.kind === "behance"
+        ? item.kind
+        : `${item.kind}:${canonicalizeContactValue(item.label)}`;
     if (seen.has(key)) return;
     seen.add(key);
     items.push(item);
@@ -212,21 +718,31 @@ const extractContactItems = (
     const href = normalizeLinkHref(rawUrl);
     if (!href) return;
     if (/linkedin\.com/i.test(href)) {
-      addItem({ kind: "linkedin", label: href, href });
+      addItem({ kind: "linkedin", label: displayLabelForUrl(href), href });
       return;
     }
     if (/github\.com/i.test(href)) {
-      addItem({ kind: "github", label: href, href });
+      addItem({ kind: "github", label: displayLabelForUrl(href), href });
       return;
     }
     if (/behance\.net/i.test(href)) {
-      addItem({ kind: "behance", label: href, href });
+      addItem({ kind: "behance", label: displayLabelForUrl(href), href });
       return;
     }
     if (/portfolio|about\.me|linktr\.ee/i.test(href)) {
-      addItem({ kind: "link", label: href, href });
+      addItem({ kind: "link", label: displayLabelForUrl(href), href });
     }
   });
+
+  // Surface location only when the resume explicitly labels it (Location:/Address:/Based in).
+  // The capture class excludes "|" so it stops at the personal-line separator.
+  const locationMatch = raw.match(
+    /(?:location|address|based\s+in)\s*[:\-]?\s*([A-Za-z][A-Za-z .,'\/-]+)/i
+  );
+  if (locationMatch) {
+    const location = locationMatch[1].trim().replace(/[,;]\s*$/, "");
+    if (location) addItem({ kind: "location", label: location });
+  }
 
   if (items.length) return items;
 
@@ -296,14 +812,34 @@ const extractContactItems = (
   return items;
 };
 
-const iconForContactKind = (kind: ContactItem["kind"]) => {
-  if (kind === "phone") return "☎";
-  if (kind === "email") return "✉";
-  if (kind === "linkedin") return "in";
-  if (kind === "github") return "gh";
-  if (kind === "behance") return "be";
-  if (kind === "location") return "loc";
-  return "🔗";
+// Inline SVG icons (Lucide for outline glyphs, Simple Icons for brand marks).
+// Inline SVG renders identically in the browser preview and the Puppeteer PDF,
+// inherits text color via currentColor, and—unlike an icon font—is never picked
+// up as text by ATS parsers, so it can't pollute the parsed email/phone values.
+const iconSvgForContactKind = (kind: ContactItem["kind"], color: string) => {
+  const open = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="flex:none;display:block;">`;
+  const stroke = `fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+
+  if (kind === "email") {
+    return `${open}<g ${stroke}><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></g></svg>`;
+  }
+  if (kind === "phone") {
+    return `${open}<g ${stroke}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></g></svg>`;
+  }
+  if (kind === "location") {
+    return `${open}<g ${stroke}><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></g></svg>`;
+  }
+  if (kind === "linkedin") {
+    return `${open}<path fill="${color}" d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>`;
+  }
+  if (kind === "github") {
+    return `${open}<path fill="${color}" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>`;
+  }
+  if (kind === "behance") {
+    return `${open}<path fill="${color}" d="M22 7h-7V5h7v2zm1.726 10c-.442 1.297-2.029 3-5.101 3-3.074 0-5.564-1.729-5.564-5.675 0-3.91 2.325-5.92 5.466-5.92 3.082 0 4.964 1.782 5.375 4.426.078.506.109 1.188.095 2.14H15.97c.13 3.211 3.483 3.312 4.588 2.029h3.168zm-7.686-4h4.965c-.105-1.547-1.136-2.219-2.477-2.219-1.466 0-2.277.768-2.488 2.219zm-9.574 6.988H0V5.021h6.953c5.476.081 5.58 5.444 2.72 6.906 3.461 1.26 3.577 8.061-3.207 8.061zM3 11h3.584c2.508 0 2.906-3-.312-3H3v3zm3.391 3H3v3.016h3.341c3.055 0 2.868-3.016.05-3.016z"/></svg>`;
+  }
+  // generic / portfolio link
+  return `${open}<g ${stroke}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g></svg>`;
 };
 
 const renderResumeBodyFromText = (
@@ -360,10 +896,8 @@ const renderResumeBodyFromText = (
       if (options.useContactIcons) {
         html += `<div style="display:flex;flex-wrap:wrap;gap:8px 10px;margin:0 0 10px;">`;
         contactItems.forEach((item) => {
-          const icon = iconForContactKind(item.kind);
-          const text = `<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:#e2e8f0;color:#0f172a;font-size:10px;font-weight:700;">${escapeHtml(
-            icon
-          )}</span><span>${escapeHtml(item.label)}</span>`;
+          const icon = iconSvgForContactKind(item.kind, options.bodyColor);
+          const text = `${icon}<span>${escapeHtml(item.label)}</span>`;
           if (item.href) {
             html += `<a href="${escapeHtml(
               item.href
@@ -403,12 +937,27 @@ const renderResumeBodyFromText = (
   }
 
   const skillLines = sections.skills || [];
-  if (skillLines.length) {
-    const inlineSkills = toUniqueSkillItems(skillLines);
+  const skillCategories = parseSkillCategories(skillLines);
+  if (skillCategories.length) {
     html += `<h3 style=\"${sectionHeadingStyle}\">SKILLS</h3>`;
-    html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;\">${escapeHtml(
-      inlineSkills.join(", ")
-    )}</p>`;
+    const hasLabels = skillCategories.some((category) => category.label);
+    if (hasLabels) {
+      html += '<div style="margin:0 0 10px;">';
+      skillCategories.forEach((category) => {
+        const labelHtml = category.label
+          ? `<strong>${escapeHtml(category.label)}:</strong> `
+          : "";
+        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;\">${labelHtml}${escapeHtml(
+          category.items.join(", ")
+        )}</p>`;
+      });
+      html += "</div>";
+    } else {
+      const inlineSkills = skillCategories.flatMap((category) => category.items);
+      html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;\">${escapeHtml(
+        inlineSkills.join(", ")
+      )}</p>`;
+    }
   }
 
   const renderSectionLines = (
@@ -417,23 +966,11 @@ const renderResumeBodyFromText = (
     sectionOptions: {
       forceBullets?: boolean;
       treatAllAsBullets?: boolean;
-      educationMode?: boolean;
-      projectMode?: boolean;
     } = {}
   ) => {
     if (!sectionLines.length) return;
     html += `<h3 style=\"${sectionHeadingStyle}\">${title}</h3>`;
     let bullets: string[] = [];
-    const isProjectTitleLine = (line: string) =>
-      line.length <= 90 &&
-      !/[.?!]$/.test(line) &&
-      !/^https?:\/\//i.test(line) &&
-      !line.toLowerCase().startsWith("description:");
-    const isEducationHeaderLine = (line: string) =>
-      line.includes("|") ||
-      /\b(19|20)\d{2}\b/.test(line) ||
-      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b/i.test(line);
-
     const flushBullets = () => {
       const normalized = normalizeExperienceBullets(bullets);
       if (normalized.length) {
@@ -452,36 +989,6 @@ const renderResumeBodyFromText = (
       const cleanLine = stripMarkdownBold(line).trim();
       const isBulletLine = /^[-*•]\s+/.test(cleanLine);
       const deBulleted = cleanLine.replace(/^[-*•]\s+/, "").trim();
-
-      // Projects should read as "Title" + description text, without bullet glyphs.
-      if (sectionOptions.projectMode) {
-        flushBullets();
-        if (isProjectTitleLine(deBulleted)) {
-          html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;\"><strong>${escapeHtml(
-            deBulleted
-          )}</strong></p>`;
-        } else {
-          html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 8px;\">${escapeHtml(
-            deBulleted
-          )}</p>`;
-        }
-        return;
-      }
-
-      // Education should keep period/details as plain lines, not forced bullets.
-      if (sectionOptions.educationMode) {
-        flushBullets();
-        if (isEducationHeaderLine(deBulleted)) {
-          html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;\"><strong>${escapeHtml(
-            deBulleted
-          )}</strong></p>`;
-        } else {
-          html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 8px;\">${escapeHtml(
-            deBulleted
-          )}</p>`;
-        }
-        return;
-      }
 
       if (isBulletLine) {
         bullets.push(cleanLine);
@@ -512,22 +1019,156 @@ const renderResumeBodyFromText = (
     flushBullets();
   };
 
-  if ((sections.experience || []).length) {
-    renderSectionLines("EXPERIENCE", sections.experience || [], { forceBullets: true });
-  }
-  if ((sections.projects || []).length) {
-    renderSectionLines("PROJECTS", sections.projects || [], { projectMode: true });
-  }
-  if ((sections.education || []).length) {
-    renderSectionLines("EDUCATION", sections.education || [], {
-      educationMode: true,
+  const experienceEntries = parseExperienceEntries(sections.experience || []);
+  if (experienceEntries.length) {
+    html += `<h3 style=\"${sectionHeadingStyle}\">EXPERIENCE</h3>`;
+    experienceEntries.forEach((entry) => {
+      html += '<div style="margin:0 0 12px;">';
+
+      const titleText = entry.designation || entry.company;
+      html +=
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
+      html += `<span style=\"font-size:${options.baseFontSize + 1}px;font-weight:700;color:${options.headingColor};\">${escapeHtml(
+        titleText
+      )}</span>`;
+      if (entry.duration) {
+        html += `<span style=\"font-size:${options.baseFontSize}px;color:${options.bodyColor};white-space:nowrap;\">${escapeHtml(
+          entry.duration
+        )}</span>`;
+      }
+      html += "</div>";
+
+      // Company + location on the second line. If the title fell back to the
+      // company (no designation), don't repeat the company here.
+      let secondLineHtml = "";
+      if (entry.designation && entry.company) {
+        secondLineHtml = `<span style=\"font-weight:600;\">${escapeHtml(
+          entry.company
+        )}</span>`;
+        if (entry.location) {
+          secondLineHtml += `<span style=\"font-weight:400;\"> — ${escapeHtml(
+            entry.location
+          )}</span>`;
+        }
+      } else if (entry.location) {
+        secondLineHtml = escapeHtml(entry.location);
+      }
+      if (secondLineHtml) {
+        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:1px 0 5px;\">${secondLineHtml}</p>`;
+      }
+
+      const normalizedBullets = normalizeExperienceBullets(entry.bullets);
+      normalizedBullets.forEach((bullet) => {
+        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 5px;padding-left:14px;text-indent:-14px;\">• ${escapeHtml(
+          bullet
+        )}</p>`;
+      });
+
+      html += "</div>";
     });
   }
-  if ((sections.certifications || []).length) {
-    renderSectionLines("CERTIFICATIONS", sections.certifications || [], {
-      forceBullets: true,
-      treatAllAsBullets: true,
+  const projectEntries = parseProjectEntries(sections.projects || []);
+  if (projectEntries.length) {
+    html += `<h3 style=\"${sectionHeadingStyle}\">PROJECTS</h3>`;
+    projectEntries.forEach((entry) => {
+      html += '<div style="margin:0 0 10px;">';
+
+      // Header line: bold project name on the left, optional link on the right.
+      if (entry.name || entry.href) {
+        html +=
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
+        html += `<span style=\"font-size:${options.baseFontSize + 1}px;font-weight:700;color:${options.headingColor};\">${escapeHtml(
+          entry.name
+        )}</span>`;
+        if (entry.href) {
+          html += `<a href=\"${escapeHtml(
+            entry.href
+          )}\" style=\"font-size:${options.baseFontSize}px;color:${options.bodyColor};text-decoration:underline;white-space:nowrap;\">${escapeHtml(
+            displayLabelForUrl(entry.href)
+          )}</a>`;
+        }
+        html += "</div>";
+      }
+
+      // Tech stack / role descriptor on its own muted line.
+      if (entry.meta) {
+        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:1px 0 4px;font-style:italic;\">${escapeHtml(
+          entry.meta
+        )}</p>`;
+      }
+
+      const normalizedBullets = normalizeExperienceBullets(entry.bullets);
+      normalizedBullets.forEach((bullet) => {
+        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;padding-left:14px;text-indent:-14px;\">• ${escapeHtml(
+          bullet
+        )}</p>`;
+      });
+
+      html += "</div>";
     });
+  }
+  const educationEntries = parseEducationEntries(sections.education || []);
+  if (educationEntries.length) {
+    html += `<h3 style=\"${sectionHeadingStyle}\">EDUCATION</h3>`;
+    educationEntries.forEach((entry) => {
+      html += '<div style="margin:0 0 10px;">';
+
+      const titleText = entry.qualification || entry.institution;
+      html +=
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
+      html += `<span style=\"font-size:${options.baseFontSize + 1}px;font-weight:700;color:${options.headingColor};\">${escapeHtml(
+        titleText
+      )}</span>`;
+      if (entry.duration) {
+        html += `<span style=\"font-size:${options.baseFontSize}px;color:${options.bodyColor};white-space:nowrap;\">${escapeHtml(
+          entry.duration
+        )}</span>`;
+      }
+      html += "</div>";
+
+      // Institution on its own line, normal weight (only if it isn't already
+      // serving as the title).
+      if (entry.qualification && entry.institution) {
+        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:1px 0 4px;\">${escapeHtml(
+          entry.institution
+        )}</p>`;
+      }
+
+      const normalizedDetails = normalizeExperienceBullets(entry.details);
+      normalizedDetails.forEach((detail) => {
+        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;padding-left:14px;text-indent:-14px;\">• ${escapeHtml(
+          detail
+        )}</p>`;
+      });
+
+      html += "</div>";
+    });
+  }
+  const certificationItems = (sections.certifications || [])
+    .map(parseCertificationLine)
+    .filter((item): item is CertificationLine => item !== null);
+  if (certificationItems.length) {
+    html += `<h3 style=\"${sectionHeadingStyle}\">CERTIFICATIONS</h3>`;
+    html += '<div style="margin:6px 0 10px;">';
+    certificationItems.forEach((item) => {
+      if (item.kind === "heading") {
+        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.headingColor};font-weight:700;margin:8px 0 4px;\">${escapeHtml(
+          item.text
+        )}</p>`;
+        return;
+      }
+      let inner = escapeHtml(item.text);
+      if (item.href) {
+        const linkLabel = item.label || "Credentials";
+        inner += ` — <a href=\"${escapeHtml(
+          item.href
+        )}\" style=\"color:${options.bodyColor};text-decoration:underline;\">${escapeHtml(
+          linkLabel
+        )}</a>`;
+      }
+      html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 6px;padding-left:14px;text-indent:-14px;\">• ${inner}</p>`;
+    });
+    html += "</div>";
   }
   if ((sections.languages || []).length) {
     renderSectionLines("LANGUAGES", sections.languages || [], {
