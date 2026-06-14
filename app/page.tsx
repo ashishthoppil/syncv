@@ -7,7 +7,6 @@ import { Navbar } from "@/components/navbar";
 import Pricing from "@/components/pricing";
 import Testimonials from "@/components/testimonials";
 import type { Metadata } from "next";
-import Script from "next/script";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://syncv.app";
 
@@ -64,11 +63,6 @@ const softwareApplicationJsonLd = {
     "Job application tracker",
     "Resume template designer",
   ],
-  aggregateRating: {
-    "@type": "AggregateRating",
-    ratingValue: "4.8",
-    reviewCount: "120",
-  },
 };
 
 const faqJsonLd = {
@@ -138,22 +132,19 @@ const breadcrumbJsonLd = {
 export default function Home() {
   return (
     <>
-      <Script
+      <script
         id="ld-software-application"
         type="application/ld+json"
-        strategy="afterInteractive"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
       />
-      <Script
+      <script
         id="ld-faq"
         type="application/ld+json"
-        strategy="afterInteractive"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
-      <Script
+      <script
         id="ld-breadcrumb"
         type="application/ld+json"
-        strategy="afterInteractive"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
       <Navbar isHome={true} />
