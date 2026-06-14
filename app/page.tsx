@@ -153,7 +153,7 @@ export default function Home() {
         <Features />
         <Pricing />
         <FAQ />
-        <Testimonials />
+        {/* <Testimonials /> */}
         <CTABanner />
         <Footer />
       </main>

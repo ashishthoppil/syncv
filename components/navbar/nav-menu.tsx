@@ -68,7 +68,7 @@ export const NavMenu = ({
                 </Link>
               </NavigationMenuLink>
             </NavigationMenuItem>
-            <NavigationMenuItem className={itemClassName}>
+            {/* <NavigationMenuItem className={itemClassName}>
               <NavigationMenuLink asChild>
                 <Link
                   className="text-sm font-medium "
@@ -78,7 +78,7 @@ export const NavMenu = ({
                   Testimonials
                 </Link>
               </NavigationMenuLink>
-            </NavigationMenuItem>
+            </NavigationMenuItem> */}
           </>
         )}
       </NavigationMenuList>
