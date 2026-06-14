@@ -5,7 +5,7 @@ import Footer from "@/components/footer";
 import Hero from "@/components/hero";
 import { Navbar } from "@/components/navbar";
 import Pricing from "@/components/pricing";
-import Testimonials from "@/components/testimonials";
+// import Testimonials from "@/components/testimonials";
 import type { Metadata } from "next";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://syncv.app";
