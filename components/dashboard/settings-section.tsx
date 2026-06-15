@@ -22,7 +22,7 @@ import {
   SaveIcon,
   Settings,
   Trash2Icon,
-  UserMinus,
+  // UserMinus,
 } from "lucide-react";
 
 type SubscriptionView = {
@@ -69,7 +69,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   const [savingSettings, setSavingSettings] = useState(false);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const [unsubscribing, setUnsubscribing] = useState(false);
+  // const [unsubscribing, setUnsubscribing] = useState(false);
   const [planActionLoading, setPlanActionLoading] = useState<string | null>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -337,46 +337,47 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
     }
   };
 
-  const handleUnsubscribe = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session?.user) {
-      toast.error("Please log in again.");
-      return;
-    }
+  // const handleUnsubscribe = async () => {
+  //   const {
+  //     data: { session },
+  //   } = await supabase.auth.getSession();
+  //   if (!session?.user) {
+  //     toast.error("Please log in again.");
+  //     return;
+  //   }
 
-    const confirmed = await swal({
-      title: "Unsubscribe?",
-      text: "This will cancel your current plan.",
-      icon: "warning",
-      buttons: ["Cancel", "Unsubscribe"],
-      dangerMode: true,
-    });
-    if (!confirmed) return;
+  //   const confirmed = await swal({
+  //     title: "Unsubscribe?",
+  //     text: "This will cancel your current plan.",
+  //     icon: "warning",
+  //     buttons: ["Cancel", "Unsubscribe"],
+  //     dangerMode: true,
+  //   });
+  //   if (!confirmed) return;
 
-    setUnsubscribing(true);
-    try {
-      const response = await fetch("/api/subscription/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: session.user.id }),
-      });
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.message || "Failed to cancel subscription.");
-      }
-      await loadSubscriptionStatus(session.user.id);
-      await onSubscriptionChange?.();
-      toast.success("You have been unsubscribed.");
-    } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Failed to unsubscribe.";
-      toast.error(message);
-    } finally {
-      setUnsubscribing(false);
-    }
-  };
+  //   // setUnsubscribing(true);
+  //   try {
+  //     const response = await fetch("/api/subscription/cancel", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({ userId: session.user.id }),
+  //     });
+  //     const result = await response.json();
+  //     if (!result.success) {
+  //       throw new Error(result.message || "Failed to cancel subscription.");
+  //     }
+  //     await loadSubscriptionStatus(session.user.id);
+  //     await onSubscriptionChange?.();
+  //     toast.success("You have been unsubscribed.");
+  //   } catch (error: unknown) {
+  //     const message =
+  //       error instanceof Error ? error.message : "Failed to unsubscribe.";
+  //     toast.error(message);
+  //   } finally {
+  //     // setUnsubscribing(false);
+  //     console.log('Nothing to see here')
+  //   }
+  // };
 
   const handleDeleteAccount = async () => {
     const {
