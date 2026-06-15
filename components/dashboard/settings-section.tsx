@@ -512,7 +512,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
               </span>
             ) : null}
           </p>
-          {subscription.hasActivePlan ? (
+          {/* {subscription.hasActivePlan ? (
             <Button
               variant="outline"
               className="rounded-md"
@@ -522,7 +522,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
               <UserMinus />
               {unsubscribing ? "Unsubscribing..." : "Unsubscribe"}
             </Button>
-          ) : null}
+          ) : null} */}
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2">
