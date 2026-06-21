@@ -16,9 +16,13 @@ import {
 import {
   extractCandidateName,
   renderCoverLetterHtml,
+  renderResumeFromData,
   renderResumeHtml,
+  resumeDataToText,
   toSlugPart,
+  type ResumeData,
 } from "@/components/resume-templates/render";
+import { ResumeEditor } from "@/components/dashboard/resume-editor";
 import {
   ResumeTemplateId,
   ResumeTemplateThemeOverrides,
@@ -94,6 +98,7 @@ type ScanSummary = {
 };
 
 type TailoredDocs = {
+  optimizedResume?: ResumeData;
   optimizedResumeText: string;
   coverLetter: string;
   incorporatedKeywords?: string[];
@@ -172,6 +177,7 @@ export const ScanSection = ({
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [isComputingFinalScore, setIsComputingFinalScore] = useState(false);
   const [editableResumeText, setEditableResumeText] = useState("");
+  const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [hasResumePreviewEdits, setHasResumePreviewEdits] = useState(false);
   const [analyzingLabelIndex, setAnalyzingLabelIndex] = useState(0);
   const [generatingLabelIndex, setGeneratingLabelIndex] = useState(0);
@@ -588,6 +594,7 @@ export const ScanSection = ({
     setSelectedTemplate("classic-blue");
     setFinalScore(null);
     setEditableResumeText("");
+    setResumeData(null);
     setHasResumePreviewEdits(false);
     setShowCareerWarning(false);
     setShowCareerKeywordPicker(false);
@@ -941,13 +948,14 @@ export const ScanSection = ({
       const candidateName = extractCandidateName(form.resume);
       const candidateSlug = toSlugPart(candidateName);
       const orgSlug = toSlugPart(form.organization || "organization");
+      // Prefer the structured object (the source of truth). Fall back to the
+      // legacy contentEditable HTML / text only when no object is present.
       const editedResumeHtml = editableResumePreviewRef.current?.innerHTML || "";
       const html =
         type === "cv"
-          ? editedResumeHtml
-            ? `<div>${editedResumeHtml}</div>`
-            : renderResumeHtml({
-                resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
+          ? resumeData
+            ? renderResumeFromData({
+                data: resumeData,
                 templateId: selectedTemplate,
                 candidateName,
                 designation: form.designation,
@@ -955,6 +963,17 @@ export const ScanSection = ({
                 overrides: templateOverrides[selectedTemplate],
                 useContactIcons: !guestTrial,
               })
+            : editedResumeHtml
+              ? `<div>${editedResumeHtml}</div>`
+              : renderResumeHtml({
+                  resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
+                  templateId: selectedTemplate,
+                  candidateName,
+                  designation: form.designation,
+                  photoUrl: profilePhotoUrl,
+                  overrides: templateOverrides[selectedTemplate],
+                  useContactIcons: !guestTrial,
+                })
           : renderCoverLetterHtml(tailoredDocs.coverLetter);
 
       const response = await fetch("/api/generate-pdf", {
@@ -1075,6 +1094,7 @@ export const ScanSection = ({
       }
 
       setTailoredDocs(data.message);
+      setResumeData(data.message.optimizedResume || null);
       setEditableResumeText(data.message.optimizedResumeText || "");
       setHasResumePreviewEdits(false);
       setPreviewView("resume");
@@ -1205,7 +1225,10 @@ export const ScanSection = ({
   }, [isGeneratingDocs, optimizationSteps.length]);
 
   const reevaluateEditedResumeScore = async () => {
-    if (!editableResumeText.trim() || !form.jd.trim()) {
+    const resumeForScore = resumeData
+      ? resumeDataToText(resumeData)
+      : editableResumeText;
+    if (!resumeForScore.trim() || !form.jd.trim()) {
       toast.error("Edited resume or JD is missing.");
       return;
     }
@@ -1214,7 +1237,7 @@ export const ScanSection = ({
       const response = await fetch("/api/analyze", {
         method: "POST",
         body: JSON.stringify({
-          resume: editableResumeText,
+          resume: resumeForScore,
           jd: form.jd,
           organization: form.organization,
           designation: form.designation,
@@ -1256,6 +1279,9 @@ export const ScanSection = ({
 
   useEffect(() => {
     if (!previewOpen || previewView !== "resume" || !tailoredDocs) return;
+    // Structured editor owns its own live preview; only drive the legacy
+    // contentEditable preview when there is no structured object.
+    if (resumeData) return;
     if (!editableResumePreviewRef.current) return;
 
     const candidateName = extractCandidateName(form.resume);
@@ -1275,11 +1301,14 @@ export const ScanSection = ({
     previewOpen,
     previewView,
     tailoredDocs,
+    resumeData,
     selectedTemplate,
     templateOverrides,
     form.resume,
     form.designation,
     profilePhotoUrl,
+    editableResumeText,
+    guestTrial,
   ]);
 
   useEffect(() => {
@@ -2247,63 +2276,101 @@ export const ScanSection = ({
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <h4 className="text-sm font-semibold text-slate-900">Resume preview</h4>
                     </div>
-                    <div className="max-h-[60vh] overflow-auto rounded-lg bg-slate-50 p-4 pt-0">
-                      <div className="sticky top-0 z-20 -mx-4 mb-2 border-b border-slate-200 bg-slate-50 px-4 pb-2 pt-1">
-                        <p className="mb-2 text-xs text-slate-500">
-                          Click and edit directly in the preview, then re-evaluate score when ready.
+                    {resumeData ? (
+                      <div className="rounded-lg bg-slate-50 p-4">
+                        <p className="mb-3 text-xs text-slate-500">
+                          Edit any field below — the preview updates live. Re-evaluate the
+                          score when ready.
                         </p>
-                        <div className="flex flex-wrap items-center">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-8 rounded-r rounder-md border-r-0 px-3 text-xs font-semibold"
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              applyPreviewCommand("bold");
-                            }}
-                          >
-                            Bold
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-8 rounded-l rounded-md px-3 text-xs italic"
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              applyPreviewCommand("italic");
-                            }}
-                          >
-                            Italic
-                          </Button>
-                        </div>
+                        <ResumeEditor
+                          data={resumeData}
+                          onChange={(next) => {
+                            setResumeData(next);
+                            setEditableResumeText(resumeDataToText(next));
+                            setHasResumePreviewEdits(true);
+                          }}
+                          templateId={selectedTemplate}
+                          candidateName={extractCandidateName(form.resume)}
+                          designation={form.designation}
+                          photoUrl={profilePhotoUrl}
+                          overrides={templateOverrides[selectedTemplate]}
+                          useContactIcons={!guestTrial}
+                        />
+                        {hasResumePreviewEdits && (
+                          <div className="mt-3 flex justify-end">
+                            <Button
+                              type="button"
+                              className="rounded-md shadow-md"
+                              onClick={reevaluateEditedResumeScore}
+                              disabled={isComputingFinalScore}
+                            >
+                              {isComputingFinalScore ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : null}
+                              Re-evaluate after changes
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                      <div
-                        ref={editableResumePreviewRef}
-                        contentEditable
-                        suppressContentEditableWarning
-                        className="min-h-[420px] rounded-md border border-slate-200 bg-white p-2 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
-                        onInput={() => {
-                          const liveText = editableResumePreviewRef.current?.innerText || "";
-                          setEditableResumeText(liveText);
-                          setHasResumePreviewEdits(true);
-                        }}
-                      />
-                      {hasResumePreviewEdits && (
-                        <div className="pointer-events-none sticky bottom-3 mt-3 flex justify-end">
-                          <Button
-                            type="button"
-                            className="pointer-events-auto rounded-md shadow-md"
-                            onClick={reevaluateEditedResumeScore}
-                            disabled={isComputingFinalScore}
-                          >
-                            {isComputingFinalScore ? (
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            ) : null}
-                            Re-evaluate after changes
-                          </Button>
+                    ) : (
+                      <div className="max-h-[60vh] overflow-auto rounded-lg bg-slate-50 p-4 pt-0">
+                        <div className="sticky top-0 z-20 -mx-4 mb-2 border-b border-slate-200 bg-slate-50 px-4 pb-2 pt-1">
+                          <p className="mb-2 text-xs text-slate-500">
+                            Click and edit directly in the preview, then re-evaluate score when ready.
+                          </p>
+                          <div className="flex flex-wrap items-center">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 rounded-r rounder-md border-r-0 px-3 text-xs font-semibold"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                applyPreviewCommand("bold");
+                              }}
+                            >
+                              Bold
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 rounded-l rounded-md px-3 text-xs italic"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                applyPreviewCommand("italic");
+                              }}
+                            >
+                              Italic
+                            </Button>
+                          </div>
                         </div>
-                      )}
-                    </div>
+                        <div
+                          ref={editableResumePreviewRef}
+                          contentEditable
+                          suppressContentEditableWarning
+                          className="min-h-[420px] rounded-md border border-slate-200 bg-white p-2 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                          onInput={() => {
+                            const liveText = editableResumePreviewRef.current?.innerText || "";
+                            setEditableResumeText(liveText);
+                            setHasResumePreviewEdits(true);
+                          }}
+                        />
+                        {hasResumePreviewEdits && (
+                          <div className="pointer-events-none sticky bottom-3 mt-3 flex justify-end">
+                            <Button
+                              type="button"
+                              className="pointer-events-auto rounded-md shadow-md"
+                              onClick={reevaluateEditedResumeScore}
+                              disabled={isComputingFinalScore}
+                            >
+                              {isComputingFinalScore ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : null}
+                              Re-evaluate after changes
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

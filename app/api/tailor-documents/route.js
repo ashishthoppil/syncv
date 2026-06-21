@@ -124,74 +124,6 @@ const extractContactLines = (text = "") => {
   return output.slice(0, 4);
 };
 
-const ensureResumeIncludesContactInfo = (resumeText = "", contactLines = []) => {
-  const resume = ensureString(resumeText);
-  if (!resume || !contactLines.length) return resume;
-
-  const existingContact = extractContactLines(resume).map((line) => normalizeText(line));
-  const missing = contactLines.filter(
-    (line) => !existingContact.includes(normalizeText(line))
-  );
-  if (!missing.length) return resume;
-
-  const lines = resume.split("\n");
-  const summaryHeaderIndex = lines.findIndex((line) => /^\s*summary\s*:?\s*$/i.test(line));
-  const insertAt = summaryHeaderIndex >= 0 ? summaryHeaderIndex : 0;
-  const contactBlock = [`CONTACT: ${missing.join(" | ")}`];
-
-  const updated =
-    insertAt === 0
-      ? [...contactBlock, "", ...lines]
-      : [...lines.slice(0, insertAt), ...contactBlock, "", ...lines.slice(insertAt)];
-
-  return updated.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-};
-
-const ensureResumeIncludesLinks = (resumeText = "", originalLinks = []) => {
-  const resume = ensureString(resumeText);
-  if (!resume || !originalLinks.length) return resume;
-
-  const existing = new Set(extractExternalLinks(resume).map((item) => normalizeText(item)));
-  const missing = originalLinks.filter((link) => !existing.has(normalizeText(link)));
-  if (!missing.length) return resume;
-
-  const lines = resume.split("\n");
-  const contactLineIndex = lines.findIndex((line) => /^\s*contact\s*:/i.test(line));
-  if (contactLineIndex >= 0) {
-    const existingContactParts = lines[contactLineIndex]
-      .replace(/^\s*contact\s*:/i, "")
-      .split("|")
-      .map((part) => part.trim())
-      .filter(Boolean);
-    const merged = Array.from(
-      new Set(
-        [...existingContactParts, ...missing].map((part) => part.trim()).filter(Boolean)
-      )
-    );
-    lines[contactLineIndex] = `CONTACT: ${merged.join(" | ")}`;
-    return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-  }
-
-  const summaryHeaderIndex = lines.findIndex((line) => /^\s*summary\s*:?\s*$/i.test(line));
-  const insertAt = summaryHeaderIndex >= 0 ? summaryHeaderIndex : 0;
-  const linkBlock = [`CONTACT: ${missing.join(" | ")}`];
-
-  const updated =
-    insertAt === 0
-      ? [...linkBlock, "", ...lines]
-      : [...lines.slice(0, insertAt), ...linkBlock, "", ...lines.slice(insertAt)];
-
-  return updated.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-};
-
-const removeProfileLinksLines = (resumeText = "") =>
-  String(resumeText || "")
-    .split("\n")
-    .filter((line) => !/^\s*(profile\s+links|links)\s*:/i.test(line))
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
 const extractLikelyTitles = (resume = "") => {
   const titleRegex =
     /\b(engineer|developer|manager|coordinator|teacher|analyst|specialist|assistant|consultant|intern|lead|officer|executive|designer)\b/i;
@@ -216,29 +148,6 @@ const includesLineLoosely = (text = "", line = "") => {
   const l = normalizeText(line);
   if (!l) return true;
   return t.includes(l);
-};
-
-const boldLikelyExperienceLines = (resume = "") => {
-  const lines = resume.split("\n");
-  const titleRegex =
-    /\b(engineer|developer|manager|coordinator|teacher|analyst|specialist|assistant|consultant|intern|lead|officer|executive|designer)\b/i;
-  const companyRegex =
-    /\b(inc|corp|corporation|llc|ltd|limited|pvt|university|school|college)\b/i;
-
-  return lines
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return line;
-      if (/^\*\*.*\*\*$/.test(trimmed)) return line;
-      const isBullet = /^[-*•]\s+/.test(trimmed);
-      const isSentenceLike = /[.?!]$/.test(trimmed);
-      const isLikelyHeading = trimmed.length <= 90 && !isBullet && !isSentenceLike;
-      if (isLikelyHeading && (titleRegex.test(trimmed) || companyRegex.test(trimmed))) {
-        return `**${trimmed}**`;
-      }
-      return line;
-    })
-    .join("\n");
 };
 
 const extractCandidateName = (resume = "") => {
@@ -335,19 +244,6 @@ const enforceCoverLetterStructure = ({
   ].join("\n");
 };
 
-const removeCandidateNameLine = (resume = "", candidateName = "") => {
-  if (!candidateName) return resume;
-  const target = normalizeText(candidateName);
-  const lines = resume.split("\n");
-  if (!lines.length) return resume;
-
-  const firstClean = normalizeText(lines[0].replace(/\*\*/g, "").trim());
-  if (firstClean && firstClean === target) {
-    return lines.slice(1).join("\n").trim();
-  }
-  return resume;
-};
-
 const extractResumeEvidenceTokens = (resume = "") =>
   new Set(
     normalizeText(resume)
@@ -364,31 +260,6 @@ const filterMissingByHandsOnEvidence = (missingKeywords = [], resume = "") => {
     if (!words.length) return false;
     return words.some((w) => evidence.has(w));
   });
-};
-
-const removeInjectedTargetDesignationLines = (
-  resume = "",
-  targetDesignation = "",
-  originalTitles = []
-) => {
-  const normalizedTarget = normalizeText(targetDesignation);
-  if (!normalizedTarget) return resume;
-
-  const hasTargetInOriginal = originalTitles.some(
-    (title) => normalizeText(title) === normalizedTarget
-  );
-  if (hasTargetInOriginal) return resume;
-
-  return resume
-    .split("\n")
-    .filter((line) => {
-      const cleaned = line.replace(/\*\*/g, "").trim();
-      if (!cleaned) return true;
-      return normalizeText(cleaned) !== normalizedTarget;
-    })
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 };
 
 const ensureString = (value) => String(value || "").trim();
@@ -456,7 +327,9 @@ const resumeSectionsToText = (payload = {}) => {
     projects.forEach((item) => {
       const name = ensureString(item?.name || item?.title);
       if (name) blocks.push(name);
-      const bullets = ensureStringArray(item?.bullets || item?.details);
+      const bullets = ensureStringArray(
+        item?.bullets || item?.responsibilities || item?.details
+      );
       bullets.forEach((bullet) => blocks.push(`- ${bullet}`));
     });
   }
@@ -507,32 +380,223 @@ const STRUCTURED_RESUME_SCHEMA_LINES = [
   "Keep designation, company, location, and duration as SEPARATE fields — never concatenate them into one string. Keep each education entry's location and duration in their own fields. List spoken languages ONE per array item — never cram them into a single string or place them in skills. Bullets and details are plain strings with NO leading dash or bullet character. Omit projects/certifications/languages entirely only if the original resume never mentioned them. Do not add any keys beyond those listed.",
 ];
 
-const normalizeModelResumeOutput = (value) => {
-  if (!value) return "";
+// ---------------------------------------------------------------------------
+// Structured resume object pipeline.
+//
+// The optimizer keeps the resume as a structured object end-to-end (no text
+// round-trip). resumeSectionsToText is only used to derive a plain-text view for
+// keyword checks, the analyzer, and downloads. The object is what the frontend
+// renders and edits.
+// ---------------------------------------------------------------------------
 
-  if (typeof value === "object") {
-    return resumeSectionsToText(value);
-  }
+// Canonicalize a raw model object into the exact shape the renderer/editor use.
+const normalizeResumeObject = (obj = {}) => {
+  const o = obj && typeof obj === "object" ? obj : {};
+  return {
+    summary: ensureString(o.summary),
+    skills: ensureStringArray(o.skills),
+    experience: (Array.isArray(o.experience) ? o.experience : [])
+      .map((e) => ({
+        designation: ensureString(e?.designation || e?.title),
+        company: ensureString(e?.company || e?.organization),
+        location: ensureString(e?.location),
+        duration: ensureString(e?.duration || e?.dates),
+        responsibilities: ensureStringArray(e?.responsibilities || e?.bullets),
+      }))
+      .filter((e) => e.designation || e.company || e.responsibilities.length),
+    projects: (Array.isArray(o.projects) ? o.projects : [])
+      .map((p) => ({
+        name: ensureString(p?.name || p?.title),
+        meta: ensureString(p?.meta || p?.tech),
+        link: ensureString(p?.link || p?.href || p?.url),
+        responsibilities: ensureStringArray(
+          p?.responsibilities || p?.bullets || p?.details
+        ),
+      }))
+      .filter((p) => p.name || p.responsibilities.length),
+    education: (Array.isArray(o.education) ? o.education : [])
+      .map((ed) => ({
+        qualification: ensureString(ed?.qualification || ed?.degree),
+        institution: ensureString(ed?.institution || ed?.university),
+        location: ensureString(ed?.location),
+        duration: ensureString(ed?.duration || ed?.dates),
+        details: ensureStringArray(ed?.details),
+      }))
+      .filter((ed) => ed.qualification || ed.institution),
+    certifications: ensureStringArray(o.certifications),
+    languages: normalizeLanguageList(o.languages),
+  };
+};
 
-  let text = ensureString(value);
-  if (!text) return "";
-
+// Parse a model response (JSON string or already-parsed object) into the
+// canonical resume object. Returns null if it cannot be parsed.
+const parseModelResumeObject = (raw) => {
+  if (raw && typeof raw === "object") return normalizeResumeObject(raw);
+  const text = ensureString(raw);
+  if (!text) return null;
   try {
     const parsed = JSON.parse(text);
-    if (typeof parsed === "string") {
-      text = ensureString(parsed);
-    } else if (parsed && typeof parsed === "object") {
-      if (typeof parsed.optimizedResume === "string") {
-        text = ensureString(parsed.optimizedResume);
-      } else {
-        text = resumeSectionsToText(parsed);
-      }
-    }
+    if (parsed && typeof parsed === "object") return normalizeResumeObject(parsed);
   } catch {
-    // keep as plain text
+    // not JSON
   }
+  return null;
+};
 
-  return text;
+const normCompanyKey = (value) =>
+  ensureString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+// Object-level safety net mirroring reconcileExperienceSection: guarantees every
+// factual baseline role survives (the model sometimes merges/drops roles that
+// share a title). Optimized bullets are matched back to their role by company.
+const reconcileExperienceObjects = (experience = [], baseline = []) => {
+  if (baseline.length < 2) return experience;
+  const present = (company) => {
+    const key = normCompanyKey(company);
+    if (!key) return false;
+    return experience.some((e) => {
+      const ek = normCompanyKey(e.company);
+      return ek && (ek.includes(key) || key.includes(ek));
+    });
+  };
+  const allPresent = baseline.every((b) => present(b.company));
+  if (allPresent && experience.length >= baseline.length) return experience;
+
+  return baseline.map((b) => {
+    const bKey = normCompanyKey(b.company);
+    const match = experience.find((e) => {
+      const ek = normCompanyKey(e.company);
+      return ek && bKey && (ek.includes(bKey) || bKey.includes(ek));
+    });
+    return {
+      designation: ensureString(b.designation) || ensureString(match?.designation),
+      company: ensureString(b.company),
+      location: ensureString(b.location) || ensureString(match?.location),
+      duration: ensureString(b.duration) || ensureString(match?.duration),
+      responsibilities:
+        match && match.responsibilities.length
+          ? match.responsibilities
+          : ensureStringArray(b.bullets),
+    };
+  });
+};
+
+// Pick the location line out of the raw contact lines (not an email, link, or
+// phone number).
+const extractContactLocation = (contactLines = []) => {
+  const candidate = (contactLines || []).find((line) => {
+    const l = ensureString(line);
+    if (!l || /@/.test(l)) return false;
+    if (/https?:\/\/|www\.|linkedin|github|behance|gitlab|medium|dribbble/i.test(l)) {
+      return false;
+    }
+    const digitCount = (l.match(/\d/g) || []).length;
+    if (digitCount >= 7) return false; // looks like a phone number
+    return /[a-zA-Z]/.test(l);
+  });
+  return ensureString(candidate);
+};
+
+// --- Anti-fabrication grounding -------------------------------------------
+// A resume must never contain facts the candidate did not provide. We verify
+// model-produced factual records (degrees, certifications) against the ORIGINAL
+// resume text and drop anything not grounded in it.
+const FACT_STOPWORDS = new Set([
+  "the", "and", "for", "with", "from", "of", "in", "at", "to", "a", "an", "on",
+  "by", "or", "as",
+]);
+const significantTokens = (text = "") =>
+  normalizeText(text)
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !FACT_STOPWORDS.has(w));
+const buildResumeTokenSet = (resumeText = "") => new Set(significantTokens(resumeText));
+// True when at least `minRatio` of the text's significant tokens appear in the
+// original resume — i.e. the claim is supported by the source document.
+const isGroundedInResume = (text, resumeTokenSet, minRatio = 0.6) => {
+  const toks = significantTokens(text);
+  if (!toks.length) return true;
+  const present = toks.filter((t) => resumeTokenSet.has(t)).length;
+  return present / toks.length >= minRatio;
+};
+// Keep only education entries grounded in the resume. Identity is the
+// institution when present, else the qualification — this removes invented
+// degrees while preserving the candidate's real ones.
+const dropFabricatedEducation = (education = [], resumeTokenSet) =>
+  (Array.isArray(education) ? education : []).filter((entry) => {
+    const identifier =
+      ensureString(entry?.institution) || ensureString(entry?.qualification);
+    if (!identifier) return false;
+    return isGroundedInResume(identifier, resumeTokenSet);
+  });
+// Keep only certifications grounded in the resume.
+const dropFabricatedCertifications = (certifications = [], resumeTokenSet) =>
+  ensureStringArray(certifications).filter((cert) =>
+    isGroundedInResume(cert, resumeTokenSet)
+  );
+
+// Run the allowed-character sanitizer over every string field of the object so
+// smart punctuation / stray glyphs never reach the renderer or downloads.
+const sanitizeResumeObject = (data = {}) => {
+  const s = (v) => sanitizeAllowedCharacters(ensureString(v));
+  const sArr = (arr) => ensureStringArray(arr).map(s).filter(Boolean);
+  return {
+    summary: s(data.summary),
+    skills: sArr(data.skills),
+    experience: (data.experience || []).map((e) => ({
+      designation: s(e.designation),
+      company: s(e.company),
+      location: s(e.location),
+      duration: s(e.duration),
+      responsibilities: sArr(e.responsibilities),
+    })),
+    projects: (data.projects || []).map((p) => ({
+      name: s(p.name),
+      meta: s(p.meta),
+      link: ensureString(p.link),
+      responsibilities: sArr(p.responsibilities),
+    })),
+    education: (data.education || []).map((ed) => ({
+      qualification: s(ed.qualification),
+      institution: s(ed.institution),
+      location: s(ed.location),
+      duration: s(ed.duration),
+      details: sArr(ed.details),
+    })),
+    certifications: sArr(data.certifications),
+    languages: sArr(data.languages),
+    contact: data.contact
+      ? {
+          email: s(data.contact.email),
+          phone: s(data.contact.phone),
+          location: s(data.contact.location),
+          links: (Array.isArray(data.contact.links) ? data.contact.links : [])
+            .map((l) => ({
+              url: ensureString(l?.url),
+              ...(l?.label ? { label: s(l.label) } : {}),
+            }))
+            .filter((l) => l.url),
+        }
+      : undefined,
+  };
+};
+
+// Derive the plain-text resume view (contact header + sections) used for keyword
+// coverage, the analyzer, and downloads. The structured object stays the source
+// of truth; this is a one-way projection.
+const resumeObjectToText = (data = {}) => {
+  const contact = data.contact || {};
+  const contactLines = [
+    ensureString(contact.email),
+    ensureString(contact.phone),
+    ensureString(contact.location),
+    ...(Array.isArray(contact.links) ? contact.links : []).map((l) =>
+      ensureString(l?.url)
+    ),
+  ].filter(Boolean);
+  const body = resumeSectionsToText(data);
+  return [contactLines.join(" | "), body].filter(Boolean).join("\n\n").trim();
 };
 
 const extractSectionsFromText = (text = "") => {
@@ -709,6 +773,13 @@ const normalizeCombinedExperienceEntry = (entry = {}) => {
   return normalized;
 };
 
+// A line that is really a different section header, not a job title/company.
+const NON_EXPERIENCE_LABEL_RE =
+  /^(education|academic\s+background|qualifications?|language\s+competencies|languages?|languages\s+known|skills|technical\s+skills|core\s+skills|key\s+skills|certifications?|certificates?|courses?|licenses?|summary|professional\s+summary|profile|objective|projects?|interests|hobbies|references?|awards?|achievements?)\b/i;
+// An academic degree — should never be an employer or job title.
+const DEGREE_LABEL_RE =
+  /\b(bachelor|master|associate|diploma|ph\.?d|doctorate|mba|m\.?sc|b\.?sc|b\.?tech|m\.?tech|bca|mca|b\.?a|m\.?a|b\.?com|m\.?com|ll\.?b|ll\.?m|bba)\b/i;
+
 const sanitizeExperienceEntries = (entries = []) => {
   const clean = Array.isArray(entries) ? entries : [];
   const seen = new Set();
@@ -724,6 +795,7 @@ const sanitizeExperienceEntries = (entries = []) => {
         (bullet) =>
           bullet &&
           !/^(company|designation|location|duration)\s*:/i.test(bullet) &&
+          !/^profile\s+links\s*:/i.test(bullet) &&
           bullet.length > 3
       ),
     }))
@@ -735,6 +807,15 @@ const sanitizeExperienceEntries = (entries = []) => {
         /\b(implemented|improved|designed|developed|built|created|led|worked|enhanced)\b/i.test(
           combined
         );
+      // Reject entries whose company/designation is actually a different section
+      // header (EDUCATION, LANGUAGE COMPETENCIES, ...) or an academic degree —
+      // these slip in when a parser bleeds past the experience section.
+      const looksLikeOtherSection =
+        NON_EXPERIENCE_LABEL_RE.test(item.company) ||
+        NON_EXPERIENCE_LABEL_RE.test(item.designation) ||
+        DEGREE_LABEL_RE.test(item.company) ||
+        DEGREE_LABEL_RE.test(item.designation);
+      if (looksLikeOtherSection) return false;
       const looksLikeRealRole =
         item.company.length > 1 &&
         item.designation.length > 1 &&
@@ -751,110 +832,6 @@ const sanitizeExperienceEntries = (entries = []) => {
     });
 
   return cleaned;
-};
-
-// Tokenize a bullet for similarity comparison (lowercase content words).
-const tokenizeBullet = (text = "") =>
-  ensureString(text)
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((word) => word.length > 3);
-
-// Overlap score between two bullets in [0,1] (shared content words / smaller set).
-const bulletSimilarity = (a = "", b = "") => {
-  const setA = new Set(tokenizeBullet(a));
-  const setB = new Set(tokenizeBullet(b));
-  if (!setA.size || !setB.size) return 0;
-  let shared = 0;
-  for (const word of setA) if (setB.has(word)) shared += 1;
-  return shared / Math.min(setA.size, setB.size);
-};
-
-const RECONCILE_SECTION_HEADER_RE =
-  /^(summary|professional\s+summary|profile|objective|skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|projects?|personal\s+projects?|key\s+projects?|education|academic\s+background|qualifications?|certifications?|certificates?|courses?|licenses?|awards?|awards\s+and\s+honors|honou?rs|achievements?|languages?|language\s+competencies|interests|hobbies|volunteer|publications?|references?)\s*:?$/i;
-
-const isExperienceHeaderLine = (line = "") =>
-  /^(work\s+|professional\s+|relevant\s+)?experience\s*:?$/i.test(line.trim()) ||
-  /^(employment|work)\s+history\s*:?$/i.test(line.trim());
-
-// The model (gpt-4o-mini) sometimes collapses multiple roles into one — most
-// often when two roles share a title — silently dropping employers. We have a
-// reliable factual baseline (companies/titles/dates + original bullets), so we
-// deterministically rebuild the EXPERIENCE section: keep every baseline role and
-// redistribute the model's optimized bullets to the role whose ORIGINAL bullets
-// they most resemble. Optimized wording is preserved; structure is guaranteed.
-const reconcileExperienceSection = (resumeText = "", baseline = []) => {
-  const roles = (Array.isArray(baseline) ? baseline : []).filter(
-    (role) => role && (ensureString(role.company) || ensureString(role.designation))
-  );
-  if (roles.length < 2) return resumeText;
-
-  const lines = resumeText.split("\n");
-  const startIdx = lines.findIndex((line) => isExperienceHeaderLine(line));
-  if (startIdx === -1) return resumeText;
-
-  let endIdx = lines.length;
-  for (let i = startIdx + 1; i < lines.length; i += 1) {
-    const trimmed = lines[i].trim();
-    if (!trimmed) continue;
-    if (RECONCILE_SECTION_HEADER_RE.test(trimmed)) {
-      endIdx = i;
-      break;
-    }
-  }
-
-  const optimizedBullets = [];
-  for (let i = startIdx + 1; i < endIdx; i += 1) {
-    const match = lines[i].trim().match(/^[-*•]\s+(.+)$/);
-    if (match) optimizedBullets.push(ensureString(match[1]));
-  }
-  // Nothing to redistribute — leave the model output untouched.
-  if (!optimizedBullets.length) return resumeText;
-
-  const assigned = roles.map(() => []);
-  let lastRole = 0;
-  optimizedBullets.forEach((bullet) => {
-    let bestRole = -1;
-    let bestScore = 0;
-    roles.forEach((role, idx) => {
-      let score = 0;
-      ensureStringArray(role.bullets).forEach((original) => {
-        const sim = bulletSimilarity(bullet, original);
-        if (sim > score) score = sim;
-      });
-      if (score > bestScore) {
-        bestScore = score;
-        bestRole = idx;
-      }
-    });
-    // Zero-overlap bullets (e.g. keyword-injected) stay with the previous
-    // bullet's role to preserve local grouping.
-    const target = bestRole === -1 ? lastRole : bestRole;
-    assigned[target].push(bullet);
-    lastRole = target;
-  });
-
-  const rebuilt = [lines[startIdx].trim()];
-  roles.forEach((role, idx) => {
-    const header = [
-      ensureString(role.designation),
-      ensureString(role.company),
-      ensureString(role.location),
-      ensureString(role.duration),
-    ]
-      .filter(Boolean)
-      .join(" | ");
-    if (header) rebuilt.push(header);
-    const bullets = assigned[idx].length
-      ? assigned[idx]
-      : ensureStringArray(role.bullets);
-    bullets.forEach((bullet) => rebuilt.push(`- ${bullet}`));
-  });
-
-  return [...lines.slice(0, startIdx), ...rebuilt, ...lines.slice(endIdx)].join(
-    "\n"
-  );
 };
 
 const parseEducationFromSection = (sectionLines = []) => {
@@ -1077,7 +1054,17 @@ export async function POST(req) {
       careerChangeApproved && resumeRoleFamily && targetRoleFamily
         ? `${resumeRoleFamily} -> ${targetRoleFamily}`
         : "No";
-    const factualExperienceBaseline = sanitizeExperienceEntries(parseExperienceFromRawResume(resume));
+    // Parse experience ONLY from the experience section. Walking the whole
+    // resume lets the parser bleed into EDUCATION / LANGUAGE COMPETENCIES /
+    // "Profile Links:" and fabricate junk roles (e.g. designation
+    // "LANGUAGE COMPETENCIES", company "Master of Science"). Falls back to the
+    // whole resume when no experience header is detected.
+    const experienceSectionText = (extractSectionsFromText(resume).experience || []).join(
+      "\n"
+    );
+    const factualExperienceBaseline = sanitizeExperienceEntries(
+      parseExperienceFromRawResume(experienceSectionText || resume)
+    );
     const factualEducationBaseline = parseEducationFromSection(
       extractSectionsFromText(resume).education || resume.split("\n")
     ).slice(0, 8);
@@ -1128,8 +1115,8 @@ export async function POST(req) {
       hasProjectsSection
         ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Add keywords only where the project truly used them. Never drop a project to save space."
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
-      "5. education: Each object has qualification, institution, location, duration as separate fields, plus optional detail strings for honors/coursework. Put the city/country in the location field — never merge it into institution or duration. Preserve every degree exactly as written.",
-      "6. certifications: Array of strings, each 'Cert name — Issuer (year if known)'. If the original resume includes a verification/credential URL for a certification or course, append it to that string EXACTLY as written (e.g. 'Front-End Web Development with React — Coursera — https://coursera.org/verify/ABC123'). Never invent, guess, or shorten URLs — include one only if it is present in the original resume.",
+      "5. education: Output ONLY the education entries that literally appear in the original resume (match the factual education baseline below) — output exactly that many entries, no more. NEVER add, split, duplicate, or invent a degree, institution, or graduation year (e.g. do not add a Bachelor's the candidate never listed). Each object has qualification, institution, location, duration as separate fields, plus optional detail strings for honors/coursework. Put the city/country in the location field — never merge it into institution or duration. Preserve every degree exactly as written.",
+      "6. certifications: Array of strings, each 'Cert name — Issuer (year if known)'. Include ONLY certifications that appear in the original resume — never invent a credential. If the original resume includes a verification/credential URL for a certification or course, append it to that string EXACTLY as written (e.g. 'Front-End Web Development with React — Coursera — https://coursera.org/verify/ABC123'). Never invent, guess, or shorten URLs — include one only if it is present in the original resume.",
       "7. languages: Array of spoken/written languages exactly as listed in the original resume, ONE language per array item (e.g. ['English', 'Hindi', 'Malayalam'] or ['English (Native)', 'Spanish (Fluent)']). Never cram multiple languages into a single string and never bullet-join them. Do NOT place spoken languages in the skills section. Omit the key entirely if the resume lists no languages.",
       "",
       "HARD CONSTRAINTS (zero tolerance):",
@@ -1187,11 +1174,8 @@ export async function POST(req) {
       jsonMode: true,
     });
 
-    const optimizedResume = stripPlaceholdersAndTemplateLabels(
-      normalizeModelResumeOutput(optimizedResumeRaw)
-    );
-
-    if (!optimizedResume) {
+    let resumeData = parseModelResumeObject(optimizedResumeRaw);
+    if (!resumeData) {
       return NextResponse.json({
         success: false,
         message: "Generated content is incomplete.",
@@ -1199,10 +1183,9 @@ export async function POST(req) {
     }
 
     const uncoveredAfterPass1 = missingForCareerChange.filter(
-      (keyword) => !hasKeyword(optimizedResume, keyword)
+      (keyword) => !hasKeyword(resumeObjectToText(resumeData), keyword)
     );
 
-    let finalResume = optimizedResume;
     if (uncoveredAfterPass1.length) {
       const revisionPrompt = [
         "Revise the resume below to naturally include EVERY one of the listed keywords without losing truthfulness.",
@@ -1220,7 +1203,7 @@ export async function POST(req) {
         "Return only the JSON object.",
         "",
         "Current optimized resume:",
-        optimizedResume.slice(0, 12000),
+        resumeObjectToText(resumeData).slice(0, 12000),
       ].join("\n");
 
       const revised = await generateWithModel({
@@ -1229,17 +1212,16 @@ export async function POST(req) {
         maxTokens: 3000,
         jsonMode: true,
       });
-      const revisedResume = normalizeModelResumeOutput(revised);
-      if (revisedResume) {
-        finalResume = stripPlaceholdersAndTemplateLabels(revisedResume);
-      }
+      const revisedData = parseModelResumeObject(revised);
+      if (revisedData) resumeData = revisedData;
     }
 
+    const draftText = resumeObjectToText(resumeData);
     const missingProtectedTitles = originalTitles.filter(
-      (title) => !includesLineLoosely(finalResume, title)
+      (title) => !includesLineLoosely(draftText, title)
     );
     const missingProtectedOrgs = originalOrganizations.filter(
-      (org) => !includesLineLoosely(finalResume, org)
+      (org) => !includesLineLoosely(draftText, org)
     );
 
     if (missingProtectedTitles.length || missingProtectedOrgs.length) {
@@ -1259,7 +1241,7 @@ export async function POST(req) {
         "Return only the JSON object.",
         "",
         "Current resume draft:",
-        finalResume.slice(0, 12000),
+        draftText.slice(0, 12000),
       ].join("\n");
 
       const preserved = await generateWithModel({
@@ -1268,62 +1250,80 @@ export async function POST(req) {
         maxTokens: 3000,
         jsonMode: true,
       });
-      const preservedResume = normalizeModelResumeOutput(preserved);
-      if (preservedResume) {
-        finalResume = stripPlaceholdersAndTemplateLabels(preservedResume);
-      }
+      const preservedData = parseModelResumeObject(preserved);
+      if (preservedData) resumeData = preservedData;
     }
 
     // Safety net: the model can collapse multiple roles into one (especially
     // when two roles share a title), silently dropping employers. Rebuild the
-    // EXPERIENCE section deterministically from the factual baseline so every
-    // company is preserved with its bullets correctly grouped.
+    // experience list deterministically from the factual baseline so every
+    // company survives with its bullets grouped under the right role.
     if (factualExperienceBaseline.length >= 2) {
-      finalResume = reconcileExperienceSection(finalResume, factualExperienceBaseline);
+      resumeData.experience = reconcileExperienceObjects(
+        resumeData.experience,
+        factualExperienceBaseline
+      );
     }
 
-    // Safety net: the original resume had a projects section but the model
-    // dropped it across the passes. Re-inject the original projects verbatim so
-    // the section is never silently lost.
-    if (hasProjectsSection && !/^projects\s*:?\s*$/im.test(finalResume)) {
-      const projectLines = ["PROJECTS"];
-      factualProjectsBaseline.forEach((project) => {
-        if (project.name) projectLines.push(project.name);
-        project.bullets.forEach((bullet) => projectLines.push(`- ${bullet}`));
-      });
-      const projectBlock = projectLines.join("\n");
-      const lines = finalResume.split("\n");
-      // Prefer to slot projects right before EDUCATION (or CERTIFICATIONS).
-      const anchorIdx = lines.findIndex((line) =>
-        /^(education|certifications)\s*:?\s*$/i.test(line.trim())
-      );
-      if (anchorIdx >= 0) {
-        lines.splice(anchorIdx, 0, projectBlock, "");
-        finalResume = lines.join("\n").trim();
-      } else {
-        finalResume = `${finalResume.trim()}\n\n${projectBlock}`.trim();
-      }
+    // Safety net: original resume had a projects section but the model dropped
+    // it across the passes — re-inject the original projects verbatim.
+    if (hasProjectsSection && !resumeData.projects.length) {
+      resumeData.projects = factualProjectsBaseline.map((project) => ({
+        name: ensureString(project.name),
+        meta: "",
+        link: "",
+        responsibilities: ensureStringArray(project.bullets),
+      }));
     }
 
-    // Safety net: the original resume listed languages but the model dropped the
-    // section (or folded it into skills) across the passes. Re-inject the
-    // original languages as a clean, one-per-line LANGUAGES section so it is
-    // never silently lost.
-    if (
-      hasLanguagesSection &&
-      !/^(languages?|language\s+competencies|languages\s+known)\s*:?\s*$/im.test(finalResume)
-    ) {
-      const languageBlock = ["LANGUAGES", ...factualLanguagesBaseline.map((lang) => `- ${lang}`)].join(
-        "\n"
-      );
-      finalResume = `${finalResume.trim()}\n\n${languageBlock}`.trim();
+    // Safety net: original listed languages but the model dropped/merged them.
+    if (hasLanguagesSection && !resumeData.languages.length) {
+      resumeData.languages = factualLanguagesBaseline.slice();
     }
+
+    // Anti-fabrication: drop any education entry or certification the model
+    // invented (not grounded in the original resume). A resume must never claim
+    // a degree or credential the candidate did not provide.
+    const resumeTokenSet = buildResumeTokenSet(resume);
+    resumeData.education = dropFabricatedEducation(resumeData.education, resumeTokenSet);
+    resumeData.certifications = dropFabricatedCertifications(
+      resumeData.certifications,
+      resumeTokenSet
+    );
+
+    // Safety net: keep education if the model dropped (or we filtered) it.
+    if (!resumeData.education.length && factualEducationBaseline.length) {
+      resumeData.education = factualEducationBaseline.map((ed) => ({
+        qualification: ensureString(ed.qualification),
+        institution: ensureString(ed.institution),
+        location: ensureString(ed.location),
+        duration: ensureString(ed.duration),
+        details: ensureStringArray(ed.details),
+      }));
+    }
+
+    // Attach deterministic contact info — never model-generated, taken straight
+    // from the original resume so it is always accurate.
+    resumeData.contact = {
+      email: candidateEmail,
+      phone: candidatePhone,
+      location: extractContactLocation(sourceContactLines),
+      links: sourceLinks
+        .map((url) => ({ url: ensureString(url) }))
+        .filter((l) => l.url),
+    };
+
+    resumeData = sanitizeResumeObject(resumeData);
+
+    // One-way plain-text projection for keyword coverage, the analyzer, and
+    // downloads. The object remains the source of truth.
+    const optimizedResumeText = resumeObjectToText(resumeData);
 
     const stillMissingKeywords = missingForCareerChange.filter(
-      (keyword) => !hasKeyword(finalResume, keyword)
+      (keyword) => !hasKeyword(optimizedResumeText, keyword)
     );
     const incorporatedKeywords = missingForCareerChange.filter((keyword) =>
-      hasKeyword(finalResume, keyword)
+      hasKeyword(optimizedResumeText, keyword)
     );
 
     let finalCoverLetter = "";
@@ -1352,7 +1352,7 @@ export async function POST(req) {
         jd.slice(0, 7000),
         "",
         "Optimized Resume:",
-        finalResume.slice(0, 9000),
+        optimizedResumeText.slice(0, 9000),
       ].join("\n");
 
       const coverLetterRaw = await generateWithModel({
@@ -1380,26 +1380,13 @@ export async function POST(req) {
         email: candidateEmail,
         phone: candidatePhone,
       });
+      finalCoverLetter = sanitizeAllowedCharacters(finalCoverLetter);
     }
-    finalResume = stripPlaceholdersAndTemplateLabels(finalResume);
-    finalResume = removeCandidateNameLine(finalResume, candidateName);
-    finalResume = removeInjectedTargetDesignationLines(
-      finalResume,
-      designation,
-      originalTitles
-    );
-    finalResume = removeProfileLinksLines(finalResume);
-    finalResume = ensureResumeIncludesContactInfo(finalResume, sourceContactLines);
-    finalResume = ensureResumeIncludesLinks(finalResume, sourceLinks);
-    finalResume = boldLikelyExperienceLines(finalResume);
-    finalResume = sanitizeAllowedCharacters(finalResume);
-    finalCoverLetter = sanitizeAllowedCharacters(finalCoverLetter);
-
-    const optimizedResumeText = finalResume;
 
     return NextResponse.json({
       success: true,
       message: {
+        optimizedResume: resumeData,
         optimizedResumeText,
         coverLetter: finalCoverLetter,
         incorporatedKeywords,

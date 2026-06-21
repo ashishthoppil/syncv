@@ -893,108 +893,137 @@ const iconSvgForContactKind = (kind: ContactItem["kind"], color: string) => {
   return `${open}<g ${stroke}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g></svg>`;
 };
 
-const renderResumeBodyFromText = (
-  resumeText: string,
-  options: {
-    headingColor: string;
-    bodyColor: string;
-    sectionSpacing: number;
-    baseFontSize: number;
-    lineHeight: number;
-    useContactIcons: boolean;
-  }
-) => {
-  const lines = resumeText
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+type ResumeRenderOptions = {
+  headingColor: string;
+  bodyColor: string;
+  sectionSpacing: number;
+  baseFontSize: number;
+  lineHeight: number;
+  useContactIcons: boolean;
+};
 
-  const sections: Record<string, string[]> = {};
-  let current = "prelude";
+// Structured resume data — the single source of truth that flows from the
+// optimizer all the way to the renderer and the field editor. No text round
+// trip: every field has its own slot, so structure can never be lost or
+// re-guessed from a flattened string.
+export type ResumeContactLink = { label?: string; url: string };
+export type ResumeContact = {
+  email?: string;
+  phone?: string;
+  location?: string;
+  links?: ResumeContactLink[];
+};
+export type ResumeExperienceItem = {
+  designation?: string;
+  company?: string;
+  location?: string;
+  duration?: string;
+  responsibilities?: string[];
+};
+export type ResumeProjectItem = {
+  name?: string;
+  meta?: string;
+  link?: string;
+  responsibilities?: string[];
+};
+export type ResumeEducationItem = {
+  qualification?: string;
+  institution?: string;
+  location?: string;
+  duration?: string;
+  details?: string[];
+};
+export type ResumeData = {
+  contact?: ResumeContact;
+  summary?: string;
+  skills?: string[];
+  experience?: ResumeExperienceItem[];
+  projects?: ResumeProjectItem[];
+  education?: ResumeEducationItem[];
+  certifications?: string[];
+  languages?: string[];
+  references?: string[];
+};
 
-  lines.forEach((line) => {
-    const normalized = normalizeHeader(line);
-    const mappedHeader = HEADER_ALIASES[normalized];
-    if (mappedHeader) {
-      current = mappedHeader;
-      if (!sections[current]) sections[current] = [];
-      return;
-    }
-    if (!sections[current]) sections[current] = [];
-    sections[current].push(line);
-  });
+// The normalized, ready-to-render shape. Both the text path (parse → this) and
+// the data path (object → this) converge here so all section markup lives in
+// exactly one place: renderSectionsToHtml.
+type RenderedSections = {
+  contactItems: ContactItem[];
+  summaryText: string;
+  skillCategories: SkillCategory[];
+  experience: ExperienceEntry[];
+  projects: ProjectEntry[];
+  education: EducationEntry[];
+  certifications: string[];
+  languages: string[];
+  references: string[];
+};
 
+const splitLanguageLines = (lines: string[] = []): string[] =>
+  lines
+    .flatMap((line) =>
+      stripMarkdownBold(line)
+        .replace(/^[-*•]\s+/, "")
+        .split(/\s*[•|;,]\s*|\s{2,}/)
+    )
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+// Single source of truth for all resume section markup. Given fully normalized
+// sections, emit the HTML body. Used by both renderResumeBodyFromText (legacy
+// text input) and renderResumeBodyFromData (structured object input).
+const renderSectionsToHtml = (
+  structured: RenderedSections,
+  options: ResumeRenderOptions
+): string => {
   let html = "";
-  const preludeLines = sections.prelude || [];
-  const promotedPersonalLines: string[] = [];
-  Object.keys(sections).forEach((sectionKey) => {
-    if (sectionKey === "prelude") return;
-    sections[sectionKey] = (sections[sectionKey] || []).filter((line) => {
-      if (isContactLine(line)) {
-        promotedPersonalLines.push(line);
-        return false;
-      }
-      return true;
-    });
-  });
-  const personalLines = [...preludeLines.filter(isContactLine), ...promotedPersonalLines];
-  const preludeWithoutPersonal = preludeLines.filter((line) => !isContactLine(line));
-  const knownProfileLinks = extractKnownProfileLinks(lines.join("\n"));
 
-  if (personalLines.length) {
-    const contactItems = extractContactItems(personalLines, knownProfileLinks);
-    if (contactItems.length) {
-      if (options.useContactIcons) {
-        html += `<div style="display:flex;flex-wrap:wrap;gap:8px 10px;margin:0 0 10px;">`;
-        contactItems.forEach((item) => {
-          const icon = iconSvgForContactKind(item.kind, options.bodyColor);
-          const text = `${icon}<span>${escapeHtml(item.label)}</span>`;
-          if (item.href) {
-            html += `<a href="${escapeHtml(
-              item.href
-            )}" style="display:inline-flex;align-items:center;gap:6px;font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};text-decoration:none;">${text}</a>`;
-          } else {
-            html += `<span style="display:inline-flex;align-items:center;gap:6px;font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};">${text}</span>`;
-          }
-        });
-        html += `</div>`;
-      } else {
-        const plainItems = contactItems.map((item) => {
-          const label = escapeHtml(item.label);
-          if (!item.href) return label;
-          return `<a href="${escapeHtml(
+  if (structured.contactItems.length) {
+    const contactItems = structured.contactItems;
+    if (options.useContactIcons) {
+      html += `<div style="display:flex;flex-wrap:wrap;gap:8px 10px;margin:0 0 10px;">`;
+      contactItems.forEach((item) => {
+        const icon = iconSvgForContactKind(item.kind, options.bodyColor);
+        const text = `${icon}<span>${escapeHtml(item.label)}</span>`;
+        if (item.href) {
+          html += `<a href="${escapeHtml(
             item.href
-          )}" style="color:${options.bodyColor};text-decoration:none;">${label}</a>`;
-        });
-        html += `<p style="font-size:${options.baseFontSize + 2}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;">${plainItems.join(
-          " | "
-        )}</p>`;
-      }
+          )}" style="display:inline-flex;align-items:center;gap:6px;font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};text-decoration:none;">${text}</a>`;
+        } else {
+          html += `<span style="display:inline-flex;align-items:center;gap:6px;font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};">${text}</span>`;
+        }
+      });
+      html += `</div>`;
+    } else {
+      const plainItems = contactItems.map((item) => {
+        const label = escapeHtml(item.label);
+        if (!item.href) return label;
+        return `<a href="${escapeHtml(
+          item.href
+        )}" style="color:${options.bodyColor};text-decoration:none;">${label}</a>`;
+      });
+      html += `<p style="font-size:${options.baseFontSize + 2}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;">${plainItems.join(
+        " | "
+      )}</p>`;
     }
   }
 
   const sectionHeadingStyle = `font-size:12px;font-weight:700;margin:${options.sectionSpacing}px 0 6px;color:${options.headingColor};letter-spacing:.04em;text-transform:uppercase;`;
 
-  const summarySectionLines = sections.summary || [];
-  const summaryLines = summarySectionLines.length
-    ? summarySectionLines
-    : preludeWithoutPersonal.filter((line) => !isRoleHeaderLine(line));
-  const summaryText = summaryLines.join(" ").trim();
-  if (summaryText) {
+  if (structured.summaryText) {
     html += `<h3 style=\"${sectionHeadingStyle}\">SUMMARY</h3>`;
     html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;\">${withInlineFormatting(
-      summaryText
+      structured.summaryText
     )}</p>`;
   }
 
-  const skillLines = sections.skills || [];
-  const skillCategories = parseSkillCategories(skillLines);
-  if (skillCategories.length) {
+  if (structured.skillCategories.length) {
     html += `<h3 style=\"${sectionHeadingStyle}\">SKILLS</h3>`;
-    const hasLabels = skillCategories.some((category) => category.label);
+    const hasLabels = structured.skillCategories.some((category) => category.label);
     if (hasLabels) {
       html += '<div style="margin:0 0 10px;">';
-      skillCategories.forEach((category) => {
+      structured.skillCategories.forEach((category) => {
         const labelHtml = category.label
           ? `<strong>${escapeHtml(category.label)}:</strong> `
           : "";
@@ -1004,20 +1033,17 @@ const renderResumeBodyFromText = (
       });
       html += "</div>";
     } else {
-      const inlineSkills = skillCategories.flatMap((category) => category.items);
+      const inlineSkills = structured.skillCategories.flatMap((category) => category.items);
       html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;\">${escapeHtml(
         inlineSkills.join(", ")
       )}</p>`;
     }
   }
 
-  const renderSectionLines = (
+  const renderSimpleSection = (
     title: string,
     sectionLines: string[] = [],
-    sectionOptions: {
-      forceBullets?: boolean;
-      treatAllAsBullets?: boolean;
-    } = {}
+    sectionOptions: { forceBullets?: boolean; treatAllAsBullets?: boolean } = {}
   ) => {
     if (!sectionLines.length) return;
     html += `<h3 style=\"${sectionHeadingStyle}\">${title}</h3>`;
@@ -1039,17 +1065,13 @@ const renderResumeBodyFromText = (
     sectionLines.forEach((line) => {
       const cleanLine = stripMarkdownBold(line).trim();
       const isBulletLine = /^[-*•]\s+/.test(cleanLine);
-      // const deBulleted = cleanLine.replace(/^[-*•]\s+/, "").trim();
-
       if (isBulletLine) {
         bullets.push(cleanLine);
         return;
       }
-
       const shouldForceBullet =
         sectionOptions.forceBullets &&
         (sectionOptions.treatAllAsBullets || !isRoleHeaderLine(cleanLine));
-
       if (shouldForceBullet) {
         bullets.push(cleanLine);
         return;
@@ -1061,7 +1083,6 @@ const renderResumeBodyFromText = (
         )}</strong></p>`;
         return;
       }
-
       flushBullets();
       html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 6px;\">${escapeHtml(
         cleanLine
@@ -1070,12 +1091,10 @@ const renderResumeBodyFromText = (
     flushBullets();
   };
 
-  const experienceEntries = parseExperienceEntries(sections.experience || []);
-  if (experienceEntries.length) {
+  if (structured.experience.length) {
     html += `<h3 style=\"${sectionHeadingStyle}\">EXPERIENCE</h3>`;
-    experienceEntries.forEach((entry) => {
+    structured.experience.forEach((entry) => {
       html += '<div style="margin:0 0 12px;">';
-
       const titleText = entry.designation || entry.company;
       html +=
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
@@ -1089,8 +1108,6 @@ const renderResumeBodyFromText = (
       }
       html += "</div>";
 
-      // Company + location on the second line. If the title fell back to the
-      // company (no designation), don't repeat the company here.
       let secondLineHtml = "";
       if (entry.designation && entry.company) {
         secondLineHtml = `<span style=\"font-weight:600;\">${escapeHtml(
@@ -1118,13 +1135,11 @@ const renderResumeBodyFromText = (
       html += "</div>";
     });
   }
-  const projectEntries = parseProjectEntries(sections.projects || []);
-  if (projectEntries.length) {
-    html += `<h3 style=\"${sectionHeadingStyle}\">PROJECTS</h3>`;
-    projectEntries.forEach((entry) => {
-      html += '<div style="margin:0 0 10px;">';
 
-      // Header line: bold project name on the left, optional link on the right.
+  if (structured.projects.length) {
+    html += `<h3 style=\"${sectionHeadingStyle}\">PROJECTS</h3>`;
+    structured.projects.forEach((entry) => {
+      html += '<div style="margin:0 0 10px;">';
       if (entry.name || entry.href) {
         html +=
           '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
@@ -1140,30 +1155,25 @@ const renderResumeBodyFromText = (
         }
         html += "</div>";
       }
-
-      // Tech stack / role descriptor on its own muted line.
       if (entry.meta) {
         html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:1px 0 4px;font-style:italic;\">${escapeHtml(
           entry.meta
         )}</p>`;
       }
-
       const normalizedBullets = normalizeExperienceBullets(entry.bullets);
       normalizedBullets.forEach((bullet) => {
         html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;padding-left:14px;text-indent:-14px;\">• ${escapeHtml(
           bullet
         )}</p>`;
       });
-
       html += "</div>";
     });
   }
-  const educationEntries = parseEducationEntries(sections.education || []);
-  if (educationEntries.length) {
-    html += `<h3 style=\"${sectionHeadingStyle}\">EDUCATION</h3>`;
-    educationEntries.forEach((entry) => {
-      html += '<div style="margin:0 0 10px;">';
 
+  if (structured.education.length) {
+    html += `<h3 style=\"${sectionHeadingStyle}\">EDUCATION</h3>`;
+    structured.education.forEach((entry) => {
+      html += '<div style="margin:0 0 10px;">';
       const titleText = entry.qualification || entry.institution;
       html +=
         '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
@@ -1176,26 +1186,22 @@ const renderResumeBodyFromText = (
         )}</span>`;
       }
       html += "</div>";
-
-      // Institution on its own line, normal weight (only if it isn't already
-      // serving as the title).
       if (entry.qualification && entry.institution) {
         html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:1px 0 4px;\">${escapeHtml(
           entry.institution
         )}</p>`;
       }
-
       const normalizedDetails = normalizeExperienceBullets(entry.details);
       normalizedDetails.forEach((detail) => {
         html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;padding-left:14px;text-indent:-14px;\">• ${escapeHtml(
           detail
         )}</p>`;
       });
-
       html += "</div>";
     });
   }
-  const certificationItems = (sections.certifications || [])
+
+  const certificationItems = structured.certifications
     .map(parseCertificationLine)
     .filter((item): item is CertificationLine => item !== null);
   if (certificationItems.length) {
@@ -1221,25 +1227,15 @@ const renderResumeBodyFromText = (
     });
     html += "</div>";
   }
-  if ((sections.languages || []).length) {
-    // Languages are frequently authored on a single bullet- or comma-joined line
-    // ("• English • Hindi • Malayalam"). Split them so each renders as its own
-    // bullet instead of one crammed line.
-    const languageLines = (sections.languages || [])
-      .flatMap((line) =>
-        stripMarkdownBold(line)
-          .replace(/^[-*•]\s+/, "")
-          .split(/\s*[•|;,]\s*|\s{2,}/)
-      )
-      .map((item) => item.trim())
-      .filter(Boolean);
-    renderSectionLines("LANGUAGES", languageLines, {
+
+  if (structured.languages.length) {
+    renderSimpleSection("LANGUAGES", structured.languages, {
       forceBullets: true,
       treatAllAsBullets: true,
     });
   }
-  if ((sections.references || []).length) {
-    renderSectionLines("REFERENCES", sections.references || [], {
+  if (structured.references.length) {
+    renderSimpleSection("REFERENCES", structured.references, {
       forceBullets: true,
       treatAllAsBullets: true,
     });
@@ -1248,32 +1244,89 @@ const renderResumeBodyFromText = (
   return html || '<p style="font-size:13px;color:#64748b;">No content available.</p>';
 };
 
-export const renderResumeHtml = ({
-  resumeText,
-  templateId,
-  candidateName,
-  designation,
-  photoUrl,
-  overrides,
-  useContactIcons = true,
-}: {
-  resumeText: string;
-  templateId: ResumeTemplateId;
-  candidateName: string;
-  designation?: string;
-  photoUrl?: string;
-  overrides?: ResumeTemplateThemeOverrides;
-  useContactIcons?: boolean;
-}) => {
-  const theme = resolveResumeTemplateTheme(templateId, overrides);
-  const body = renderResumeBodyFromText(resumeText, {
-    headingColor: theme.headingColor,
-    bodyColor: theme.bodyColor,
-    sectionSpacing: theme.sectionSpacing,
-    baseFontSize: theme.baseFontSize,
-    lineHeight: theme.lineHeight,
-    useContactIcons,
+const renderResumeBodyFromText = (
+  resumeText: string,
+  options: ResumeRenderOptions
+) => {
+  const lines = resumeText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const sections: Record<string, string[]> = {};
+  let current = "prelude";
+
+  lines.forEach((line) => {
+    const normalized = normalizeHeader(line);
+    const mappedHeader = HEADER_ALIASES[normalized];
+    if (mappedHeader) {
+      current = mappedHeader;
+      if (!sections[current]) sections[current] = [];
+      return;
+    }
+    if (!sections[current]) sections[current] = [];
+    sections[current].push(line);
   });
+
+  const preludeLines = sections.prelude || [];
+  const promotedPersonalLines: string[] = [];
+  Object.keys(sections).forEach((sectionKey) => {
+    if (sectionKey === "prelude") return;
+    sections[sectionKey] = (sections[sectionKey] || []).filter((line) => {
+      if (isContactLine(line)) {
+        promotedPersonalLines.push(line);
+        return false;
+      }
+      return true;
+    });
+  });
+  const personalLines = [...preludeLines.filter(isContactLine), ...promotedPersonalLines];
+  const preludeWithoutPersonal = preludeLines.filter((line) => !isContactLine(line));
+  const knownProfileLinks = extractKnownProfileLinks(lines.join("\n"));
+
+  const summarySectionLines = sections.summary || [];
+  const summaryLines = summarySectionLines.length
+    ? summarySectionLines
+    : preludeWithoutPersonal.filter((line) => !isRoleHeaderLine(line));
+
+  const structured: RenderedSections = {
+    contactItems: personalLines.length
+      ? extractContactItems(personalLines, knownProfileLinks)
+      : [],
+    summaryText: summaryLines.join(" ").trim(),
+    skillCategories: parseSkillCategories(sections.skills || []),
+    experience: parseExperienceEntries(sections.experience || []),
+    projects: parseProjectEntries(sections.projects || []),
+    education: parseEducationEntries(sections.education || []),
+    certifications: sections.certifications || [],
+    languages: splitLanguageLines(sections.languages || []),
+    references: sections.references || [],
+  };
+
+  return renderSectionsToHtml(structured, options);
+};
+
+const bodyOptionsFromTheme = (
+  theme: ReturnType<typeof resolveResumeTemplateTheme>,
+  useContactIcons: boolean
+): ResumeRenderOptions => ({
+  headingColor: theme.headingColor,
+  bodyColor: theme.bodyColor,
+  sectionSpacing: theme.sectionSpacing,
+  baseFontSize: theme.baseFontSize,
+  lineHeight: theme.lineHeight,
+  useContactIcons,
+});
+
+// Wraps a rendered section body in the themed document shell (name header,
+// photo, accent bands). Shared by the text and data render entry points.
+const assembleResumeDocument = (
+  body: string,
+  theme: ReturnType<typeof resolveResumeTemplateTheme>,
+  candidateName: string,
+  designation?: string,
+  photoUrl?: string
+) => {
   const safeName = escapeHtml(candidateName);
   const safeDesignation = escapeHtml(designation || "");
   const imageBlock =
@@ -1322,6 +1375,178 @@ export const renderResumeHtml = ({
       <div style="margin-top:14px;height:4px;background:${theme.mutedAccent};border-radius:999px;"></div>
     </div>
   `;
+};
+
+export const renderResumeHtml = ({
+  resumeText,
+  templateId,
+  candidateName,
+  designation,
+  photoUrl,
+  overrides,
+  useContactIcons = true,
+}: {
+  resumeText: string;
+  templateId: ResumeTemplateId;
+  candidateName: string;
+  designation?: string;
+  photoUrl?: string;
+  overrides?: ResumeTemplateThemeOverrides;
+  useContactIcons?: boolean;
+}) => {
+  const theme = resolveResumeTemplateTheme(templateId, overrides);
+  const body = renderResumeBodyFromText(
+    resumeText,
+    bodyOptionsFromTheme(theme, useContactIcons)
+  );
+  return assembleResumeDocument(body, theme, candidateName, designation, photoUrl);
+};
+
+// Data-first body renderer: builds the normalized section shape straight from
+// the structured ResumeData object (no text parsing) and emits HTML via the
+// shared renderSectionsToHtml.
+const renderResumeBodyFromData = (
+  data: ResumeData,
+  options: ResumeRenderOptions
+): string => {
+  const contactLines: string[] = [];
+  if (data.contact?.email) contactLines.push(data.contact.email);
+  if (data.contact?.phone) contactLines.push(data.contact.phone);
+  if (data.contact?.location) contactLines.push(data.contact.location);
+  (data.contact?.links || []).forEach((link) => {
+    if (link?.url) contactLines.push(link.url);
+  });
+  const knownProfileLinks = extractKnownProfileLinks(contactLines.join("\n"));
+
+  const structured: RenderedSections = {
+    contactItems: contactLines.length
+      ? extractContactItems(contactLines, knownProfileLinks)
+      : [],
+    summaryText: (data.summary || "").trim(),
+    skillCategories: parseSkillCategories(data.skills || []),
+    experience: (data.experience || []).map((entry) => ({
+      designation: entry.designation || "",
+      company: entry.company || "",
+      location: entry.location || "",
+      duration: entry.duration || "",
+      bullets: entry.responsibilities || [],
+    })),
+    projects: (data.projects || []).map((entry) => ({
+      name: entry.name || "",
+      meta: entry.meta || "",
+      href: entry.link || "",
+      bullets: entry.responsibilities || [],
+    })),
+    education: (data.education || []).map((entry) => ({
+      qualification: entry.qualification || "",
+      // The renderer shows institution on its own line; fold the location in.
+      institution: [entry.institution, entry.location].filter(Boolean).join(", "),
+      duration: entry.duration || "",
+      details: entry.details || [],
+    })),
+    certifications: data.certifications || [],
+    languages: data.languages || [],
+    references: data.references || [],
+  };
+
+  return renderSectionsToHtml(structured, options);
+};
+
+export const renderResumeFromData = ({
+  data,
+  templateId,
+  candidateName,
+  designation,
+  photoUrl,
+  overrides,
+  useContactIcons = true,
+}: {
+  data: ResumeData;
+  templateId: ResumeTemplateId;
+  candidateName: string;
+  designation?: string;
+  photoUrl?: string;
+  overrides?: ResumeTemplateThemeOverrides;
+  useContactIcons?: boolean;
+}) => {
+  const theme = resolveResumeTemplateTheme(templateId, overrides);
+  const body = renderResumeBodyFromData(
+    data,
+    bodyOptionsFromTheme(theme, useContactIcons)
+  );
+  return assembleResumeDocument(body, theme, candidateName, designation, photoUrl);
+};
+
+// Plain-text projection of the structured resume — used client-side for the
+// analyzer re-evaluation and as a download fallback. Mirrors the server's
+// resumeObjectToText so scoring sees the same content the renderer shows.
+export const resumeDataToText = (data: ResumeData): string => {
+  const blocks: string[] = [];
+  const clean = (v?: string) => (v || "").trim();
+
+  const contact = data.contact;
+  if (contact) {
+    const contactLine = [
+      contact.email,
+      contact.phone,
+      contact.location,
+      ...(contact.links || []).map((l) => l.url),
+    ]
+      .map(clean)
+      .filter(Boolean)
+      .join(" | ");
+    if (contactLine) blocks.push(contactLine);
+  }
+  if (clean(data.summary)) blocks.push("SUMMARY", clean(data.summary));
+  if (data.skills?.length) blocks.push("SKILLS", data.skills.join("\n"));
+  if (data.experience?.length) {
+    blocks.push("EXPERIENCE");
+    data.experience.forEach((entry) => {
+      const header = [entry.designation, entry.company, entry.location, entry.duration]
+        .map(clean)
+        .filter(Boolean)
+        .join(" | ");
+      if (header) blocks.push(header);
+      (entry.responsibilities || []).forEach((line) => {
+        if (clean(line)) blocks.push(`- ${clean(line)}`);
+      });
+    });
+  }
+  if (data.projects?.length) {
+    blocks.push("PROJECTS");
+    data.projects.forEach((entry) => {
+      if (clean(entry.name)) blocks.push(clean(entry.name));
+      (entry.responsibilities || []).forEach((line) => {
+        if (clean(line)) blocks.push(`- ${clean(line)}`);
+      });
+    });
+  }
+  if (data.education?.length) {
+    blocks.push("EDUCATION");
+    data.education.forEach((entry) => {
+      const header = [entry.qualification, entry.institution, entry.location, entry.duration]
+        .map(clean)
+        .filter(Boolean)
+        .join(" | ");
+      if (header) blocks.push(header);
+      (entry.details || []).forEach((line) => {
+        if (clean(line)) blocks.push(`- ${clean(line)}`);
+      });
+    });
+  }
+  if (data.certifications?.length) {
+    blocks.push("CERTIFICATIONS");
+    data.certifications.forEach((line) => {
+      if (clean(line)) blocks.push(`- ${clean(line)}`);
+    });
+  }
+  if (data.languages?.length) {
+    blocks.push("LANGUAGES");
+    data.languages.forEach((line) => {
+      if (clean(line)) blocks.push(`- ${clean(line)}`);
+    });
+  }
+  return blocks.join("\n").trim();
 };
 
 export const renderCoverLetterHtml = (content: string) => {
