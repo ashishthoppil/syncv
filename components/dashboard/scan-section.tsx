@@ -679,7 +679,7 @@ export const ScanSection = ({
   const EXPERIENCE_HEADER_RE =
     /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience)\s*:?\s*$/i;
   const OTHER_SECTION_HEADER_RE =
-    /^\s*(summary|professional\s+summary|profile|education|academic\s+background|skills|technical\s+skills|projects?|certifications?|languages?|awards?|publications?|interests|hobbies|volunteer)\s*:?\s*$/i;
+    /^\s*(summary|professional\s+summary|profile|education|academic\s+background|skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|projects?|certifications?|languages?|awards?|publications?|interests|hobbies|volunteer)\s*:?\s*$/i;
   const ROLE_TITLE_HINT_RE =
     /\b(engineer|developer|programmer|manager|designer|analyst|architect|consultant|specialist|lead|officer|coordinator|administrator|scientist|researcher|director|head|associate|intern|tutor|teacher|professor|lecturer|instructor|educator|owner|executive|representative|trainer|recruiter|tester)\b/i;
 

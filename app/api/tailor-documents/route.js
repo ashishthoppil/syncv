@@ -30,10 +30,22 @@ const stripPlaceholdersAndTemplateLabels = (text = "") =>
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-const sanitizeAllowedCharacters = (text = "") =>
+// Map common "smart" (non-ASCII) punctuation to its ASCII equivalent so it
+// survives the ASCII-only strip below. Without this, curly apostrophes turn
+// "Women's" into "Women s" and en/em dashes blow holes in date ranges
+// ("2019–2023" -> "2019 2023").
+const normalizeSmartPunctuation = (text = "") =>
   text
+    .replace(/[‘’‚‛′]/g, "'")
+    .replace(/[“”„‟″]/g, '"')
+    .replace(/[‐‑‒–—―]/g, "-")
+    .replace(/[•‣◦⁃∙]/g, "-")
+    .replace(/…/g, "...");
+
+const sanitizeAllowedCharacters = (text = "") =>
+  normalizeSmartPunctuation(text)
     .replace(/[^\x20-\x7E\n]/g, " ")
-    .replace(/[^\w\s.,:;!?()&/'"%+\-*@#\n]/g, " ")
+    .replace(/[^\w\s.,:;!?()&/'"%+\-*@#|\n]/g, " ")
     .replace(/[ ]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -235,7 +247,13 @@ const extractCandidateName = (resume = "") => {
     .map((line) => line.trim())
     .filter(Boolean)[0];
   if (!first) return "";
-  return first.replace(/[^a-zA-Z.\s-]/g, "").trim();
+  let name = first.replace(/[^a-zA-Z.\s-]/g, "").trim();
+  // Restore word boundaries when the name header was extracted glued together
+  // (e.g. "AleenaMariamBenny" from a tightly-kerned PDF heading).
+  if (name && !/\s/.test(name) && /[a-z][A-Z]/.test(name)) {
+    name = name.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+  }
+  return name;
 };
 
 const extractCandidateEmail = (resume = "") => {
@@ -379,6 +397,30 @@ const ensureStringArray = (value) =>
     ? value.map((item) => ensureString(item)).filter(Boolean)
     : [];
 
+// Languages can arrive as an array, a single comma/bullet-joined string, or an
+// array containing such joined strings (e.g. "English • Hindi • Malayalam").
+// Flatten everything into individual, de-duplicated language entries. A
+// proficiency qualifier in parentheses, e.g. "English (Native)", is preserved.
+const normalizeLanguageList = (value) => {
+  const raw = Array.isArray(value)
+    ? value.map((item) => ensureString(item))
+    : [ensureString(value)];
+  const out = [];
+  const seen = new Set();
+  raw
+    .filter(Boolean)
+    .flatMap((item) => item.split(/\s*[•|;,\n]\s*|\s{2,}/))
+    .map((item) => item.replace(/^[-*•\s]+/, "").trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(item);
+    });
+  return out;
+};
+
 const resumeSectionsToText = (payload = {}) => {
   const blocks = [];
   const summary = ensureString(payload?.summary);
@@ -387,6 +429,7 @@ const resumeSectionsToText = (payload = {}) => {
   const projects = Array.isArray(payload?.projects) ? payload.projects : [];
   const education = Array.isArray(payload?.education) ? payload.education : [];
   const certifications = ensureStringArray(payload?.certifications);
+  const languages = normalizeLanguageList(payload?.languages);
 
   if (summary) blocks.push("SUMMARY", summary);
   if (skills.length) {
@@ -422,8 +465,11 @@ const resumeSectionsToText = (payload = {}) => {
     education.forEach((item) => {
       const qualification = ensureString(item?.qualification || item?.degree);
       const institution = ensureString(item?.institution || item?.university);
+      const location = ensureString(item?.location);
       const duration = ensureString(item?.duration || item?.dates);
-      const header = [qualification, institution, duration].filter(Boolean).join(" | ");
+      const header = [qualification, institution, location, duration]
+        .filter(Boolean)
+        .join(" | ");
       if (header) blocks.push(header);
       ensureStringArray(item?.details).forEach((detail) => blocks.push(`- ${detail}`));
     });
@@ -432,9 +478,34 @@ const resumeSectionsToText = (payload = {}) => {
     blocks.push("CERTIFICATIONS");
     certifications.forEach((cert) => blocks.push(`- ${cert}`));
   }
+  if (languages.length) {
+    // One language per line so the template renders a clean bullet list rather
+    // than a single crammed line ("English • Hindi • Malayalam").
+    blocks.push("LANGUAGES");
+    languages.forEach((language) => blocks.push(`- ${language}`));
+  }
 
   return blocks.join("\n").trim();
 };
+
+// Shared JSON schema instruction for every model pass (pass-1, revision,
+// preserve). Keeping all passes on the SAME structured shape means their output
+// always flows back through resumeSectionsToText, so the deterministic
+// formatting (pipe-delimited headers, one language per line, separate education
+// location/duration) is never lost to a free-text reformat.
+const STRUCTURED_RESUME_SCHEMA_LINES = [
+  "Return a SINGLE valid JSON object (no markdown, no code fences, no commentary) with EXACTLY this shape:",
+  "{",
+  '  "summary": "string",',
+  '  "skills": ["Category: item, item, item", "..."],',
+  '  "experience": [{ "designation": "string", "company": "string", "location": "string", "duration": "string", "bullets": ["string", "..."] }],',
+  '  "projects": [{ "name": "string", "bullets": ["string", "..."] }],',
+  '  "education": [{ "qualification": "string", "institution": "string", "location": "string", "duration": "string", "details": ["string"] }],',
+  '  "certifications": ["string"],',
+  '  "languages": ["string"]',
+  "}",
+  "Keep designation, company, location, and duration as SEPARATE fields — never concatenate them into one string. Keep each education entry's location and duration in their own fields. List spoken languages ONE per array item — never cram them into a single string or place them in skills. Bullets and details are plain strings with NO leading dash or bullet character. Omit projects/certifications/languages entirely only if the original resume never mentioned them. Do not add any keys beyond those listed.",
+];
 
 const normalizeModelResumeOutput = (value) => {
   if (!value) return "";
@@ -473,13 +544,25 @@ const extractSectionsFromText = (text = "") => {
   const sections = {};
   let current = "";
   const headerRegex =
-    /^(summary|skills|experience|projects|education|certifications)\s*:?$/i;
+    /^(?:(summary|professional\s+summary|profile|objective)|(skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies)|(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history)|(projects?|personal\s+projects?|key\s+projects?)|(education|academic\s+background|qualifications?)|(certifications?|courses?|licenses?)|(languages?|languages\s+known|language\s+competencies))\s*:?$/i;
+
+  // Each capture group corresponds to one canonical section key, in order.
+  const groupKeys = [
+    "summary",
+    "skills",
+    "experience",
+    "projects",
+    "education",
+    "certifications",
+    "languages",
+  ];
 
   for (const line of lines) {
     const m = line.match(headerRegex);
     if (m) {
-      current = m[1].toLowerCase();
-      if (!sections[current]) sections[current] = [];
+      const matchedIndex = groupKeys.findIndex((_, idx) => m[idx + 1] !== undefined);
+      current = matchedIndex >= 0 ? groupKeys[matchedIndex] : "";
+      if (current && !sections[current]) sections[current] = [];
       continue;
     }
     if (current) {
@@ -489,6 +572,21 @@ const extractSectionsFromText = (text = "") => {
   return sections;
 };
 
+// A single date token: optional month name, optional "MM/" or "M." prefix,
+// then a 4-digit year. Covers "2023", "12/2023", "Jan 2023", "January 2023".
+const DURATION_DATE_TOKEN =
+  "(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?\\s+)?(?:\\d{1,2}[\\/.]\\s*)?\\d{4}";
+// A full range: "<date> - <date|present>". Handles "12/2023 - Present",
+// "02/2022 - 04/2023", "2019 - 2023", "Jan 2020 - Mar 2021".
+const DURATION_RANGE_PATTERN = new RegExp(
+  `(${DURATION_DATE_TOKEN}\\s*[-–—]\\s*(?:present|current|ongoing|${DURATION_DATE_TOKEN}))`,
+  "i"
+);
+const DURATION_RANGE_TAIL_PATTERN = new RegExp(
+  `(${DURATION_DATE_TOKEN}\\s*[-–—]\\s*(?:present|current|ongoing|${DURATION_DATE_TOKEN}))$`,
+  "i"
+);
+
 const parseExperienceFromRawResume = (resumeText = "") => {
   const lines = resumeText
     .split("\n")
@@ -497,8 +595,7 @@ const parseExperienceFromRawResume = (resumeText = "") => {
   const entries = [];
   let current = null;
 
-  const durationRangeRegex =
-    /((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4}\s*[-–]\s*(?:present|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4})|\b\d{4}\s*[-–]\s*(?:present|\d{4}))/i;
+  const durationRangeRegex = DURATION_RANGE_PATTERN;
 
   const flush = () => {
     if (current) entries.push(current);
@@ -564,12 +661,12 @@ const parseExperienceFromRawResume = (resumeText = "") => {
 const extractDurationFromTail = (tail = "") => {
   const value = ensureString(tail);
   if (!value) return { location: "", duration: "" };
-  const durationRegex =
-    /((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4}\s*[-–]\s*(?:present|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4})|\b\d{4}\s*[-–]\s*(?:present|\d{4}))$/i;
-  const m = value.match(durationRegex);
+  const m = value.match(DURATION_RANGE_TAIL_PATTERN);
   if (!m) return { location: value.trim(), duration: "" };
   const duration = ensureString(m[1]);
-  const location = ensureString(value.replace(durationRegex, "").replace(/[,-]\s*$/, ""));
+  const location = ensureString(
+    value.replace(DURATION_RANGE_TAIL_PATTERN, "").replace(/[,-]\s*$/, "")
+  );
   return { location, duration };
 };
 
@@ -656,6 +753,110 @@ const sanitizeExperienceEntries = (entries = []) => {
   return cleaned;
 };
 
+// Tokenize a bullet for similarity comparison (lowercase content words).
+const tokenizeBullet = (text = "") =>
+  ensureString(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => word.length > 3);
+
+// Overlap score between two bullets in [0,1] (shared content words / smaller set).
+const bulletSimilarity = (a = "", b = "") => {
+  const setA = new Set(tokenizeBullet(a));
+  const setB = new Set(tokenizeBullet(b));
+  if (!setA.size || !setB.size) return 0;
+  let shared = 0;
+  for (const word of setA) if (setB.has(word)) shared += 1;
+  return shared / Math.min(setA.size, setB.size);
+};
+
+const RECONCILE_SECTION_HEADER_RE =
+  /^(summary|professional\s+summary|profile|objective|skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|projects?|personal\s+projects?|key\s+projects?|education|academic\s+background|qualifications?|certifications?|certificates?|courses?|licenses?|awards?|awards\s+and\s+honors|honou?rs|achievements?|languages?|language\s+competencies|interests|hobbies|volunteer|publications?|references?)\s*:?$/i;
+
+const isExperienceHeaderLine = (line = "") =>
+  /^(work\s+|professional\s+|relevant\s+)?experience\s*:?$/i.test(line.trim()) ||
+  /^(employment|work)\s+history\s*:?$/i.test(line.trim());
+
+// The model (gpt-4o-mini) sometimes collapses multiple roles into one — most
+// often when two roles share a title — silently dropping employers. We have a
+// reliable factual baseline (companies/titles/dates + original bullets), so we
+// deterministically rebuild the EXPERIENCE section: keep every baseline role and
+// redistribute the model's optimized bullets to the role whose ORIGINAL bullets
+// they most resemble. Optimized wording is preserved; structure is guaranteed.
+const reconcileExperienceSection = (resumeText = "", baseline = []) => {
+  const roles = (Array.isArray(baseline) ? baseline : []).filter(
+    (role) => role && (ensureString(role.company) || ensureString(role.designation))
+  );
+  if (roles.length < 2) return resumeText;
+
+  const lines = resumeText.split("\n");
+  const startIdx = lines.findIndex((line) => isExperienceHeaderLine(line));
+  if (startIdx === -1) return resumeText;
+
+  let endIdx = lines.length;
+  for (let i = startIdx + 1; i < lines.length; i += 1) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    if (RECONCILE_SECTION_HEADER_RE.test(trimmed)) {
+      endIdx = i;
+      break;
+    }
+  }
+
+  const optimizedBullets = [];
+  for (let i = startIdx + 1; i < endIdx; i += 1) {
+    const match = lines[i].trim().match(/^[-*•]\s+(.+)$/);
+    if (match) optimizedBullets.push(ensureString(match[1]));
+  }
+  // Nothing to redistribute — leave the model output untouched.
+  if (!optimizedBullets.length) return resumeText;
+
+  const assigned = roles.map(() => []);
+  let lastRole = 0;
+  optimizedBullets.forEach((bullet) => {
+    let bestRole = -1;
+    let bestScore = 0;
+    roles.forEach((role, idx) => {
+      let score = 0;
+      ensureStringArray(role.bullets).forEach((original) => {
+        const sim = bulletSimilarity(bullet, original);
+        if (sim > score) score = sim;
+      });
+      if (score > bestScore) {
+        bestScore = score;
+        bestRole = idx;
+      }
+    });
+    // Zero-overlap bullets (e.g. keyword-injected) stay with the previous
+    // bullet's role to preserve local grouping.
+    const target = bestRole === -1 ? lastRole : bestRole;
+    assigned[target].push(bullet);
+    lastRole = target;
+  });
+
+  const rebuilt = [lines[startIdx].trim()];
+  roles.forEach((role, idx) => {
+    const header = [
+      ensureString(role.designation),
+      ensureString(role.company),
+      ensureString(role.location),
+      ensureString(role.duration),
+    ]
+      .filter(Boolean)
+      .join(" | ");
+    if (header) rebuilt.push(header);
+    const bullets = assigned[idx].length
+      ? assigned[idx]
+      : ensureStringArray(role.bullets);
+    bullets.forEach((bullet) => rebuilt.push(`- ${bullet}`));
+  });
+
+  return [...lines.slice(0, startIdx), ...rebuilt, ...lines.slice(endIdx)].join(
+    "\n"
+  );
+};
+
 const parseEducationFromSection = (sectionLines = []) => {
   const entries = [];
   let current = null;
@@ -698,6 +899,12 @@ const parseEducationFromSection = (sectionLines = []) => {
   flush();
   return entries;
 };
+
+// Flattens the LANGUAGES section of a raw resume into individual language
+// entries. Source lines are frequently bullet- or comma-joined on a single line
+// (e.g. "• English • Hindi • Malayalam"), so split aggressively.
+const parseLanguagesFromSection = (sectionLines = []) =>
+  normalizeLanguageList(sectionLines);
 
 // Extracts project entries (name + bullets) from the PROJECTS section of a raw
 // resume so the model can be told to preserve them. Project names are heading
@@ -748,7 +955,7 @@ const generateWithModel = async ({
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0.2,
       max_tokens: maxTokens,
       ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
@@ -878,6 +1085,10 @@ export async function POST(req) {
       extractSectionsFromText(resume).projects || []
     ).slice(0, 8);
     const hasProjectsSection = factualProjectsBaseline.length > 0;
+    const factualLanguagesBaseline = parseLanguagesFromSection(
+      extractSectionsFromText(resume).languages || []
+    ).slice(0, 12);
+    const hasLanguagesSection = factualLanguagesBaseline.length > 0;
 
     const safeWeightedKeywords = Array.isArray(weightedKeywords) ? weightedKeywords : [];
     const matchedKeywordSet = new Set(safeMatched.map((k) => k.toLowerCase()));
@@ -902,10 +1113,11 @@ export async function POST(req) {
       '  "skills": ["Category: item, item, item", "..."],',
       '  "experience": [{ "designation": "string", "company": "string", "location": "string", "duration": "string", "bullets": ["string", "..."] }],',
       '  "projects": [{ "name": "string", "bullets": ["string", "..."] }],',
-      '  "education": [{ "qualification": "string", "institution": "string", "duration": "string", "details": ["string"] }],',
-      '  "certifications": ["string"]',
+      '  "education": [{ "qualification": "string", "institution": "string", "location": "string", "duration": "string", "details": ["string"] }],',
+      '  "certifications": ["string"],',
+      '  "languages": ["string"]',
       "}",
-      "Keep designation, company, location, and duration as SEPARATE fields — never concatenate them into one string. Bullets and details are plain strings with NO leading dash or bullet character. Omit projects/certifications entirely if the original resume doesn't mention them. Do not add any keys beyond those listed.",
+      "Keep designation, company, location, and duration as SEPARATE fields — never concatenate them into one string. Bullets and details are plain strings with NO leading dash or bullet character. Omit projects/certifications/languages entirely if the original resume doesn't mention them. Do not add any keys beyond those listed.",
       "",
       "PER-SECTION RULES:",
       hasSummary
@@ -916,8 +1128,9 @@ export async function POST(req) {
       hasProjectsSection
         ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Add keywords only where the project truly used them. Never drop a project to save space."
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
-      "5. education: Each object has qualification, institution, duration as separate fields, plus optional detail strings for honors/coursework.",
+      "5. education: Each object has qualification, institution, location, duration as separate fields, plus optional detail strings for honors/coursework. Put the city/country in the location field — never merge it into institution or duration. Preserve every degree exactly as written.",
       "6. certifications: Array of strings, each 'Cert name — Issuer (year if known)'. If the original resume includes a verification/credential URL for a certification or course, append it to that string EXACTLY as written (e.g. 'Front-End Web Development with React — Coursera — https://coursera.org/verify/ABC123'). Never invent, guess, or shorten URLs — include one only if it is present in the original resume.",
+      "7. languages: Array of spoken/written languages exactly as listed in the original resume, ONE language per array item (e.g. ['English', 'Hindi', 'Malayalam'] or ['English (Native)', 'Spanish (Fluent)']). Never cram multiple languages into a single string and never bullet-join them. Do NOT place spoken languages in the skills section. Omit the key entirely if the resume lists no languages.",
       "",
       "HARD CONSTRAINTS (zero tolerance):",
       "- Never invent employers, dates, titles, certifications, degrees, or quantified achievements.",
@@ -951,6 +1164,9 @@ export async function POST(req) {
       `Original organizations (preserve exactly): ${originalOrganizations.join(" | ") || "None"}`,
       `Factual experience baseline (preserve every role; never omit): ${JSON.stringify(factualExperienceBaseline.slice(0, 10))}`,
       `Factual education baseline (preserve every entry): ${JSON.stringify(factualEducationBaseline.slice(0, 8))}`,
+      hasLanguagesSection
+        ? `Factual languages baseline (the original resume HAS a languages section — you MUST output a non-empty languages array with each of these, one per item; never omit it and never merge them into skills): ${JSON.stringify(factualLanguagesBaseline)}`
+        : "Factual languages baseline: None (original resume has no languages section).",
       hasProjectsSection
         ? `Factual projects baseline (the original resume HAS a projects section — you MUST include every one of these projects; never omit the projects section): ${JSON.stringify(factualProjectsBaseline)}`
         : "Factual projects baseline: None (original resume has no projects section).",
@@ -990,15 +1206,18 @@ export async function POST(req) {
     if (uncoveredAfterPass1.length) {
       const revisionPrompt = [
         "Revise the resume below to naturally include EVERY one of the listed keywords without losing truthfulness.",
+        "",
+        "OUTPUT FORMAT:",
+        ...STRUCTURED_RESUME_SCHEMA_LINES,
+        "",
         "Integration rules:",
-        "- Add keywords that describe tools/frameworks/technologies to the SKILLS section.",
-        "- Add keywords that describe methods/practices to EXPERIENCE bullets where the candidate actually performed that work.",
+        "- Add keywords that describe tools/frameworks/technologies to the skills array.",
+        "- Add keywords that describe methods/practices to experience bullets where the candidate actually performed that work.",
         "- Never fabricate companies, dates, titles, projects, certifications, or numeric outcomes.",
-        "- Preserve the existing SUMMARY/SKILLS/EXPERIENCE/PROJECTS/EDUCATION/CERTIFICATIONS structure.",
-        "- Keep all bullets starting with '- ' and starting with action verbs.",
-        "- Maintain plain text, no markdown fences.",
+        "- Preserve EVERY experience role, project, education entry, certification, and language already present — do not drop or merge any.",
+        "- Every bullet starts with a strong action verb.",
         `Required missing keywords to add: ${uncoveredAfterPass1.join(", ")}`,
-        "Return only the revised resume text.",
+        "Return only the JSON object.",
         "",
         "Current optimized resume:",
         optimizedResume.slice(0, 12000),
@@ -1008,6 +1227,7 @@ export async function POST(req) {
         apiKey,
         prompt: revisionPrompt,
         maxTokens: 3000,
+        jsonMode: true,
       });
       const revisedResume = normalizeModelResumeOutput(revised);
       if (revisedResume) {
@@ -1025,15 +1245,18 @@ export async function POST(req) {
     if (missingProtectedTitles.length || missingProtectedOrgs.length) {
       const preservePrompt = [
         "Restore the original factual history below into this resume draft.",
+        "",
+        "OUTPUT FORMAT:",
+        ...STRUCTURED_RESUME_SCHEMA_LINES,
+        "",
         "Strict rules:",
-        "- Do NOT change any other employers, designations, education entries, or certifications already present.",
+        "- Do NOT change any other employers, designations, education entries, certifications, or languages already present.",
         "- Restore each missing item exactly as written, in the correct chronological order.",
-        "- Keep the SUMMARY/SKILLS/EXPERIENCE/PROJECTS/EDUCATION/CERTIFICATIONS structure intact.",
         "- Retain all keyword improvements from the current draft where they remain truthful.",
-        "- Bullets start with '- ' and an action verb. No markdown fences.",
+        "- Every bullet starts with a strong action verb.",
         `Restore these original titles exactly: ${missingProtectedTitles.join(" | ") || "None"}`,
         `Restore these original organizations exactly: ${missingProtectedOrgs.join(" | ") || "None"}`,
-        "Return only the revised resume text.",
+        "Return only the JSON object.",
         "",
         "Current resume draft:",
         finalResume.slice(0, 12000),
@@ -1043,11 +1266,20 @@ export async function POST(req) {
         apiKey,
         prompt: preservePrompt,
         maxTokens: 3000,
+        jsonMode: true,
       });
       const preservedResume = normalizeModelResumeOutput(preserved);
       if (preservedResume) {
         finalResume = stripPlaceholdersAndTemplateLabels(preservedResume);
       }
+    }
+
+    // Safety net: the model can collapse multiple roles into one (especially
+    // when two roles share a title), silently dropping employers. Rebuild the
+    // EXPERIENCE section deterministically from the factual baseline so every
+    // company is preserved with its bullets correctly grouped.
+    if (factualExperienceBaseline.length >= 2) {
+      finalResume = reconcileExperienceSection(finalResume, factualExperienceBaseline);
     }
 
     // Safety net: the original resume had a projects section but the model
@@ -1071,6 +1303,20 @@ export async function POST(req) {
       } else {
         finalResume = `${finalResume.trim()}\n\n${projectBlock}`.trim();
       }
+    }
+
+    // Safety net: the original resume listed languages but the model dropped the
+    // section (or folded it into skills) across the passes. Re-inject the
+    // original languages as a clean, one-per-line LANGUAGES section so it is
+    // never silently lost.
+    if (
+      hasLanguagesSection &&
+      !/^(languages?|language\s+competencies|languages\s+known)\s*:?\s*$/im.test(finalResume)
+    ) {
+      const languageBlock = ["LANGUAGES", ...factualLanguagesBaseline.map((lang) => `- ${lang}`)].join(
+        "\n"
+      );
+      finalResume = `${finalResume.trim()}\n\n${languageBlock}`.trim();
     }
 
     const stillMissingKeywords = missingForCareerChange.filter(

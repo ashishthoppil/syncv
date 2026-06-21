@@ -20,8 +20,15 @@ export const extractCandidateName = (resumeText: string) => {
     .map((line) => line.trim())
     .filter(Boolean);
   if (!lines.length) return "Candidate";
-  const firstLine = lines[0].replace(/[^a-zA-Z.\s-]/g, "").trim();
+  let firstLine = lines[0].replace(/[^a-zA-Z.\s-]/g, "").trim();
   if (!firstLine) return "Candidate";
+  // PDF text extraction sometimes drops the spaces between name parts, yielding
+  // a run-together name like "AleenaMariamBenny". When the line has no spaces but
+  // clearly concatenates multiple capitalized words, restore spaces at the
+  // lowercase→uppercase boundaries ("AleenaMariamBenny" → "Aleena Mariam Benny").
+  if (!/\s/.test(firstLine) && /[a-z][A-Z]/.test(firstLine)) {
+    firstLine = firstLine.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+  }
   return firstLine;
 };
 
@@ -183,9 +190,18 @@ const normalizeExperienceBullets = (bullets: string[] = []) => {
 const PHONE_PATTERN = /(?:\+?\d[\d\s().-]{7,}\d)/;
 
 const isContactLine = (line: string) =>
-  /@|https?:\/\/|www\.|linkedin(?:\.com)?|github(?:\.com)?|behance(?:\.net)?|phone\b|mobile\b|contact\b|email\b|location\b|address\b|☎|✉/i.test(
+  // Hard signals: an email, a real URL, a known profile domain, a contact glyph,
+  // or a phone-number pattern.
+  /@|https?:\/\/|www\.|linkedin\.com|github\.com|behance\.net|☎|✉|📞|📧|📱/i.test(
     line
-  ) || PHONE_PATTERN.test(line);
+  ) ||
+  PHONE_PATTERN.test(line) ||
+  // Labeled contact fields only — require the word to be used as a label
+  // ("Phone:", "Location -") rather than as prose ("address customer concerns",
+  // "mobile-first design", "contact stakeholders").
+  /\b(?:phone|mobile|tel|telephone|e-?mail|contact|location|address|linkedin|github|behance|portfolio)\s*[:\-]/i.test(
+    line
+  );
 
 const isRoleHeaderLine = (line: string) =>
   /\b(19|20)\d{2}\b/.test(line) ||
@@ -573,6 +589,11 @@ const HEADER_ALIASES: Record<string, string> = {
   "professional summary": "summary",
   skills: "skills",
   "technical skills": "skills",
+  "professional skills": "skills",
+  "core skills": "skills",
+  "key skills": "skills",
+  "core competencies": "skills",
+  competencies: "skills",
   experience: "experience",
   "work experience": "experience",
   "professional experience": "experience",
@@ -700,8 +721,24 @@ const extractContactItems = (
     addItem({ kind: "email", label: email, href: `mailto:${email}` });
   });
 
-  const phoneMatches = raw.match(/(?:\+?\d[\d\s().-]{7,}\d)/g) || [];
+  // Strip emails, URLs, and year/date ranges before scanning for phone numbers so
+  // they can't be mis-read as phones (e.g. the digits inside a LinkedIn vanity URL,
+  // or duration ranges like "2019-2023" / "2016 – 2019").
+  const phoneSearch = raw
+    .replace(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi, " ")
+    .replace(
+      /(https?:\/\/[^\s<>()]+|www\.[^\s<>()]+|(?:linkedin|github)\.com\/[^\s<>()]+|behance\.net\/[^\s<>()]+)/gi,
+      " "
+    )
+    .replace(/\b(?:19|20)\d{2}\s*[-–—]\s*((?:19|20)\d{2}|present|current)\b/gi, " ");
+
+  const phoneMatches = phoneSearch.match(/(?:\+?\d[\d\s().-]{7,}\d)/g) || [];
   phoneMatches.forEach((phone) => {
+    const digitCount = (phone.match(/\d/g) || []).length;
+    const hasCountryCode = /\+/.test(phone);
+    // A genuine phone number has at least 10 digits, or a "+" country-code prefix.
+    // This rejects stray short numbers (e.g. a 9-digit profile id).
+    if (digitCount < 10 && !hasCountryCode) return;
     const normalized = phone.replace(/\s+/g, " ").trim();
     addItem({
       kind: "phone",
@@ -741,7 +778,12 @@ const extractContactItems = (
   );
   if (locationMatch) {
     const location = locationMatch[1].trim().replace(/[,;]\s*$/, "");
-    if (location) addItem({ kind: "location", label: location });
+    // Reject prose: a real location is short (a few comma-separated place names),
+    // not a sentence. This stops captures like "address customer concerns, ..."
+    const wordCount = location.split(/\s+/).filter(Boolean).length;
+    if (location && location.length <= 60 && wordCount <= 6) {
+      addItem({ kind: "location", label: location });
+    }
   }
 
   if (items.length) return items;
@@ -758,7 +800,16 @@ const extractContactItems = (
       addItem({ kind: "email", label: cleaned, href: `mailto:${cleaned}` });
       return;
     }
-    if (/(?:\+?\d[\d\s().-]{7,}\d)/.test(cleaned)) {
+    // Skip year/date ranges (e.g. "2019-2023") so they aren't read as phones.
+    const isDateRange = /^(?:19|20)\d{2}\s*[-–—]\s*((?:19|20)\d{2}|present|current)$/i.test(
+      cleaned
+    );
+    const digitCount = (cleaned.match(/\d/g) || []).length;
+    if (
+      !isDateRange &&
+      (digitCount >= 10 || /\+/.test(cleaned)) &&
+      /(?:\+?\d[\d\s().-]{7,}\d)/.test(cleaned)
+    ) {
       const normalized = cleaned.replace(/\s+/g, " ").trim();
       addItem({
         kind: "phone",
@@ -1171,7 +1222,18 @@ const renderResumeBodyFromText = (
     html += "</div>";
   }
   if ((sections.languages || []).length) {
-    renderSectionLines("LANGUAGES", sections.languages || [], {
+    // Languages are frequently authored on a single bullet- or comma-joined line
+    // ("• English • Hindi • Malayalam"). Split them so each renders as its own
+    // bullet instead of one crammed line.
+    const languageLines = (sections.languages || [])
+      .flatMap((line) =>
+        stripMarkdownBold(line)
+          .replace(/^[-*•]\s+/, "")
+          .split(/\s*[•|;,]\s*|\s{2,}/)
+      )
+      .map((item) => item.trim())
+      .filter(Boolean);
+    renderSectionLines("LANGUAGES", languageLines, {
       forceBullets: true,
       treatAllAsBullets: true,
     });

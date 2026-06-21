@@ -41,6 +41,16 @@ const ensureString = (value = "") =>
     ? String(value).trim()
     : "";
 
+// Some PDFs encode the name header with no real spaces between words (tight
+// kerning / glyph-positioned text). When extraction yields a glued, camelCase
+// run like "AleenaMariamBenny", restore the word boundaries defensively.
+const restoreNameSpacing = (value = "") => {
+  const name = ensureString(value);
+  if (!name || /\s/.test(name)) return name;
+  if (!/[a-z][A-Z]/.test(name)) return name;
+  return name.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+};
+
 const extractFirstJsonObject = (text = "") => {
   const start = text.indexOf("{");
   if (start === -1) return null;
@@ -150,7 +160,7 @@ const sanitizeProfile = (profile = {}) => {
       : "";
 
   return {
-    fullName: ensureString(profile.fullName),
+    fullName: restoreNameSpacing(profile.fullName),
     email: ensureString(profile.email),
     phone: ensureString(profile.phone),
     headline,
@@ -216,7 +226,7 @@ const extractProfileWithAI = async (resumeText = "") => {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0,
       max_tokens: 900,
       response_format: { type: "json_object" },
@@ -251,9 +261,69 @@ const extractProfileWithAI = async (resumeText = "") => {
   return sanitizeProfile(JSON.parse(jsonBlock));
 };
 
+// pdf-parse's default page renderer concatenates adjacent text items with no
+// separator. Many PDFs encode each word (or glyph run) as a separate item with
+// no trailing space and rely on positioning for spacing, so the default output
+// loses ALL spaces ("Work Experience" -> "WorkExperience"). That breaks section
+// detection, name/contact parsing, and degrades the AI optimization input.
+//
+// This custom renderer reconstructs spacing from glyph positions: it inserts a
+// space when there's a horizontal gap between items, and a newline when the
+// vertical baseline changes.
+function renderPageWithSpacing(pageData) {
+  return pageData
+    .getTextContent({ normalizeWhitespace: false, disableCombineTextItems: false })
+    .then((textContent) => {
+      let text = "";
+      let prevEndX = null;
+      let prevY = null;
+      let prevFontHeight = 10;
+
+      for (const item of textContent.items) {
+        const str = item.str;
+        if (!str) continue;
+
+        const x = item.transform[4];
+        const y = item.transform[5];
+        const width = typeof item.width === "number" ? item.width : 0;
+        const fontHeight =
+          (typeof item.height === "number" && item.height) ||
+          Math.abs(item.transform[3]) ||
+          prevFontHeight;
+
+        if (prevY !== null && Math.abs(y - prevY) > fontHeight * 0.5) {
+          // Baseline moved -> new line.
+          if (!text.endsWith("\n")) text += "\n";
+        } else if (prevEndX !== null) {
+          // Same line: insert a space if there's a meaningful horizontal gap.
+          // A word space is roughly 0.2-0.3x the font height; use a conservative
+          // threshold and never produce double spaces.
+          const gap = x - prevEndX;
+          if (gap > fontHeight * 0.2 && !text.endsWith(" ") && !text.endsWith("\n")) {
+            text += " ";
+          }
+        }
+
+        text += str;
+        prevEndX = x + width;
+        prevY = y;
+        prevFontHeight = fontHeight;
+      }
+
+      return text;
+    });
+}
+
 async function parsePdf(buffer) {
-  const data = await PdfParse(buffer);
-  const text = data.text || "";
+  let text = "";
+  try {
+    const data = await PdfParse(buffer, { pagerender: renderPageWithSpacing });
+    text = data.text || "";
+  } catch {
+    // Fall back to the default renderer if the position-aware pass fails.
+    const data = await PdfParse(buffer);
+    text = data.text || "";
+  }
   const discoveredLinks = extractPdfLinks(buffer);
   if (!discoveredLinks.length) return text;
   return `${text}\n\nProfile Links: ${discoveredLinks.join(" | ")}`;

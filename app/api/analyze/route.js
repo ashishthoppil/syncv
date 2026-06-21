@@ -553,7 +553,7 @@ const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designat
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       temperature: 0,
       // max_tokens: 500,
       response_format: { type: "json_object" },
@@ -823,7 +823,7 @@ const SECTION_PATTERNS = {
   summary:
     /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about\s+me|objective|career\s+objective)\s*:?\s*$/im,
   skills:
-    /^\s*(skills|technical\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise)\s*:?\s*$/im,
+    /^\s*(skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise)\s*:?\s*$/im,
   experience:
     /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience)\s*:?\s*$/im,
   education:
@@ -834,7 +834,7 @@ const SECTION_PATTERNS = {
 const EXPERIENCE_HEADER_PATTERN =
   /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience)\s*:?\s*$/i;
 const KNOWN_SECTION_HEADER_PATTERN =
-  /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about\s+me|objective|career\s+objective|skills|technical\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise|experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience|projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|selected\s+projects?|academic\s+projects?|education|academic\s+background|academic\s+qualifications?|qualifications?|educational\s+background|certifications?|licenses?|awards?|honors?|publications?|languages?|language\s+competencies|interests|hobbies|volunteer(?:\s+experience)?|references)\s*:?\s*$/i;
+  /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about\s+me|objective|career\s+objective|skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise|experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience|projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|selected\s+projects?|academic\s+projects?|education|academic\s+background|academic\s+qualifications?|qualifications?|educational\s+background|certifications?|licenses?|awards?|honors?|publications?|languages?|language\s+competencies|interests|hobbies|volunteer(?:\s+experience)?|references)\s*:?\s*$/i;
 const EDUCATION_CONTEXT_PATTERN =
   /\b(education|college|university|school|bachelor|master|phd|degree)\b/i;
 
