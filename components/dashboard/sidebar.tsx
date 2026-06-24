@@ -4,12 +4,14 @@ import { cn } from "@/lib/utils";
 import {
   ScanLine,
   BriefcaseBusiness,
+  FilePlus2,
   UserRound,
   SettingsIcon,
 } from "lucide-react";
 
 export const DASHBOARD_SECTIONS = [
-  { id: "scan", label: "Scan", icon: ScanLine },
+  { id: "scan", label: "Scan Resume", icon: ScanLine },
+  { id: "create-cv", label: "Create CV from Scratch", icon: FilePlus2 },
   { id: "profile", label: "Profile", icon: UserRound },
   { id: "job-tracker", label: "Job Tracker", icon: BriefcaseBusiness },
   { id: "settings", label: "Settings", icon: SettingsIcon },

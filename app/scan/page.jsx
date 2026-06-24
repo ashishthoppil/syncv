@@ -10,6 +10,7 @@ import {
   DASHBOARD_SECTIONS,
 } from "@/components/dashboard/sidebar";
 import { ScanSection } from "@/components/dashboard/scan-section";
+import { CreateCvSection } from "@/components/dashboard/create-cv-section";
 import { JobTrackerSection } from "@/components/dashboard/job-tracker-section";
 import { SettingsSection } from "@/components/dashboard/settings-section";
 import { ProfileSection } from "@/components/dashboard/profile-section";
@@ -19,6 +20,7 @@ import { Logo } from "@/components/navbar/logo";
 
 const sectionMap = {
   scan: ScanSection,
+  "create-cv": CreateCvSection,
   profile: ProfileSection,
   "job-tracker": JobTrackerSection,
   settings: SettingsSection,
@@ -26,6 +28,7 @@ const sectionMap = {
 
 const sectionLabels = {
   scan: "Scan",
+  "create-cv": "Create CV from Scratch",
   profile: "Profile",
   "job-tracker": "Job Tracker",
   settings: "Settings",
@@ -171,6 +174,9 @@ const DashboardPageContent = () => {
           allowsCoverLetter={subscription.allowsCoverLetter}
         />
       );
+    }
+    if (activeSection === "create-cv") {
+      return <CreateCvSection />;
     }
     if (activeSection === "profile") {
       return <ProfileSection user={user} />;

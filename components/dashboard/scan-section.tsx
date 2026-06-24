@@ -34,7 +34,11 @@ import {
   CheckCircle2,
   Circle,
   Download,
+  FileText,
   Loader2,
+  Minus,
+  Palette,
+  Plus,
   RefreshCcw,
   ScanLine,
   TrendingUp,
@@ -179,6 +183,8 @@ export const ScanSection = ({
   const [editableResumeText, setEditableResumeText] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [hasResumePreviewEdits, setHasResumePreviewEdits] = useState(false);
+  const [editorTab, setEditorTab] = useState<"content" | "design">("content");
+  const [previewZoom, setPreviewZoom] = useState(1);
   const [analyzingLabelIndex, setAnalyzingLabelIndex] = useState(0);
   const [generatingLabelIndex, setGeneratingLabelIndex] = useState(0);
   const [showCareerWarning, setShowCareerWarning] = useState(false);
@@ -196,7 +202,6 @@ export const ScanSection = ({
     targetFamilyId: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const editableResumePreviewRef = useRef<HTMLDivElement | null>(null);
   const analyzingLabels = [
     "Analyzing your resume...",
     "Inspecting your resume...",
@@ -949,8 +954,7 @@ export const ScanSection = ({
       const candidateSlug = toSlugPart(candidateName);
       const orgSlug = toSlugPart(form.organization || "organization");
       // Prefer the structured object (the source of truth). Fall back to the
-      // legacy contentEditable HTML / text only when no object is present.
-      const editedResumeHtml = editableResumePreviewRef.current?.innerHTML || "";
+      // derived text only when no object is present (old/guest cached docs).
       const html =
         type === "cv"
           ? resumeData
@@ -963,17 +967,15 @@ export const ScanSection = ({
                 overrides: templateOverrides[selectedTemplate],
                 useContactIcons: !guestTrial,
               })
-            : editedResumeHtml
-              ? `<div>${editedResumeHtml}</div>`
-              : renderResumeHtml({
-                  resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
-                  templateId: selectedTemplate,
-                  candidateName,
-                  designation: form.designation,
-                  photoUrl: profilePhotoUrl,
-                  overrides: templateOverrides[selectedTemplate],
-                  useContactIcons: !guestTrial,
-                })
+            : renderResumeHtml({
+                resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
+                templateId: selectedTemplate,
+                candidateName,
+                designation: form.designation,
+                photoUrl: profilePhotoUrl,
+                overrides: templateOverrides[selectedTemplate],
+                useContactIcons: !guestTrial,
+              })
           : renderCoverLetterHtml(tailoredDocs.coverLetter);
 
       const response = await fetch("/api/generate-pdf", {
@@ -1261,55 +1263,12 @@ export const ScanSection = ({
     }
   };
 
-  const applyPreviewCommand = (command: "bold" | "italic") => {
-    if (!editableResumePreviewRef.current) return;
-    editableResumePreviewRef.current.focus();
-    document.execCommand(command);
-    const liveText = editableResumePreviewRef.current.innerText || "";
-    setEditableResumeText(liveText);
-    setHasResumePreviewEdits(true);
-  };
-
   useEffect(() => {
     if (!previewOpen || !tailoredDocs?.optimizedResumeText) return;
     if (!editableResumeText.trim()) {
       setEditableResumeText(tailoredDocs.optimizedResumeText);
     }
   }, [previewOpen, tailoredDocs, editableResumeText]);
-
-  useEffect(() => {
-    if (!previewOpen || previewView !== "resume" || !tailoredDocs) return;
-    // Structured editor owns its own live preview; only drive the legacy
-    // contentEditable preview when there is no structured object.
-    if (resumeData) return;
-    if (!editableResumePreviewRef.current) return;
-
-    const candidateName = extractCandidateName(form.resume);
-    const resumeTextForRender =
-      editableResumeText.trim() || tailoredDocs.optimizedResumeText;
-
-    editableResumePreviewRef.current.innerHTML = renderResumeHtml({
-      resumeText: resumeTextForRender,
-      templateId: selectedTemplate,
-      candidateName,
-      designation: form.designation,
-      photoUrl: profilePhotoUrl,
-      overrides: templateOverrides[selectedTemplate],
-      useContactIcons: !guestTrial,
-    });
-  }, [
-    previewOpen,
-    previewView,
-    tailoredDocs,
-    resumeData,
-    selectedTemplate,
-    templateOverrides,
-    form.resume,
-    form.designation,
-    profilePhotoUrl,
-    editableResumeText,
-    guestTrial,
-  ]);
 
   useEffect(() => {
     if (!previewOpen) return;
@@ -1354,36 +1313,43 @@ export const ScanSection = ({
     initialScanScore === null
       ? {
           textClass: "text-slate-900",
-          borderClass: "border-slate-900",
+          pillClass: "bg-slate-100 text-slate-500",
+          label: "",
           encouragement: "",
         }
       : initialScanScore < 55
       ? {
           textClass: "text-red-600",
-          borderClass: "border-red-600",
+          pillClass: "bg-red-50 text-red-700",
+          label: "Needs work",
           encouragement: "Do not worry, we have got you covered.",
         }
       : initialScanScore < 70
       ? {
           textClass: "text-orange-500",
-          borderClass: "border-orange-500",
+          pillClass: "bg-orange-50 text-orange-700",
+          label: "Almost there",
           encouragement: "You are close. A few focused tweaks can lift this quickly.",
         }
       : initialScanScore < 80
       ? {
           textClass: "text-yellow-500",
-          borderClass: "border-yellow-500",
+          pillClass: "bg-yellow-50 text-yellow-700",
+          label: "Good",
           encouragement: "Nice progress. Tighten the keyword match and your resume can get stronger.",
         }
       : {
           textClass: "text-emerald-600",
-          borderClass: "border-emerald-600",
+          pillClass: "bg-emerald-50 text-emerald-700",
+          label: "Strong",
           encouragement: "Your resume rocks already. You can still tweak it for the exact role.",
         };
   const scoreDelta =
     finalScore !== null && initialScanScore !== null
       ? finalScore - initialScanScore
       : null;
+  const scoreRingCircumference = 2 * Math.PI * 52;
+  const scorePercent = Math.max(0, Math.min(100, initialScanScore ?? 0));
 
   if (subscriptionLocked && !guestTrial) {
     return (
@@ -1429,14 +1395,52 @@ export const ScanSection = ({
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
           Resume score
         </p>
-        <p className={`my-10 text-5xl font-bold ${scoreBand.textClass}`}>
-          <span className={`rounded-full p-3`}>{result ? `${result.initialScore}` : "—"}</span>
-        </p>
-        <div className="mt-2 text-xs text-slate-500">
+        <div className={`relative mx-auto my-5 h-40 w-40 ${scoreBand.textClass}`}>
+          <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+            <circle
+              cx="60"
+              cy="60"
+              r="52"
+              fill="none"
+              stroke="#e2e8f0"
+              strokeWidth="9"
+            />
+            <circle
+              cx="60"
+              cy="60"
+              r="52"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="9"
+              strokeLinecap="round"
+              strokeDasharray={scoreRingCircumference}
+              strokeDashoffset={
+                scoreRingCircumference * (1 - (result ? scorePercent : 0) / 100)
+              }
+              style={{ transition: "stroke-dashoffset 0.7s ease" }}
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-5xl font-bold leading-none">
+              {result ? result.initialScore : "—"}
+            </span>
+            <span className="mt-1 text-[11px] font-medium text-slate-400">out of 100</span>
+          </div>
+        </div>
+        {result && scoreBand.label ? (
+          <span
+            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${scoreBand.pillClass}`}
+          >
+            {scoreBand.label}
+          </span>
+        ) : null}
+        <div className="mt-3 text-xs text-slate-500">
           {result ? (
             <div className="space-y-1">
               <p>Based on {result.keywordUniverse.length} extracted keywords.</p>
-              <p className="font-medium text-sm">{scoreBand.encouragement}</p>
+              <p className={`text-sm font-semibold ${scoreBand.textClass}`}>
+                {scoreBand.encouragement}
+              </p>
             </div>
           ) : (
             "Fill the form and run a scan to see your score."
@@ -2015,127 +2019,192 @@ export const ScanSection = ({
 
       {previewOpen && tailoredDocs && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-md bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  {shouldAllowCoverLetter
-                    ? "Tailored CV & Cover Letter Preview"
-                    : "Tailored CV Preview"}
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Review the optimized drafts and download each document separately.
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-700">
-                  Score change:{" "}
+          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    {shouldAllowCoverLetter
+                      ? "Tailored CV & cover letter"
+                      : "Tailored CV preview"}
+                  </h3>
                   {isComputingFinalScore ? (
-                    <span className="text-slate-500">Calculating...</span>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Scoring…
+                    </span>
                   ) : finalScore !== null ? (
-                    <span className="font-bold text-emerald-600">
-                      {initialScanScore ?? "—"}/100 → {finalScore}/100
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-white shadow-sm ring-1",
+                        (scoreDelta ?? 0) >= 0
+                          ? "bg-emerald-600 ring-emerald-700/20"
+                          : "bg-rose-600 ring-rose-700/20"
+                      )}
+                    >
+                      <TrendingUp
+                        className={cn("h-4 w-4", (scoreDelta ?? 0) >= 0 ? "" : "rotate-180")}
+                      />
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-white/80">
+                        Score
+                      </span>
+                      <span className="flex items-baseline gap-1">
+                        <span className="text-sm font-medium text-white/70 line-through">
+                          {initialScanScore ?? "—"}
+                        </span>
+                        <span className="text-white/70">→</span>
+                        <span className="text-lg font-bold leading-none">{finalScore}</span>
+                      </span>
                       {scoreDelta !== null ? (
-                        <span
-                          className={cn(
-                            "ml-2 rounded-full px-2 py-0.5 text-xs font-semibold",
-                            scoreDelta >= 0
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-rose-100 text-rose-700"
-                          )}
-                        >
+                        <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs font-bold tabular-nums">
                           {scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta}
                         </span>
                       ) : null}
                     </span>
-                  ) : (
-                    <span className="text-slate-500">Unavailable</span>
-                  )}
+                  ) : null}
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Edit any field — the preview updates live.
                 </p>
               </div>
-              <button
-                type="button"
-                aria-label="Close preview"
-                className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
-                onClick={() => setPreviewOpen(false)}
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="max-h-[calc(90vh-84px)] overflow-y-auto p-5">
-              <div className="mb-4 flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
+                {shouldAllowCoverLetter ? (
+                  <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewView("resume")}
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-sm transition",
+                        previewView === "resume"
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      Resume
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewView("cover")}
+                      className={cn(
+                        "rounded-md px-3 py-1.5 text-sm transition",
+                        previewView === "cover"
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      Cover letter
+                    </button>
+                  </div>
+                ) : null}
                 <button
                   type="button"
-                  className={cn(
-                    "rounded-md px-4 py-2 text-sm transition",
-                    previewView === "resume"
-                      ? "bg-slate-900 text-white"
-                      : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                  )}
-                  onClick={() => setPreviewView("resume")}
+                  aria-label="Close preview"
+                  className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                  onClick={() => setPreviewOpen(false)}
                 >
-                  Resume
+                  <X className="h-4 w-4" />
                 </button>
-                {shouldAllowCoverLetter ? (
-                  <button
-                    type="button"
-                    className={cn(
-                      "rounded-md px-4 py-2 text-sm transition",
-                      previewView === "cover"
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                    )}
-                    onClick={() => setPreviewView("cover")}
-                  >
-                    Cover Letter
-                  </button>
-                ) : null}
               </div>
+            </div>
 
-              {previewView === "resume" || !shouldAllowCoverLetter ? (
-                <div className="grid gap-4 lg:grid-cols-[360px,1fr]">
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <div className="mb-3 space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <h4 className="text-sm font-semibold text-slate-900">Resume setup</h4>
-                        <Button
-                          variant="outline"
-                          className="rounded-md"
-                          disabled={
-                            guestTrial ||
-                            downloadingType === "cv" ||
-                            downloadingType === "cover" ||
-                            isComputingFinalScore
-                          }
-                          onClick={() => {
-                            if (guestTrial) return;
-                            downloadPdf("cv");
+            {previewView === "resume" || !shouldAllowCoverLetter ? (
+              <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
+                <div className="flex min-h-0 flex-col border-b border-slate-200 lg:border-b-0 lg:border-r">
+                  <div className="flex shrink-0 gap-1 px-4 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("content")}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition",
+                        editorTab === "content"
+                          ? "border-slate-900 font-medium text-slate-900"
+                          : "border-transparent text-slate-500 hover:text-slate-800"
+                      )}
+                    >
+                      <FileText className="h-4 w-4" /> Content
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorTab("design")}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition",
+                        editorTab === "design"
+                          ? "border-slate-900 font-medium text-slate-900"
+                          : "border-transparent text-slate-500 hover:text-slate-800"
+                      )}
+                    >
+                      <Palette className="h-4 w-4" /> Design
+                    </button>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-auto border-t border-slate-200 bg-slate-50 p-4">
+                    {editorTab === "content" ? (
+                      resumeData ? (
+                        <ResumeEditor
+                          showPreview={false}
+                          data={resumeData}
+                          onChange={(next) => {
+                            setResumeData(next);
+                            setEditableResumeText(resumeDataToText(next));
+                            setHasResumePreviewEdits(true);
                           }}
-                        >
-                          {guestTrial ? <Download className="h-4 w-4" /> : downloadingType === "cv" ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Download className="mr-2 h-4 w-4" />
-                          )}
-                          {guestTrial ? "Login to download" : "Download CV"}
-                        </Button>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {RESUME_TEMPLATE_CONFIGS.map((template) => (
-                          <button
-                            key={template.id}
-                            type="button"
-                            onClick={() => setSelectedTemplate(template.id)}
-                            className={cn(
-                              "rounded-md border px-3 py-1 text-xs font-medium transition",
-                              selectedTemplate === template.id
-                                ? "border-slate-900 bg-slate-900 text-white"
-                                : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
-                            )}
-                          >
-                            {template.label}
-                          </button>
-                        ))}
-                      </div>
+                          templateId={selectedTemplate}
+                          candidateName={extractCandidateName(form.resume)}
+                          designation={form.designation}
+                          photoUrl={profilePhotoUrl}
+                          overrides={templateOverrides[selectedTemplate]}
+                          useContactIcons={!guestTrial}
+                        />
+                      ) : (
+                        <textarea
+                          className="min-h-[440px] w-full rounded-md border border-slate-200 bg-white p-3 text-sm leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                          value={editableResumeText}
+                          onChange={(event) => {
+                            setEditableResumeText(event.target.value);
+                            setHasResumePreviewEdits(true);
+                          }}
+                        />
+                      )
+                    ) : (
+                      <div className="space-y-4">
+                        <div>
+                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Template
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                            {RESUME_TEMPLATE_CONFIGS.map((template) => {
+                              const thumbTheme = resolveResumeTemplateTheme(template.id);
+                              const active = selectedTemplate === template.id;
+                              return (
+                                <button
+                                  key={template.id}
+                                  type="button"
+                                  onClick={() => setSelectedTemplate(template.id)}
+                                  className={cn(
+                                    "overflow-hidden rounded-lg border bg-white text-left transition",
+                                    active
+                                      ? "border-slate-900 ring-2 ring-slate-900/10"
+                                      : "border-slate-200 hover:border-slate-400"
+                                  )}
+                                >
+                                  <div
+                                    className="h-1.5 w-full"
+                                    style={{ backgroundColor: thumbTheme.accent }}
+                                  />
+                                  <div className="space-y-1 p-2">
+                                    <div
+                                      className="h-1.5 w-3/4 rounded-full"
+                                      style={{ backgroundColor: thumbTheme.headingColor }}
+                                    />
+                                    <div className="h-1 w-full rounded-full bg-slate-200" />
+                                    <div className="h-1 w-5/6 rounded-full bg-slate-200" />
+                                    <p className="pt-1 text-[11px] font-medium text-slate-700">
+                                      {template.label}
+                                    </p>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -2269,153 +2338,137 @@ export const ScanSection = ({
                           </label> */}
                         </div>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <h4 className="text-sm font-semibold text-slate-900">Resume preview</h4>
-                    </div>
-                    {resumeData ? (
-                      <div className="rounded-lg bg-slate-50 p-4">
-                        <p className="mb-3 text-xs text-slate-500">
-                          Edit any field below — the preview updates live. Re-evaluate the
-                          score when ready.
-                        </p>
-                        <ResumeEditor
-                          data={resumeData}
-                          onChange={(next) => {
-                            setResumeData(next);
-                            setEditableResumeText(resumeDataToText(next));
-                            setHasResumePreviewEdits(true);
-                          }}
-                          templateId={selectedTemplate}
-                          candidateName={extractCandidateName(form.resume)}
-                          designation={form.designation}
-                          photoUrl={profilePhotoUrl}
-                          overrides={templateOverrides[selectedTemplate]}
-                          useContactIcons={!guestTrial}
-                        />
-                        {hasResumePreviewEdits && (
-                          <div className="mt-3 flex justify-end">
-                            <Button
-                              type="button"
-                              className="rounded-md shadow-md"
-                              onClick={reevaluateEditedResumeScore}
-                              disabled={isComputingFinalScore}
-                            >
-                              {isComputingFinalScore ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : null}
-                              Re-evaluate after changes
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="max-h-[60vh] overflow-auto rounded-lg bg-slate-50 p-4 pt-0">
-                        <div className="sticky top-0 z-20 -mx-4 mb-2 border-b border-slate-200 bg-slate-50 px-4 pb-2 pt-1">
-                          <p className="mb-2 text-xs text-slate-500">
-                            Click and edit directly in the preview, then re-evaluate score when ready.
-                          </p>
-                          <div className="flex flex-wrap items-center">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-8 rounded-r rounder-md border-r-0 px-3 text-xs font-semibold"
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                applyPreviewCommand("bold");
-                              }}
-                            >
-                              Bold
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-8 rounded-l rounded-md px-3 text-xs italic"
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                applyPreviewCommand("italic");
-                              }}
-                            >
-                              Italic
-                            </Button>
-                          </div>
-                        </div>
-                        <div
-                          ref={editableResumePreviewRef}
-                          contentEditable
-                          suppressContentEditableWarning
-                          className="min-h-[420px] rounded-md border border-slate-200 bg-white p-2 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
-                          onInput={() => {
-                            const liveText = editableResumePreviewRef.current?.innerText || "";
-                            setEditableResumeText(liveText);
-                            setHasResumePreviewEdits(true);
-                          }}
-                        />
-                        {hasResumePreviewEdits && (
-                          <div className="pointer-events-none sticky bottom-3 mt-3 flex justify-end">
-                            <Button
-                              type="button"
-                              className="pointer-events-auto rounded-md shadow-md"
-                              onClick={reevaluateEditedResumeScore}
-                              disabled={isComputingFinalScore}
-                            >
-                              {isComputingFinalScore ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : null}
-                              Re-evaluate after changes
-                            </Button>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
                 </div>
-              ) : (
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-semibold text-slate-900">
-                      Tailored Cover Letter
-                    </h4>
-                    <Button
-                      variant="outline"
-                      className="rounded-md"
-                      disabled={
-                        guestTrial ||
-                        downloadingType === "cv" ||
-                        downloadingType === "cover" ||
-                        isComputingFinalScore
-                      }
-                      onClick={() => {
-                        if (guestTrial) return;
-                        downloadPdf("cover");
-                      }}
-                    >
-                      {guestTrial ? <Download className="h-4 w-4" /> : downloadingType === "cover" ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Download className="mr-2 h-4 w-4" />
-                      )}
-                      {guestTrial ? "Login to download" : "Download Cover Letter"}
-                    </Button>
+                <div className="flex min-h-0 flex-col bg-slate-100">
+                  <div className="flex shrink-0 items-center justify-between px-4 py-2.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Preview
+                    </span>
+                    <div className="flex items-center gap-1.5 text-slate-500">
+                      <button
+                        type="button"
+                        aria-label="Zoom out"
+                        className="rounded-md border border-slate-300 bg-white p-1 hover:bg-slate-50"
+                        onClick={() =>
+                          setPreviewZoom((z) => Math.max(0.6, Math.round((z - 0.1) * 10) / 10))
+                        }
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="w-9 text-center text-xs tabular-nums">
+                        {Math.round(previewZoom * 100)}%
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="Zoom in"
+                        className="rounded-md border border-slate-300 bg-white p-1 hover:bg-slate-50"
+                        onClick={() =>
+                          setPreviewZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))
+                        }
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="max-h-[60vh] overflow-auto rounded-lg bg-slate-50 p-4">
+                  <div className="min-h-0 flex-1 overflow-auto px-5 pb-6">
                     <div
-                      dangerouslySetInnerHTML={{
-                        __html: renderCoverLetterHtml(tailoredDocs.coverLetter),
-                      }}
-                    />
+                      className="mx-auto w-full max-w-[820px] overflow-hidden rounded-md bg-white shadow-md ring-1 ring-slate-200"
+                      style={{ zoom: previewZoom }}
+                    >
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: resumeData
+                            ? renderResumeFromData({
+                                data: resumeData,
+                                templateId: selectedTemplate,
+                                candidateName: extractCandidateName(form.resume),
+                                designation: form.designation,
+                                photoUrl: profilePhotoUrl,
+                                overrides: templateOverrides[selectedTemplate],
+                                useContactIcons: !guestTrial,
+                              })
+                            : renderResumeHtml({
+                                resumeText:
+                                  editableResumeText || tailoredDocs.optimizedResumeText,
+                                templateId: selectedTemplate,
+                                candidateName: extractCandidateName(form.resume),
+                                designation: form.designation,
+                                photoUrl: profilePhotoUrl,
+                                overrides: templateOverrides[selectedTemplate],
+                                useContactIcons: !guestTrial,
+                              }),
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-            {tailoredDocs.incorporatedKeywords?.length ? (
-              <div className="border-t border-slate-200 px-5 py-3 text-xs text-slate-600">
-                Incorporated keywords: {tailoredDocs.incorporatedKeywords.join(", ")}
               </div>
-            ) : null}
+            ) : (
+              <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-6">
+                <div
+                  className="mx-auto max-w-3xl rounded-md bg-white p-8 shadow-md ring-1 ring-slate-200"
+                  dangerouslySetInnerHTML={{
+                    __html: renderCoverLetterHtml(tailoredDocs.coverLetter),
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3">
+              <p className="min-w-0 flex-1 truncate text-xs text-slate-500">
+                {tailoredDocs.incorporatedKeywords?.length
+                  ? `Added keywords: ${tailoredDocs.incorporatedKeywords
+                      .slice(0, 6)
+                      .join(", ")}`
+                  : ""}
+              </p>
+              <div className="flex shrink-0 items-center gap-2">
+                {previewView === "resume" && hasResumePreviewEdits ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-md"
+                    onClick={reevaluateEditedResumeScore}
+                    disabled={isComputingFinalScore}
+                  >
+                    {isComputingFinalScore ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="mr-2 h-4 w-4" />
+                    )}
+                    Re-evaluate
+                  </Button>
+                ) : null}
+                <Button
+                  className="rounded-md"
+                  disabled={
+                    guestTrial ||
+                    downloadingType === "cv" ||
+                    downloadingType === "cover" ||
+                    isComputingFinalScore
+                  }
+                  onClick={() => {
+                    if (guestTrial) return;
+                    downloadPdf(previewView === "cover" ? "cover" : "cv");
+                  }}
+                >
+                  {guestTrial ? (
+                    <Download className="mr-2 h-4 w-4" />
+                  ) : downloadingType === "cv" || downloadingType === "cover" ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
+                  {guestTrial
+                    ? "Login to download"
+                    : previewView === "cover"
+                      ? "Download cover letter"
+                      : "Download CV"}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

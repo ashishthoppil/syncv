@@ -483,6 +483,34 @@ const reconcileExperienceObjects = (experience = [], baseline = []) => {
   });
 };
 
+// Backstop: drop "experience" entries that are actually education, skills, or
+// other non-job content the model may have mis-placed. Identity checks against
+// section labels / degrees, plus an education-grade heuristic (institution +
+// CGPA/class bullets) catch the common cases without removing real jobs.
+const INSTITUTION_RE = /\b(university|college|institute|school|polytechnic|academy|seminary)\b/i;
+const EDU_GRADE_RE = /\b(cgpa|gpa|first\s+class|second\s+class|distinction|percentage|\d+%|grade|marks?)\b/i;
+const dropNonJobExperience = (experience = []) =>
+  (Array.isArray(experience) ? experience : []).filter((entry) => {
+    const company = ensureString(entry?.company);
+    const designation = ensureString(entry?.designation);
+    if (
+      NON_EXPERIENCE_LABEL_RE.test(company) ||
+      NON_EXPERIENCE_LABEL_RE.test(designation) ||
+      DEGREE_LABEL_RE.test(company) ||
+      DEGREE_LABEL_RE.test(designation)
+    ) {
+      return false;
+    }
+    // Education-as-a-job: an institution with mostly grade/CGPA "bullets".
+    const bullets = ensureStringArray(entry?.responsibilities);
+    const isInstitution = INSTITUTION_RE.test(company) || INSTITUTION_RE.test(designation);
+    if (isInstitution && bullets.length) {
+      const gradeLike = bullets.filter((b) => EDU_GRADE_RE.test(b)).length;
+      if (gradeLike >= Math.ceil(bullets.length / 2)) return false;
+    }
+    return true;
+  });
+
 // Pick the location line out of the raw contact lines (not an email, link, or
 // phone number).
 const extractContactLocation = (contactLines = []) => {
@@ -599,6 +627,53 @@ const resumeObjectToText = (data = {}) => {
   return [contactLines.join(" | "), body].filter(Boolean).join("\n\n").trim();
 };
 
+// Section keywords in priority order (first match wins). Resume headers vary a
+// lot in the wild ("Professional Experience & Internship", "Career Objective",
+// "Key Interests & Areas of Expertise"), so we match on the keyword rather than
+// the whole line — but only on lines that pass the heading-shape guard below,
+// so body sentences that merely contain a keyword are not treated as headers.
+const SECTION_HEADER_KEYWORDS = [
+  ["summary", /\b(summary|profile|objective|about\s+me)\b/i],
+  ["experience", /\b(experience|employment|internships?|work\s+history)\b/i],
+  ["interests", /\b(interests?|hobbies|activities|areas?\s+of\s+expertise)\b/i],
+  ["projects", /\bprojects?\b/i],
+  ["education", /\b(education|academics?|academic\s+background|qualifications?)\b/i],
+  [
+    "certifications",
+    /\b(certifications?|certificates?|licen[sc]es?|courses?|trainings?|workshops?)\b/i,
+  ],
+  ["languages", /\b(languages?|language\s+competenc(?:y|ies))\b/i],
+  ["skills", /\b(skills?|competenc(?:y|ies)|proficienc(?:y|ies))\b/i],
+];
+
+// True when a line LOOKS like a section header: short, no sentence-ending
+// punctuation, no commas/list separators, and Title/UPPER-cased when it runs
+// longer than 4 words. This is what makes keyword matching safe against prose
+// like "Gained hands-on experience in patient care".
+const looksLikeHeading = (rawLine = "") => {
+  const line = ensureString(rawLine);
+  if (!line || /^[-*•]/.test(line) || /,/.test(line)) return false;
+  const clean = line.replace(/[\s:]+$/, "").trim();
+  if (!clean || clean.length > 64) return false;
+  if (/[.!?]$/.test(clean)) return false;
+  const words = clean.split(/\s+/);
+  if (words.length > 6) return false;
+  if (words.length > 4) {
+    const significant = words.filter((w) => w.replace(/[^A-Za-z]/g, "").length >= 3);
+    if (!significant.every((w) => /^[A-Z0-9]/.test(w))) return false;
+  }
+  return true;
+};
+
+const detectSectionHeader = (line = "") => {
+  if (!looksLikeHeading(line)) return null;
+  const clean = ensureString(line).replace(/[\s:]+$/, "").trim();
+  for (const [key, pattern] of SECTION_HEADER_KEYWORDS) {
+    if (pattern.test(clean)) return key;
+  }
+  return null;
+};
+
 const extractSectionsFromText = (text = "") => {
   const lines = text
     .split("\n")
@@ -607,26 +682,12 @@ const extractSectionsFromText = (text = "") => {
 
   const sections = {};
   let current = "";
-  const headerRegex =
-    /^(?:(summary|professional\s+summary|profile|objective)|(skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies)|(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history)|(projects?|personal\s+projects?|key\s+projects?)|(education|academic\s+background|qualifications?)|(certifications?|courses?|licenses?)|(languages?|languages\s+known|language\s+competencies))\s*:?$/i;
-
-  // Each capture group corresponds to one canonical section key, in order.
-  const groupKeys = [
-    "summary",
-    "skills",
-    "experience",
-    "projects",
-    "education",
-    "certifications",
-    "languages",
-  ];
 
   for (const line of lines) {
-    const m = line.match(headerRegex);
-    if (m) {
-      const matchedIndex = groupKeys.findIndex((_, idx) => m[idx + 1] !== undefined);
-      current = matchedIndex >= 0 ? groupKeys[matchedIndex] : "";
-      if (current && !sections[current]) sections[current] = [];
+    const key = detectSectionHeader(line);
+    if (key) {
+      current = key;
+      if (!sections[current]) sections[current] = [];
       continue;
     }
     if (current) {
@@ -1111,7 +1172,7 @@ export async function POST(req) {
         ? `1. summary (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
         : `1. summary (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
       "2. skills: An array of 3-6 strings, each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Certifications, Systems/EMR, Patient Care; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. Include every matched keyword and every missing keyword that has evidence in the candidate's original resume. List concrete, recognizable hard skills, tools, and certifications. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player'); genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
-      "3. experience: An array of role objects. Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Provide 3-6 bullets per role, each starting with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
+      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Provide 3-6 bullets per role, each starting with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
       hasProjectsSection
         ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Add keywords only where the project truly used them. Never drop a project to save space."
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
@@ -1264,6 +1325,9 @@ export async function POST(req) {
         factualExperienceBaseline
       );
     }
+    // Backstop: drop anything that slipped into experience but is really
+    // education / skills / interests (mis-placed by the model).
+    resumeData.experience = dropNonJobExperience(resumeData.experience);
 
     // Safety net: original resume had a projects section but the model dropped
     // it across the passes — re-inject the original projects verbatim.

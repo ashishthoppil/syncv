@@ -127,13 +127,19 @@ type SkillCategory = { label: string | null; items: string[] };
 
 const SKILL_LABEL_PATTERN = /^([A-Za-z][A-Za-z0-9 &/+().-]{0,38}?):\s*(.*)$/;
 
-const parseSkillCategories = (skillLines: string[] = []): SkillCategory[] => {
+const parseSkillCategories = (
+  skillLines: string[] = [],
+  options: { filterFiller?: boolean } = {}
+): SkillCategory[] => {
+  const filterFiller = options.filterFiller !== false;
   const categories: SkillCategory[] = [];
   const byLabel = new Map<string, SkillCategory>();
   const seen = new Set<string>();
 
   const addItems = (label: string | null, rawItems: string[]) => {
-    const cleaned = rawItems.filter((item) => !isFillerSkill(item));
+    const cleaned = filterFiller
+      ? rawItems.filter((item) => !isFillerSkill(item))
+      : rawItems.filter(Boolean);
     if (!cleaned.length) return;
     const key = label ? label.toLowerCase() : "__uncategorized__";
     let category = byLabel.get(key);
@@ -1405,25 +1411,60 @@ export const renderResumeHtml = ({
 // Data-first body renderer: builds the normalized section shape straight from
 // the structured ResumeData object (no text parsing) and emits HTML via the
 // shared renderSectionsToHtml.
+// Normalize a user-entered link into a clickable href, adding https:// to bare
+// domains (e.g. "dribbble.com/you" -> "https://dribbble.com/you").
+const contactHrefFromUrl = (url: string): string => {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (/^(https?:\/\/|mailto:|tel:)/i.test(trimmed)) return trimmed;
+  return `https://${trimmed.replace(/^\/+/, "")}`;
+};
+
+// Build contact items DIRECTLY from the structured contact object. Unlike the
+// text path's heuristic extractContactItems (which only recognizes a few
+// networks and silently drops the rest), this renders EVERY link the user
+// entered — portfolio, Dribbble, Behance, Git, or any other website.
+const buildContactItemsFromData = (contact: ResumeContact): ContactItem[] => {
+  const items: ContactItem[] = [];
+  const email = (contact.email || "").trim();
+  if (email) items.push({ kind: "email", label: email, href: `mailto:${email}` });
+  const phone = (contact.phone || "").trim();
+  if (phone) {
+    items.push({
+      kind: "phone",
+      label: phone,
+      href: `tel:${phone.replace(/[^\d+]/g, "")}`,
+    });
+  }
+  const location = (contact.location || "").trim();
+  if (location) items.push({ kind: "location", label: location });
+  (contact.links || []).forEach((link) => {
+    const url = (link?.url || "").trim();
+    if (!url) return;
+    const href = contactHrefFromUrl(url);
+    let kind: ContactItem["kind"] = "link";
+    if (/linkedin\.com/i.test(href)) kind = "linkedin";
+    else if (/github\.com|gitlab\.com/i.test(href)) kind = "github";
+    else if (/behance\.net/i.test(href)) kind = "behance";
+    items.push({
+      kind,
+      label: link.label?.trim() || displayLabelForUrl(href),
+      href,
+    });
+  });
+  return items;
+};
+
 const renderResumeBodyFromData = (
   data: ResumeData,
   options: ResumeRenderOptions
 ): string => {
-  const contactLines: string[] = [];
-  if (data.contact?.email) contactLines.push(data.contact.email);
-  if (data.contact?.phone) contactLines.push(data.contact.phone);
-  if (data.contact?.location) contactLines.push(data.contact.location);
-  (data.contact?.links || []).forEach((link) => {
-    if (link?.url) contactLines.push(link.url);
-  });
-  const knownProfileLinks = extractKnownProfileLinks(contactLines.join("\n"));
-
   const structured: RenderedSections = {
-    contactItems: contactLines.length
-      ? extractContactItems(contactLines, knownProfileLinks)
-      : [],
+    contactItems: data.contact ? buildContactItemsFromData(data.contact) : [],
     summaryText: (data.summary || "").trim(),
-    skillCategories: parseSkillCategories(data.skills || []),
+    // Structured skills are intentional user/AI input — keep them as-is (the
+    // filler filter is only for cleaning up messy parsed text).
+    skillCategories: parseSkillCategories(data.skills || [], { filterFiller: false }),
     experience: (data.experience || []).map((entry) => ({
       designation: entry.designation || "",
       company: entry.company || "",
