@@ -314,15 +314,53 @@ function renderPageWithSpacing(pageData) {
     });
 }
 
-async function parsePdf(buffer) {
-  let text = "";
+// Some generators (notably ReportLab) emit a "%" comment line INSIDE the
+// trailer dictionary. That is legal PDF, but the pdf.js build bundled in
+// pdf-parse rejects the file with "bad XRef entry". Removing comment lines
+// after the trailer keyword is safe — they sit past the xref table, so no
+// object byte offset shifts. %%EOF is preserved.
+const stripPdfTrailerComments = (buffer) => {
+  const raw = buffer.toString("latin1");
+  const trailerIndex = raw.lastIndexOf("trailer");
+  if (trailerIndex === -1) return null;
+  const repairedTail = raw
+    .slice(trailerIndex)
+    .replace(/^%(?!%EOF)[^\n]*\n/gm, "");
+  const repaired = raw.slice(0, trailerIndex) + repairedTail;
+  if (repaired.length === raw.length) return null;
+  return Buffer.from(repaired, "latin1");
+};
+
+async function parsePdfText(buffer) {
   try {
     const data = await PdfParse(buffer, { pagerender: renderPageWithSpacing });
-    text = data.text || "";
+    return data.text || "";
   } catch {
     // Fall back to the default renderer if the position-aware pass fails.
     const data = await PdfParse(buffer);
-    text = data.text || "";
+    return data.text || "";
+  }
+}
+
+async function parsePdf(buffer) {
+  let text = "";
+  try {
+    text = await parsePdfText(buffer);
+  } catch (parseError) {
+    const repaired = stripPdfTrailerComments(buffer);
+    if (!repaired) {
+      throw new Error(
+        "We couldn't read this PDF. Try re-saving or exporting it again, or upload a DOCX instead."
+      );
+    }
+    try {
+      text = await parsePdfText(repaired);
+    } catch {
+      console.error("PDF parse failed even after trailer repair:", parseError);
+      throw new Error(
+        "We couldn't read this PDF. Try re-saving or exporting it again, or upload a DOCX instead."
+      );
+    }
   }
   const discoveredLinks = extractPdfLinks(buffer);
   if (!discoveredLinks.length) return text;

@@ -9,10 +9,12 @@ import {
   FolderGit2,
   GraduationCap,
   Languages as LanguagesIcon,
+  Layers,
   Loader2,
   Plus,
   Sparkles,
   Trash2,
+  UserRound,
   Wand2,
   Wrench,
   X,
@@ -39,6 +41,12 @@ type ResumeEditorProps = {
   overrides?: ResumeTemplateThemeOverrides;
   useContactIcons?: boolean;
   /**
+   * Name and designation live outside ResumeData (they're host state), so
+   * their fields only render when the host provides these callbacks.
+   */
+  onCandidateNameChange?: (value: string) => void;
+  onDesignationChange?: (value: string) => void;
+  /**
    * When false, render only the editable fields (no built-in live preview) so
    * the host can place the preview in its own pane. Defaults to true.
    */
@@ -61,8 +69,17 @@ type EducationDraft = {
   details: string;
 };
 type CertificationDraft = { title: string; link: string };
+type AdditionalSectionDraft = { title: string; text: string };
 type SkillCategory = { category: string; items: string[] };
+type ContactLinkDraft = { label: string; url: string };
+type ContactDraft = {
+  email: string;
+  phone: string;
+  location: string;
+  links: ContactLinkDraft[];
+};
 type Drafts = {
+  contact: ContactDraft;
   skillCategories: SkillCategory[];
   summary: string;
   experiences: ExperienceDraft[];
@@ -70,6 +87,7 @@ type Drafts = {
   educations: EducationDraft[];
   certifications: CertificationDraft[];
   languages: string[];
+  additionalSections: AdditionalSectionDraft[];
 };
 
 const labelClass = "block text-[11px] font-semibold uppercase tracking-wide text-slate-500";
@@ -143,6 +161,15 @@ const parseCertification = (raw: string): CertificationDraft => {
 };
 
 const seedFromData = (data: ResumeData): Drafts => ({
+  contact: {
+    email: data.contact?.email || "",
+    phone: data.contact?.phone || "",
+    location: data.contact?.location || "",
+    links: (data.contact?.links || []).map((link) => ({
+      label: link.label || "",
+      url: link.url || "",
+    })),
+  },
   skillCategories: parseSkillStrings(data.skills || []),
   summary: data.summary || "",
   experiences:
@@ -172,10 +199,28 @@ const seedFromData = (data: ResumeData): Drafts => ({
       : [emptyEducation()],
   certifications: (data.certifications || []).map(parseCertification),
   languages: data.languages && data.languages.length ? data.languages : [],
+  additionalSections: (data.additionalSections || []).map((section) => ({
+    title: section.title || "",
+    text: (section.items || []).join("\n"),
+  })),
 });
 
-const draftsToData = (drafts: Drafts, contact?: ResumeContact): ResumeData => ({
-  contact,
+const draftContactToData = (contact: ContactDraft): ResumeContact | undefined => {
+  const email = contact.email.trim();
+  const phone = contact.phone.trim();
+  const location = contact.location.trim();
+  const links = contact.links
+    .filter((link) => link.url.trim())
+    .map((link) => ({
+      label: link.label.trim() || undefined,
+      url: link.url.trim(),
+    }));
+  if (!email && !phone && !location && !links.length) return undefined;
+  return { email, phone, location, links };
+};
+
+const draftsToData = (drafts: Drafts): ResumeData => ({
+  contact: draftContactToData(drafts.contact),
   summary: drafts.summary.trim(),
   skills: drafts.skillCategories
     .filter((category) => category.items.length)
@@ -208,6 +253,12 @@ const draftsToData = (drafts: Drafts, contact?: ResumeContact): ResumeData => ({
       cert.link.trim() ? `${cert.title.trim()} — ${cert.link.trim()}` : cert.title.trim()
     ),
   languages: drafts.languages.map((language) => language.trim()).filter(Boolean),
+  additionalSections: drafts.additionalSections
+    .map((section) => ({
+      title: section.title.trim(),
+      items: splitLines(section.text),
+    }))
+    .filter((section) => section.title && section.items.length),
 });
 
 const callAssist = async (payload: Record<string, unknown>) => {
@@ -261,6 +312,8 @@ export const ResumeEditor = ({
   photoUrl,
   overrides,
   useContactIcons,
+  onCandidateNameChange,
+  onDesignationChange,
   showPreview = true,
 }: ResumeEditorProps) => {
   const [drafts, setDrafts] = useState<Drafts>(() => seedFromData(data));
@@ -276,7 +329,7 @@ export const ResumeEditor = ({
 
   const commit = (next: Drafts) => {
     setDrafts(next);
-    const emitted = draftsToData(next, data.contact);
+    const emitted = draftsToData(next);
     syncedRef.current = emitted;
     onChange(emitted);
   };
@@ -291,7 +344,7 @@ export const ResumeEditor = ({
     () =>
       showPreview
         ? renderResumeFromData({
-            data: draftsToData(drafts, data.contact),
+            data: draftsToData(drafts),
             templateId,
             candidateName,
             designation,
@@ -303,7 +356,6 @@ export const ResumeEditor = ({
     [
       showPreview,
       drafts,
-      data.contact,
       templateId,
       candidateName,
       designation,
@@ -312,6 +364,20 @@ export const ResumeEditor = ({
       useContactIcons,
     ]
   );
+
+  // ---- Contact ----
+  const updateContact = (patch: Partial<ContactDraft>) =>
+    commit({ ...drafts, contact: { ...drafts.contact, ...patch } });
+  const updateContactLink = (index: number, patch: Partial<ContactLinkDraft>) =>
+    updateContact({
+      links: drafts.contact.links.map((link, i) =>
+        i === index ? { ...link, ...patch } : link
+      ),
+    });
+  const addContactLink = () =>
+    updateContact({ links: [...drafts.contact.links, { label: "", url: "" }] });
+  const removeContactLink = (index: number) =>
+    updateContact({ links: drafts.contact.links.filter((_, i) => i !== index) });
 
   // ---- Skills ----
   const addSkillToCategory = (
@@ -524,8 +590,132 @@ export const ResumeEditor = ({
   const removeLanguage = (index: number) =>
     commit({ ...drafts, languages: drafts.languages.filter((_, i) => i !== index) });
 
+  // ---- Additional sections (awards, publications, speaking, volunteering…) ----
+  const updateAdditionalSection = (index: number, patch: Partial<AdditionalSectionDraft>) =>
+    commit({
+      ...drafts,
+      additionalSections: drafts.additionalSections.map((entry, i) =>
+        i === index ? { ...entry, ...patch } : entry
+      ),
+    });
+  const addAdditionalSection = () =>
+    commit({
+      ...drafts,
+      additionalSections: [...drafts.additionalSections, { title: "", text: "" }],
+    });
+  const removeAdditionalSection = (index: number) =>
+    commit({
+      ...drafts,
+      additionalSections: drafts.additionalSections.filter((_, i) => i !== index),
+    });
+
   const fields = (
     <div className="space-y-4">
+      {/* Contact information */}
+      <SectionCard
+        icon={UserRound}
+        title="Contact information"
+        action={addEntryButton("Add link", addContactLink)}
+      >
+        <div className="grid grid-cols-2 gap-2">
+          {onCandidateNameChange ? (
+            <div className="space-y-1">
+              <span className={labelClass}>Full name</span>
+              <input
+                className={inputClass}
+                value={candidateName}
+                onChange={(event) => onCandidateNameChange(event.target.value)}
+                placeholder="Jane Doe"
+              />
+            </div>
+          ) : null}
+          {onDesignationChange ? (
+            <div className="space-y-1">
+              <span className={labelClass}>Designation</span>
+              <input
+                className={inputClass}
+                value={designation || ""}
+                onChange={(event) => onDesignationChange(event.target.value)}
+                placeholder="Product Designer"
+              />
+            </div>
+          ) : null}
+          <div className="space-y-1">
+            <span className={labelClass}>Email</span>
+            <input
+              className={inputClass}
+              type="email"
+              value={drafts.contact.email}
+              onChange={(event) => updateContact({ email: event.target.value })}
+              placeholder="you@example.com"
+            />
+          </div>
+          <div className="space-y-1">
+            <span className={labelClass}>Phone</span>
+            <input
+              className={inputClass}
+              value={drafts.contact.phone}
+              onChange={(event) => updateContact({ phone: event.target.value })}
+              placeholder="+1 555 000 0000"
+            />
+          </div>
+          <div className="col-span-2 space-y-1">
+            <span className={labelClass}>Location</span>
+            <input
+              className={inputClass}
+              value={drafts.contact.location}
+              onChange={(event) => updateContact({ location: event.target.value })}
+              placeholder="City, Country"
+            />
+          </div>
+        </div>
+        <div className="mt-3 space-y-2">
+          <p className={labelClass}>Links (LinkedIn, portfolio, GitHub…)</p>
+          {drafts.contact.links.length === 0 ? (
+            <button
+              type="button"
+              onClick={addContactLink}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-500 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add LinkedIn, GitHub or a portfolio link
+            </button>
+          ) : null}
+          {drafts.contact.links.map((link, index) => (
+            <div key={index} className="flex items-end gap-2">
+              <div className="grid flex-1 grid-cols-[1fr_2fr] gap-2">
+                <div className="space-y-1">
+                  <span className={labelClass}>Label</span>
+                  <input
+                    className={inputClass}
+                    value={link.label}
+                    onChange={(event) => updateContactLink(index, { label: event.target.value })}
+                    placeholder="LinkedIn"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <span className={labelClass}>URL</span>
+                  <input
+                    className={inputClass}
+                    value={link.url}
+                    onChange={(event) => updateContactLink(index, { url: event.target.value })}
+                    placeholder="https://linkedin.com/in/you"
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Remove link"
+                className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                onClick={() => removeContactLink(index)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
       {/* Skills */}
       <SectionCard icon={Wrench} title="Skills">
         <div className="relative">
@@ -931,6 +1121,57 @@ export const ResumeEditor = ({
               >
                 <Trash2 className="h-4 w-4" />
               </button>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      {/* Additional sections — awards, publications, speaking, volunteering… */}
+      <SectionCard
+        icon={Layers}
+        title="Additional sections"
+        action={addEntryButton("Add section", addAdditionalSection)}
+      >
+        <div className="space-y-3">
+          {drafts.additionalSections.length === 0 ? (
+            <p className="text-xs text-slate-400">
+              No additional sections (awards, publications, volunteering…) yet.
+            </p>
+          ) : null}
+          {drafts.additionalSections.map((section, index) => (
+            <div key={index} className="rounded-lg border border-slate-100 p-2.5">
+              <div className="flex items-center gap-2">
+                <div className="flex-1 space-y-1">
+                  <span className={labelClass}>Section title</span>
+                  <input
+                    className={inputClass}
+                    value={section.title}
+                    onChange={(event) =>
+                      updateAdditionalSection(index, { title: event.target.value })
+                    }
+                    placeholder="Awards & Recognition"
+                  />
+                </div>
+                <button
+                  type="button"
+                  aria-label="Remove section"
+                  className="mt-4 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                  onClick={() => removeAdditionalSection(index)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-2 space-y-1">
+                <span className={labelClass}>Items (one per line)</span>
+                <textarea
+                  className={`${inputClass} min-h-[72px] resize-y leading-relaxed`}
+                  value={section.text}
+                  onChange={(event) =>
+                    updateAdditionalSection(index, { text: event.target.value })
+                  }
+                  placeholder={"AMA Marketer of the Year — finalist (2024)\nEffie Awards — Silver (2023)"}
+                />
+              </div>
             </div>
           ))}
         </div>

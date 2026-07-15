@@ -14,22 +14,125 @@ const normalizeMarkdownMarkers = (value: string) => value.replace(/\\\*/g, "*");
 const stripMarkdownBold = (value: string) =>
   normalizeMarkdownMarkers(value).replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*\*/g, "");
 
+// Resume headers often put the job title on the same line as the name
+// ("Priya Deshpande | Full Stack Developer (MERN)"). Cut at the separator, and
+// as a fallback (separators can be lost in PDF text extraction) trim a
+// trailing job-title phrase recognized by its occupational keyword.
+const NAME_SEGMENT_SPLIT_RE = /\s*(?:\||·|•|—|–|,|\/|\t| {3,}| - )\s*/;
+const TRAILING_TITLE_RE =
+  /\s+(?:senior|junior|lead|principal|staff|full[ -]?stack|front[ -]?end|back[ -]?end|software|web|mobile|devops|cloud|engineer|developer|manager|analyst|designer|consultant|architect|scientist|specialist)\b[\s\S]*$/i;
+
+// Section headers that two-column PDFs often emit BEFORE the candidate's name
+// (the sidebar is extracted first, so the text can start with "CONTACT").
+const SECTION_HEADER_RE =
+  /^(contact(?:\s+(?:information|details|info|me))?|get in touch|summary|professional summary|profile|about(?:\s+me)?|objective|career objective|skills?|technical skills|core competencies|education|experience|work experience|professional experience|employment(?:\s+history)?|projects?|certifications?|licenses?|languages?|interests?|hobbies|references?|achievements?|awards?|publications?|volunteering|links?|portfolio|curriculum vitae|resume|cv)\s*:?\s*$/i;
+
+// "Ithaca, NY" — a City, ST location line, not a name.
+const LOCATION_LINE_RE = /,\s*[A-Z]{2}\.?$/;
+
+// Letter-spaced name headers ("D E E   N I T A O") — collapse single spaces
+// inside words, keeping 2+ space runs as word boundaries ("DEE NITAO").
+const collapseLetterSpacing = (line: string) => {
+  const tokens = line.trim().split(" ").filter(Boolean);
+  const singles = tokens.filter((t) => t.length === 1).length;
+  if (tokens.length < 4 || singles < tokens.length * 0.7) return line;
+  return line
+    .trim()
+    .split(/\s{2,}/)
+    .map((word) => word.replace(/ /g, ""))
+    .join(" ");
+};
+
+const cleanNameLine = (line: string) => {
+  const collapsed = collapseLetterSpacing(line);
+  const nameSegment = collapsed.split(NAME_SEGMENT_SPLIT_RE).filter(Boolean)[0] || collapsed;
+  let name = nameSegment.replace(/[^a-zA-Z.\s-]/g, "").trim();
+  // PDF text extraction sometimes drops the spaces between name parts, yielding
+  // a run-together name like "AleenaMariamBenny". When the line has no spaces but
+  // clearly concatenates multiple capitalized words, restore spaces at the
+  // lowercase→uppercase boundaries ("AleenaMariamBenny" → "Aleena Mariam Benny").
+  if (name && !/\s/.test(name) && /[a-z][A-Z]/.test(name)) {
+    name = name.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+  }
+  name = name.replace(TRAILING_TITLE_RE, "").trim() || name;
+  return name;
+};
+
+// A lone occupational word ("Developer", "Manager") — the headline title, not
+// part of a stacked name.
+const SINGLE_TITLE_WORD_RE =
+  /^(senior|junior|lead|principal|staff|freelance|software|web|mobile|devops|cloud|engineer|developer|manager|analyst|designer|consultant|architect|scientist|specialist|director|coordinator|intern|marketer|accountant|nurse|teacher|lawyer)$/i;
+
+const isPlausibleNameLine = (line: string) => {
+  if (SECTION_HEADER_RE.test(line)) return false;
+  if (/[@\d]|https?:\/\/|www\./i.test(line)) return false;
+  if (LOCATION_LINE_RE.test(line)) return false;
+  const cleaned = cleanNameLine(line);
+  if (cleaned.length < 2 || cleaned.length > 60) return false;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  return words.length >= 1 && words.length <= 5;
+};
+
 export const extractCandidateName = (resumeText: string) => {
   const lines = resumeText
     .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
   if (!lines.length) return "Candidate";
-  let firstLine = lines[0].replace(/[^a-zA-Z.\s-]/g, "").trim();
-  if (!firstLine) return "Candidate";
-  // PDF text extraction sometimes drops the spaces between name parts, yielding
-  // a run-together name like "AleenaMariamBenny". When the line has no spaces but
-  // clearly concatenates multiple capitalized words, restore spaces at the
-  // lowercase→uppercase boundaries ("AleenaMariamBenny" → "Aleena Mariam Benny").
-  if (!/\s/.test(firstLine) && /[a-z][A-Z]/.test(firstLine)) {
-    firstLine = firstLine.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+
+  // Usual case: the resume starts with the candidate's name.
+  if (isPlausibleNameLine(lines[0])) {
+    let name = cleanNameLine(lines[0]) || "Candidate";
+    // Stacked name headers put each name word on its own line ("PRIYA" /
+    // "NAIR"). Absorb following single-word name-like lines; when the resume
+    // has an email, each absorbed word must appear in its local part.
+    if (!name.includes(" ")) {
+      const emailLocal = (
+        resumeText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || ""
+      )
+        .split("@")[0]
+        .toLowerCase();
+      for (let i = 1; i < Math.min(lines.length, 4); i += 1) {
+        const line = lines[i];
+        if (!/^[A-Za-z][A-Za-z.'-]*$/.test(line)) break;
+        if (SECTION_HEADER_RE.test(line) || SINGLE_TITLE_WORD_RE.test(line)) break;
+        const word = line.toLowerCase().replace(/[^a-z]/g, "");
+        if (emailLocal && word.length >= 3 && !emailLocal.includes(word)) break;
+        name = `${name} ${line}`;
+        if (name.split(" ").length >= 4) break;
+      }
+    }
+    return name;
   }
-  return firstLine;
+
+  // Two-column/sidebar PDFs emit the sidebar first ("CONTACT", email, phone…)
+  // and the name header can land anywhere — often at the very end of the text.
+  // Resume emails are almost always derived from the name, so anchor on a
+  // name-like line that shares a token with the email local part.
+  const email = resumeText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
+  const emailTokens = email
+    .split("@")[0]
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length >= 3);
+  if (emailTokens.length) {
+    for (const line of lines) {
+      if (!isPlausibleNameLine(line)) continue;
+      const lower = line.toLowerCase();
+      if (emailTokens.some((token) => lower.includes(token))) {
+        return cleanNameLine(line) || "Candidate";
+      }
+    }
+  }
+
+  // Otherwise take the first plausible multi-word line near the top.
+  for (const line of lines.slice(0, 12)) {
+    if (isPlausibleNameLine(line) && cleanNameLine(line).includes(" ")) {
+      return cleanNameLine(line);
+    }
+  }
+
+  return cleanNameLine(lines[0]) || "Candidate";
 };
 
 export const toSlugPart = (value: string) =>
@@ -939,6 +1042,7 @@ export type ResumeEducationItem = {
   duration?: string;
   details?: string[];
 };
+export type ResumeAdditionalSection = { title?: string; items?: string[] };
 export type ResumeData = {
   contact?: ResumeContact;
   summary?: string;
@@ -949,6 +1053,7 @@ export type ResumeData = {
   certifications?: string[];
   languages?: string[];
   references?: string[];
+  additionalSections?: ResumeAdditionalSection[];
 };
 
 // The normalized, ready-to-render shape. Both the text path (parse → this) and
@@ -964,6 +1069,7 @@ type RenderedSections = {
   certifications: string[];
   languages: string[];
   references: string[];
+  additionalSections: { title: string; items: string[] }[];
 };
 
 const splitLanguageLines = (lines: string[] = []): string[] =>
@@ -1246,6 +1352,13 @@ const renderSectionsToHtml = (
       treatAllAsBullets: true,
     });
   }
+  structured.additionalSections.forEach((section) => {
+    if (!section.title || !section.items.length) return;
+    renderSimpleSection(section.title.toUpperCase(), section.items, {
+      forceBullets: true,
+      treatAllAsBullets: true,
+    });
+  });
 
   return html || '<p style="font-size:13px;color:#64748b;">No content available.</p>';
 };
@@ -1307,6 +1420,7 @@ const renderResumeBodyFromText = (
     certifications: sections.certifications || [],
     languages: splitLanguageLines(sections.languages || []),
     references: sections.references || [],
+    additionalSections: [],
   };
 
   return renderSectionsToHtml(structured, options);
@@ -1488,6 +1602,12 @@ const renderResumeBodyFromData = (
     certifications: data.certifications || [],
     languages: data.languages || [],
     references: data.references || [],
+    additionalSections: (data.additionalSections || [])
+      .map((section) => ({
+        title: (section.title || "").trim(),
+        items: (section.items || []).map((item) => item.trim()).filter(Boolean),
+      }))
+      .filter((section) => section.title && section.items.length),
   };
 
   return renderSectionsToHtml(structured, options);
@@ -1587,6 +1707,13 @@ export const resumeDataToText = (data: ResumeData): string => {
       if (clean(line)) blocks.push(`- ${clean(line)}`);
     });
   }
+  (data.additionalSections || []).forEach((section) => {
+    const title = clean(section.title);
+    const items = (section.items || []).map(clean).filter(Boolean);
+    if (!title || !items.length) return;
+    blocks.push(title.toUpperCase());
+    items.forEach((item) => blocks.push(`- ${item}`));
+  });
   return blocks.join("\n").trim();
 };
 

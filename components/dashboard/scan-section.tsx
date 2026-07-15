@@ -35,6 +35,8 @@ import {
   Circle,
   Download,
   FileText,
+  Layers,
+  Lightbulb,
   Loader2,
   Minus,
   Palette,
@@ -136,6 +138,8 @@ type ScanSectionProps = {
   subscriptionLocked?: boolean;
   planKey?: string | null;
   allowsCoverLetter?: boolean;
+  /** Called after a scan consumes quota, so the host can refresh the balance. */
+  onUsageChange?: () => void;
 };
 
 type GuestTrialStage = "none" | "analyzed" | "optimized";
@@ -149,6 +153,7 @@ export const ScanSection = ({
   subscriptionLocked = false,
   planKey = null,
   allowsCoverLetter = true,
+  onUsageChange,
 }: ScanSectionProps = {}) => {
   const router = useRouter();
   const [form, setForm] = useState(initialFormState);
@@ -183,6 +188,10 @@ export const ScanSection = ({
   const [editableResumeText, setEditableResumeText] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
   const [hasResumePreviewEdits, setHasResumePreviewEdits] = useState(false);
+  // Name/designation shown on the optimized resume — seeded when the preview
+  // opens, editable from the preview's contact section.
+  const [previewCandidateName, setPreviewCandidateName] = useState("");
+  const [previewDesignation, setPreviewDesignation] = useState("");
   const [editorTab, setEditorTab] = useState<"content" | "design">("content");
   const [previewZoom, setPreviewZoom] = useState(1);
   const [analyzingLabelIndex, setAnalyzingLabelIndex] = useState(0);
@@ -532,6 +541,7 @@ export const ScanSection = ({
       const data = await response.json();
       if (data.success) {
         setResult(data.message);
+        if (!guestTrial) onUsageChange?.();
 
         if (guestTrial) {
           setGuestTrialStage("analyzed");
@@ -950,7 +960,8 @@ export const ScanSection = ({
     if (type === "cover" && !shouldAllowCoverLetter) return;
     setDownloadingType(type);
     try {
-      const candidateName = extractCandidateName(form.resume);
+      const candidateName =
+        previewCandidateName.trim() || extractCandidateName(form.resume);
       const candidateSlug = toSlugPart(candidateName);
       const orgSlug = toSlugPart(form.organization || "organization");
       // Prefer the structured object (the source of truth). Fall back to the
@@ -962,7 +973,7 @@ export const ScanSection = ({
                 data: resumeData,
                 templateId: selectedTemplate,
                 candidateName,
-                designation: form.designation,
+                designation: previewDesignation,
                 photoUrl: profilePhotoUrl,
                 overrides: templateOverrides[selectedTemplate],
                 useContactIcons: !guestTrial,
@@ -971,7 +982,7 @@ export const ScanSection = ({
                 resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
                 templateId: selectedTemplate,
                 candidateName,
-                designation: form.designation,
+                designation: previewDesignation,
                 photoUrl: profilePhotoUrl,
                 overrides: templateOverrides[selectedTemplate],
                 useContactIcons: !guestTrial,
@@ -1099,6 +1110,8 @@ export const ScanSection = ({
       setResumeData(data.message.optimizedResume || null);
       setEditableResumeText(data.message.optimizedResumeText || "");
       setHasResumePreviewEdits(false);
+      setPreviewCandidateName(extractCandidateName(form.resume));
+      setPreviewDesignation(form.designation);
       setPreviewView("resume");
       setPreviewOpen(true);
       if (guestTrial) {
@@ -1384,14 +1397,14 @@ export const ScanSection = ({
   }
 
   const summaryPanel = (
-    <div style={{ height: '34rem' }} className="rounded-lg shadow-xl bg-white p-3 overflow-y-scroll">
-      <div className="flex flex-col gap-2">
+    <div style={{ height: '34rem' }} className="rounded-lg shadow-xl bg-slate-50 p-4 overflow-y-scroll">
+      <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold text-slate-900">Scan summary</h2>
         <p className="text-sm text-slate-500 font-medium">
           We compare your resume against every keyword found in the JD.
         </p>
       </div>
-      <div className="mt-6 rounded-lg border border-slate-200 p-6 text-center">
+      <div className="mt-4 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
           Resume score
         </p>
@@ -1449,7 +1462,7 @@ export const ScanSection = ({
       </div>
 
       {result && (
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
           <Button
             className="w-full rounded-md"
             onClick={() => createTailoredDocuments()}
@@ -1471,52 +1484,58 @@ export const ScanSection = ({
       )}
 
       {result && (
-        <div className="mt-6 space-y-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <p className="text-sm font-semibold text-slate-900">
-                Matched keywords ({result.matchedKeywords.length})
-              </p>
+        <div className="mt-4 space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-50 text-emerald-600">
+                <CheckCircle2 className="h-4 w-4" />
+              </span>
+              <p className="text-sm font-semibold text-slate-900">Matched keywords</p>
+              <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                {result.matchedKeywords.length}
+              </span>
             </div>
             {result.matchedKeywords.length ? (
-              <ul className="mt-3 flex flex-wrap gap-2">
+              <ul className="flex flex-wrap gap-1.5">
                 {result.matchedKeywords.map((keyword) => (
                   <li
                     key={keyword}
-                    className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+                    className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
                   >
                     {keyword}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="text-sm text-slate-500">
                 None of the extracted keywords are present yet.
               </p>
             )}
           </div>
 
-          <div>
-            <div className="flex items-center gap-2">
-              <XCircleIcon className="h-4 w-4 text-red-500" />
-              <p className="text-sm font-semibold text-slate-900">
-                Missing keywords ({result.missingKeywords.length})
-              </p>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-rose-50 text-rose-600">
+                <XCircleIcon className="h-4 w-4" />
+              </span>
+              <p className="text-sm font-semibold text-slate-900">Missing keywords</p>
+              <span className="ml-auto rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                {result.missingKeywords.length}
+              </span>
             </div>
             {result.missingKeywords.length ? (
-              <ul className="mt-3 flex flex-wrap gap-2">
+              <ul className="flex flex-wrap gap-1.5">
                 {result.missingKeywords.map((keyword) => (
                   <li
                     key={keyword}
-                    className="rounded-full bg-red-50 px-3 py-1 text-xs font-medium text-red-700"
+                    className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700"
                   >
                     {keyword}
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-sm text-slate-500">
+              <p className="text-sm text-slate-500">
                 Great! Your resume covers every keyword we found.
               </p>
             )}
@@ -1525,11 +1544,19 @@ export const ScanSection = ({
       )}
 
       {result?.suggestions?.length ? (
-        <div className="mt-4 rounded-xl border border-slate-100 p-4">
-          <p className="text-sm font-semibold text-slate-900">Suggestions</p>
-          <ul className="mt-2 space-y-1 text-xs text-slate-600">
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-50 text-amber-600">
+              <Lightbulb className="h-4 w-4" />
+            </span>
+            <p className="text-sm font-semibold text-slate-900">Suggestions</p>
+          </div>
+          <ul className="space-y-2">
             {result.suggestions.map((item) => (
-              <li key={item}>• {item}</li>
+              <li key={item} className="flex gap-2 text-xs text-slate-600">
+                <ArrowRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span className="leading-relaxed">{item}</span>
+              </li>
             ))}
           </ul>
         </div>
@@ -1568,19 +1595,29 @@ export const ScanSection = ({
       )} */}
 
       {result?.sectionAnalysis?.foundSections && (
-        <div className="mt-4 rounded-xl border border-slate-100 p-4 text-sm text-slate-600">
-          <p className="font-semibold text-slate-900">Detected sections</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+              <Layers className="h-4 w-4" />
+            </span>
+            <p className="text-sm font-semibold text-slate-900">Detected sections</p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
             {Object.entries(result.sectionAnalysis.foundSections).map(([name, present]) => (
               <span
                 key={name}
                 className={cn(
-                  "rounded-full px-3 py-1 text-xs font-medium",
+                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium capitalize",
                   present
-                    ? "bg-emerald-50 text-emerald-700"
-                    : "bg-slate-100 text-slate-500"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-slate-200 bg-slate-50 text-slate-400"
                 )}
               >
+                {present ? (
+                  <CheckCircle2 className="h-3 w-3" />
+                ) : (
+                  <Minus className="h-3 w-3" />
+                )}
                 {name}
               </span>
             ))}
@@ -1589,11 +1626,19 @@ export const ScanSection = ({
       )}
 
       {result?.formattingWarnings?.length ? (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm font-semibold text-amber-900">Formatting warnings</p>
-          <ul className="mt-2 space-y-1 text-xs text-amber-800">
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-100 text-amber-700">
+              <AlertTriangle className="h-4 w-4" />
+            </span>
+            <p className="text-sm font-semibold text-amber-900">Formatting warnings</p>
+          </div>
+          <ul className="space-y-2">
             {result.formattingWarnings.map((warning) => (
-              <li key={warning}>• {warning}</li>
+              <li key={warning} className="flex gap-2 text-xs text-amber-800">
+                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                <span className="leading-relaxed">{warning}</span>
+              </li>
             ))}
           </ul>
         </div>
@@ -2147,8 +2192,16 @@ export const ScanSection = ({
                             setHasResumePreviewEdits(true);
                           }}
                           templateId={selectedTemplate}
-                          candidateName={extractCandidateName(form.resume)}
-                          designation={form.designation}
+                          candidateName={previewCandidateName}
+                          designation={previewDesignation}
+                          onCandidateNameChange={(value) => {
+                            setPreviewCandidateName(value);
+                            setHasResumePreviewEdits(true);
+                          }}
+                          onDesignationChange={(value) => {
+                            setPreviewDesignation(value);
+                            setHasResumePreviewEdits(true);
+                          }}
                           photoUrl={profilePhotoUrl}
                           overrides={templateOverrides[selectedTemplate]}
                           useContactIcons={!guestTrial}
@@ -2384,8 +2437,8 @@ export const ScanSection = ({
                             ? renderResumeFromData({
                                 data: resumeData,
                                 templateId: selectedTemplate,
-                                candidateName: extractCandidateName(form.resume),
-                                designation: form.designation,
+                                candidateName: previewCandidateName,
+                                designation: previewDesignation,
                                 photoUrl: profilePhotoUrl,
                                 overrides: templateOverrides[selectedTemplate],
                                 useContactIcons: !guestTrial,
@@ -2394,8 +2447,8 @@ export const ScanSection = ({
                                 resumeText:
                                   editableResumeText || tailoredDocs.optimizedResumeText,
                                 templateId: selectedTemplate,
-                                candidateName: extractCandidateName(form.resume),
-                                designation: form.designation,
+                                candidateName: previewCandidateName,
+                                designation: previewDesignation,
                                 photoUrl: profilePhotoUrl,
                                 overrides: templateOverrides[selectedTemplate],
                                 useContactIcons: !guestTrial,

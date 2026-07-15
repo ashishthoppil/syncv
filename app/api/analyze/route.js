@@ -272,31 +272,6 @@ const SEMANTIC_EQUIVALENTS = {
   airflow: ["apache airflow"],
 };
 
-const CURATED_FALLBACK_TERMS = [
-  "frontend development",
-  "web development",
-  "mobile development",
-  "javascript",
-  "typescript",
-  "html",
-  "css",
-  "react",
-  "angular",
-  "node.js",
-  "object-oriented design",
-  "data structures",
-  "algorithm design",
-  "problem solving",
-  "complexity analysis",
-  "agile software development",
-  "latency optimization",
-  "web performance optimization",
-  "mobile app optimization",
-  "backend optimization",
-  "performance monitoring",
-  "performance analytics",
-];
-
 const KEYWORD_EXTRACTION_CACHE = new Map();
 const KEYWORD_CACHE_LIMIT = 120;
 
@@ -497,28 +472,6 @@ const clampWeight = (value) => {
   const numeric = Number(value);
   if (Number.isNaN(numeric)) return 5;
   return Math.max(1, Math.min(10, Math.round(numeric)));
-};
-
-const fallbackExtractWeightedKeywords = ({ cleanedJd, exclusionTokenSet, limit = 25 }) => {
-  const jdLower = cleanedJd.toLowerCase();
-  const extracted = [];
-
-  for (const term of CURATED_FALLBACK_TERMS) {
-    const pattern = new RegExp(`\\b${escapeRegex(term).replace(/\\ /g, "(?:\\W|_){1,3}")}\\b`, "i");
-    if (!pattern.test(jdLower)) continue;
-
-    if (!isMeaningfulKeyword(term, exclusionTokenSet)) continue;
-
-    extracted.push({
-      keyword: term,
-      weight: term.includes("optimization") || term.includes("performance") ? 8 : 7,
-      importance: "required",
-      variants: [],
-      reason: "Fallback from curated skill dictionary.",
-    });
-  }
-
-  return dedupeKeywords(extracted).slice(0, limit);
 };
 
 const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designation, exclusionTokenSet }) => {
@@ -821,20 +774,20 @@ const RANGE_SEPARATOR_PATTERN = "\\s*(?:[-–—]|to|until|through)\\s*";
 
 const SECTION_PATTERNS = {
   summary:
-    /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about\s+me|objective|career\s+objective)\s*:?\s*$/im,
+    /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about(\s+me)?|objective|career\s+objective)\s*:?\s*$/im,
   skills:
-    /^\s*(skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise)\s*:?\s*$/im,
+    /^\s*(skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|design\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise|expertise|tools?|toolbox|toolkit|software|proficiencies|capabilities|strengths)\s*:?\s*$/im,
   experience:
-    /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience)\s*:?\s*$/im,
+    /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience|work(\s+information)?|employment|internships?)\s*:?\s*$/im,
   education:
-    /^\s*(education|academic\s+background|academic\s+qualifications?|qualifications?|educational\s+background)\s*:?\s*$/im,
+    /^\s*(education(\s*&\s*training)?|academic\s+background|academic\s+qualifications?|qualifications?|educational\s+background|studies|academics|academic\s+history|training)\s*:?\s*$/im,
   projects:
-    /^\s*(projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|selected\s+projects?|academic\s+projects?)\s*:?\s*$/im,
+    /^\s*(projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|selected\s+projects?|academic\s+projects?|portfolio\s+projects?)\s*:?\s*$/im,
 };
 const EXPERIENCE_HEADER_PATTERN =
   /^\s*(experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience)\s*:?\s*$/i;
 const KNOWN_SECTION_HEADER_PATTERN =
-  /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about\s+me|objective|career\s+objective|skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise|experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience|projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|selected\s+projects?|academic\s+projects?|education|academic\s+background|academic\s+qualifications?|qualifications?|educational\s+background|certifications?|licenses?|awards?|honors?|publications?|languages?|language\s+competencies|interests|hobbies|volunteer(?:\s+experience)?|references)\s*:?\s*$/i;
+  /^\s*(summary|professional\s+summary|career\s+summary|profile|professional\s+profile|about(\s+me)?|objective|career\s+objective|skills|technical\s+skills|professional\s+skills|core\s+skills|key\s+skills|design\s+skills|core\s+competencies|competencies|skill\s+set|technologies|tech\s+stack|technical\s+expertise|areas\s+of\s+expertise|expertise|tools?|toolbox|toolkit|software|proficiencies|capabilities|strengths|experience|work\s+experience|professional\s+experience|employment\s+history|work\s+history|professional\s+background|career\s+history|relevant\s+experience|work(\s+information)?|employment|internships?|projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|selected\s+projects?|academic\s+projects?|portfolio\s+projects?|education(\s*&\s*training)?|academic\s+background|academic\s+qualifications?|qualifications?|educational\s+background|studies|academics|academic\s+history|training|certifications?|licenses?|awards?|honors?|recognition|publications?|languages?|language\s+competencies|interests|hobbies|volunteer(?:\s+experience)?|references|selected\s+clients|exhibitions?(\s*&\s*teaching)?|contact(\s+details)?)\s*:?\s*$/i;
 const EDUCATION_CONTEXT_PATTERN =
   /\b(education|college|university|school|bachelor|master|phd|degree)\b/i;
 
@@ -1228,6 +1181,13 @@ const detectImpliedSummary = (resumeText = "") => {
   return sentenceLikeLines.length >= 1;
 };
 
+// A dated range line ("2021 – 2024", "May 2019 - Jul 2022", "2024 – Present")
+// — the structural fingerprint of an experience/education entry.
+const DATE_RANGE_LINE_PATTERN =
+  /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?\d{4}\s*[-–—]\s*(?:present|current|ongoing|(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?\d{4})/i;
+const DEGREE_CONTEXT_PATTERN =
+  /\b(bachelor|master|associate|doctorate|ph\.?d|mba|b\.?sc|m\.?sc|b\.?tech|m\.?tech|bca|mca|bba|bfa|mfa|b\.?a|m\.?a|b\.?s|m\.?s|diploma|degree)\b/i;
+
 const detectSections = (resumeText = "") => {
   const found = {};
   Object.entries(SECTION_PATTERNS).forEach(([section, regex]) => {
@@ -1236,6 +1196,19 @@ const detectSections = (resumeText = "") => {
 
   if (!found.summary) {
     found.summary = detectImpliedSummary(resumeText);
+  }
+
+  // Header names vary endlessly in the wild ("Work Information", "Studies",
+  // "My Journey"…), so back the header match with structural signals: multiple
+  // dated ranges imply a work history; a degree mention implies education.
+  const lines = String(resumeText || "").split("\n");
+  if (!found.experience) {
+    const dateRangeLines = lines.filter((line) => DATE_RANGE_LINE_PATTERN.test(line));
+    found.experience = dateRangeLines.length >= 2;
+  }
+  if (!found.education) {
+    found.education =
+      DEGREE_CONTEXT_PATTERN.test(resumeText) && EDUCATION_CONTEXT_PATTERN.test(resumeText);
   }
 
   const presentCount = Object.values(found).filter(Boolean).length;
@@ -1441,31 +1414,41 @@ export async function POST(req) {
     let extractionMode = "ai";
     let extractionStats = { rawCount: 0, cleanedCount: 0 };
     const cachedKeywords = KEYWORD_EXTRACTION_CACHE.get(keywordCacheKey);
-    if (cachedKeywords?.weightedKeywords?.length) {
+    // Only successful AI extractions are cached, so a cache hit is always AI-quality.
+    if (cachedKeywords?.weightedKeywords?.length && cachedKeywords.mode !== "fallback") {
       weightedKeywords = cachedKeywords.weightedKeywords;
-      extractionMode = `cache-${cachedKeywords.mode || "ai"}`;
+      extractionMode = "cache-ai";
       extractionStats = cachedKeywords.stats || extractionStats;
     } else {
-      try {
-        const ai = await extractWeightedKeywordsWithAI({
-          cleanedJd,
-          organization,
-          designation,
-          exclusionTokenSet,
+      const EXTRACTION_ATTEMPTS = 2;
+      let aiError = null;
+      for (let attempt = 1; attempt <= EXTRACTION_ATTEMPTS; attempt += 1) {
+        try {
+          const ai = await extractWeightedKeywordsWithAI({
+            cleanedJd,
+            organization,
+            designation,
+            exclusionTokenSet,
+          });
+          weightedKeywords = ai.keywords;
+          extractionStats = { rawCount: ai.rawCount, cleanedCount: ai.cleanedCount };
+          aiError = null;
+          break;
+        } catch (error) {
+          aiError = error;
+          console.error(
+            `AI keyword extraction failed (attempt ${attempt}/${EXTRACTION_ATTEMPTS}):`,
+            error
+          );
+        }
+      }
+
+      if (aiError) {
+        return NextResponse.json({
+          success: false,
+          message:
+            "We couldn't analyze the job description right now. Please try scanning again in a moment.",
         });
-        weightedKeywords = ai.keywords;
-        extractionStats = { rawCount: ai.rawCount, cleanedCount: ai.cleanedCount };
-      } catch (aiError) {
-        console.error("AI keyword extraction failed, using curated fallback:", aiError);
-        extractionMode = "fallback";
-        weightedKeywords = fallbackExtractWeightedKeywords({
-          cleanedJd,
-          exclusionTokenSet,
-        });
-        extractionStats = {
-          rawCount: weightedKeywords.length,
-          cleanedCount: weightedKeywords.length,
-        };
       }
 
       if (weightedKeywords.length) {

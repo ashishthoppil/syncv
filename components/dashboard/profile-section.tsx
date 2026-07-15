@@ -3,10 +3,29 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
-import { AlertCircleIcon, BriefcaseBusiness, Building2, CalendarPlusIcon, File, GithubIcon, Globe, Image as ImageIcon, LinkedinIcon, Loader2, Mail, MapIcon, PhoneCall, SaveIcon, User2, User2Icon, UserCircle2Icon } from "lucide-react";
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { AlertCircleIcon, BriefcaseBusiness, Building2, CalendarPlusIcon, FileText, GithubIcon, Globe, Image as ImageIcon, LinkedinIcon, Loader2, Mail, MapIcon, PhoneCall, SaveIcon, UploadCloud, User2, User2Icon, UserCircle2Icon } from "lucide-react";
+import { ChangeEvent, ComponentType, FormEvent, ReactNode, useEffect, useState } from "react";
 import { toast } from "react-toastify";
+
+const FieldLabel = ({
+  icon: Icon,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  children: ReactNode;
+}) => (
+  <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+    <Icon className="h-3.5 w-3.5" /> {children}
+  </label>
+);
+
+const GroupHeading = ({ children }: { children: ReactNode }) => (
+  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+    {children}
+  </p>
+);
 
 type ProfileSectionProps = {
   user: {
@@ -330,258 +349,232 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
   }, [photoPreview]);
 
   return (
-    <section className="space-y-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="flex gap-1 items-center text-3xl font-semibold text-slate-900"><UserCircle2Icon />Profile</h1>
-        <p className="text-sm text-slate-500 font-medium">
-          Keep your personal information up to date.
-        </p>
+    <section className="space-y-6">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+          <UserCircle2Icon className="h-5 w-5" />
+        </span>
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Profile</h1>
+          <p className="text-sm text-slate-500">Keep your personal information up to date.</p>
+        </div>
       </div>
 
-      <div className="rounded-lg shadow-xl bg-white p-6 shadow-sm">
-        <div className="space-y-3">
-          <h3 className="flex gap-2 items-center text-xl font-semibold text-slate-900">
-            <File /> Upload resume to auto-fill
-          </h3>
-          <p className="text-sm text-slate-500">
-            Upload your resume (PDF, DOC, DOCX). We will extract your details, fill the form, and save to your profile.
-          </p>
-          <Input
-            className="rounded-md"
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900/5 text-slate-700">
+            <FileText className="h-4 w-4" />
+          </span>
+          <h3 className="text-sm font-semibold text-slate-900">Upload resume to auto-fill</h3>
+        </div>
+        <p className="mb-3 text-sm text-slate-500">
+          Upload your resume (PDF, DOC, DOCX). We&apos;ll extract your details, fill the form,
+          and save it to your profile.
+        </p>
+        <label
+          className={cn(
+            "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-6 py-7 text-center transition hover:border-slate-300 hover:bg-slate-50",
+            (parsingResume || saving) && "pointer-events-none opacity-60"
+          )}
+        >
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm">
+            {parsingResume ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <UploadCloud className="h-5 w-5" />
+            )}
+          </span>
+          <span className="text-sm font-medium text-slate-700">
+            {parsingResume ? "Parsing your resume…" : "Click to upload your resume"}
+          </span>
+          <span className="text-xs text-slate-400">PDF, DOC, or DOCX</span>
+          <input
             type="file"
+            className="hidden"
             accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={handleResumeUpload}
             disabled={parsingResume || saving}
           />
-          <div className="text-xs text-slate-500 font-medium">
-            {parsingResume
-              ?
-              <div className="flex items-center">
-                <Loader2 className="h-4" />
-                <span>Parsing your resume and updating your profile</span>
-              </div>
-              :
-              <div className="flex items-center">
-                <AlertCircleIcon className="h-4" />
-                <span>Max file size depends on your Supabase storage limits.</span>
-              </div>}
-          </div>
+        </label>
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
+          <AlertCircleIcon className="h-3.5 w-3.5 shrink-0" />
+          <span>Max file size depends on your Supabase storage limits.</span>
         </div>
       </div>
 
       <div className="flex items-center gap-3 text-slate-400">
         <div className="h-px flex-1 bg-slate-200" />
-        <span className="text-xs font-semibold">OR</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide">Or enter manually</span>
         <div className="h-px flex-1 bg-slate-200" />
       </div>
 
-      <div className="rounded-lg shadow-xl bg-white p-6 shadow-sm">
-        <div className="flex items-center gap-4">
-          <Avatar className="h-16 w-16">
-            {photoPreview ? (
-              <AvatarImage src={photoPreview} alt={displayName || "Profile"} />
-            ) : null}
-            <AvatarFallback className="bg-slate-900 text-white text-lg">
-              <User2Icon />
-            </AvatarFallback>
-          </Avatar>
-
-          <div>
-            <p className="text-xs text-slate-500 font-medium">Signed in as</p>
-            <p className="text-base font-medium text-slate-900">
-              {displayName}
-            </p>
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex items-center gap-4 border-b border-slate-100 pb-5">
+          <label className="group relative cursor-pointer">
+            <Avatar className="h-16 w-16">
+              {photoPreview ? (
+                <AvatarImage src={photoPreview} alt={displayName || "Profile"} />
+              ) : null}
+              <AvatarFallback className="bg-slate-900 text-lg text-white">
+                <User2Icon />
+              </AvatarFallback>
+            </Avatar>
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition group-hover:opacity-100">
+              <ImageIcon className="h-5 w-5 text-white" />
+            </span>
+            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+          </label>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-500">Signed in as</p>
+            <p className="truncate text-base font-semibold text-slate-900">{displayName}</p>
+            <label className="mt-0.5 inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900">
+              <ImageIcon className="h-3.5 w-3.5" />
+              {photoFileName || "Change photo"}
+              <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+            </label>
           </div>
         </div>
 
-        <form onSubmit={handleProfileSave} className="mt-6 space-y-5">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <User2 className="h-4" /> Full Name
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="Add your name"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <ImageIcon className="h-4" />
-                Profile Photo
-              </label>
-              <Input
-                className="rounded-lg"
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoChange}
-              />
-              {photoFileName && (
-                <p className="text-xs text-slate-500">{photoFileName}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <Mail className="h-4" />
-                Email
-              </label>
-              <Input
-                className="rounded-lg"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                disabled
-                readOnly
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <PhoneCall className="h-4" />
-                Phone Number
-              </label>
-              <Input
-                className="rounded-lg"
-                type="tel"
-                placeholder="+1 555 555 5555"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <BriefcaseBusiness className="h-4" />
-                Professional Headline
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="e.g. Frontend Engineer @ SynCV"
-                value={headline}
-                onChange={(event) => setHeadline(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <Globe className="h-4" />
-                Behance
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="https://www.behance.net/username"
-                value={behance}
-                onChange={(event) => setBehance(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <GithubIcon className="h-4" />
-                GitHub
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="https://github.com/username"
-                value={github}
-                onChange={(event) => setGithub(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <LinkedinIcon className="h-4" />
-                LinkedIn
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="https://www.linkedin.com/in/username"
-                value={linkedin}
-                onChange={(event) => setLinkedin(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <Globe className="h-4" />
-                Portfolio
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="https://portfolio.com"
-                value={portfolio}
-                onChange={(event) => setPortfolio(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <Globe className="h-4" />
-                Other link
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="Any additional link"
-                value={otherLink}
-                onChange={(event) => setOtherLink(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <Building2 className="h-4" />
-                City
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="e.g. San Francisco"
-                value={city}
-                onChange={(event) => setCity(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <MapIcon className="h-4" />
-                Country
-              </label>
-              <Input
-                className="rounded-lg"
-                placeholder="e.g. United States"
-                value={country}
-                onChange={(event) => setCountry(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="flex items-center text-sm font-medium text-slate-600">
-                <CalendarPlusIcon className="h-4" />
-                Experience (years)
-              </label>
-              <Input
-                className="rounded-lg"
-                type="text"
-                min="0"
-                step="0.5"
-                placeholder="e.g. 5"
-                value={experienceYears}
-                onChange={(event) => setExperienceYears(event.target.value)}
-              />
+        <form onSubmit={handleProfileSave} className="mt-5 space-y-6">
+          <div>
+            <GroupHeading>Basic information</GroupHeading>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <FieldLabel icon={User2}>Full name</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="Add your name"
+                  value={fullName}
+                  onChange={(event) => setFullName(event.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <FieldLabel icon={BriefcaseBusiness}>Professional headline</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="e.g. Frontend Engineer @ SyncV"
+                  value={headline}
+                  onChange={(event) => setHeadline(event.target.value)}
+                />
+              </div>
             </div>
           </div>
 
-          <Button
-            type="submit"
-            className="rounded-lg"
-            disabled={saving || parsingResume}
-          >
-            <SaveIcon />
-            {saving ? "Saving" : "Save Changes"}
-          </Button>
+          <div>
+            <GroupHeading>Contact &amp; location</GroupHeading>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <FieldLabel icon={Mail}>Email</FieldLabel>
+                <Input
+                  className="rounded-md bg-slate-50"
+                  type="email"
+                  value={email}
+                  disabled
+                  readOnly
+                />
+              </div>
+              <div>
+                <FieldLabel icon={PhoneCall}>Phone number</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  type="tel"
+                  placeholder="+1 555 555 5555"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                />
+              </div>
+              <div>
+                <FieldLabel icon={Building2}>City</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="e.g. San Francisco"
+                  value={city}
+                  onChange={(event) => setCity(event.target.value)}
+                />
+              </div>
+              <div>
+                <FieldLabel icon={MapIcon}>Country</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="e.g. United States"
+                  value={country}
+                  onChange={(event) => setCountry(event.target.value)}
+                />
+              </div>
+              <div>
+                <FieldLabel icon={CalendarPlusIcon}>Experience (years)</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  type="text"
+                  placeholder="e.g. 5"
+                  value={experienceYears}
+                  onChange={(event) => setExperienceYears(event.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <GroupHeading>Professional links</GroupHeading>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <FieldLabel icon={LinkedinIcon}>LinkedIn</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="https://www.linkedin.com/in/username"
+                  value={linkedin}
+                  onChange={(event) => setLinkedin(event.target.value)}
+                />
+              </div>
+              <div>
+                <FieldLabel icon={GithubIcon}>GitHub</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="https://github.com/username"
+                  value={github}
+                  onChange={(event) => setGithub(event.target.value)}
+                />
+              </div>
+              <div>
+                <FieldLabel icon={Globe}>Portfolio</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="https://portfolio.com"
+                  value={portfolio}
+                  onChange={(event) => setPortfolio(event.target.value)}
+                />
+              </div>
+              <div>
+                <FieldLabel icon={Globe}>Behance</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="https://www.behance.net/username"
+                  value={behance}
+                  onChange={(event) => setBehance(event.target.value)}
+                />
+              </div>
+              <div className="md:col-span-2">
+                <FieldLabel icon={Globe}>Other link</FieldLabel>
+                <Input
+                  className="rounded-md"
+                  placeholder="Any additional link"
+                  value={otherLink}
+                  onChange={(event) => setOtherLink(event.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end border-t border-slate-100 pt-4">
+            <Button type="submit" className="rounded-md" disabled={saving || parsingResume}>
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <SaveIcon className="mr-2 h-4 w-4" />
+              )}
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
         </form>
       </div>
     </section>

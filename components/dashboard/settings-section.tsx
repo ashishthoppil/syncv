@@ -15,9 +15,14 @@ import { toast } from "react-toastify";
 import swal from "sweetalert";
 import {
   AlertOctagonIcon,
+  CalendarDays,
   CircleCheck,
   CircleHelp,
   CircleX,
+  CreditCard,
+  Database,
+  Languages,
+  Loader2,
   PlusCircleIcon,
   SaveIcon,
   Settings,
@@ -420,116 +425,141 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   };
 
   return (
-    <section className="space-y-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="flex gap-1 items-center text-3xl font-semibold text-slate-900">
-          <Settings />  Settings
-        </h1>
-        <p className="text-sm text-slate-500 font-medium">
-          Control your preferences and privacy options.
-        </p>
+    <section className="mx-auto max-w-5xl space-y-6">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+          <Settings className="h-5 w-5" />
+        </span>
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Settings</h1>
+          <p className="text-sm text-slate-500">Control your preferences and privacy options.</p>
+        </div>
       </div>
 
-      <div className="space-y-6 rounded-lg shadow-xl bg-white p-6 shadow-sm">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-slate-600">
-            Resume language
-          </label>
-          <select
-            className="bg-slate-200 w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-            value={resumeLanguage}
-            onChange={(e) => setResumeLanguage(e.target.value)}
-            disabled={true}
-          >
-            {languageOptions.map((lang) => (
-              <option key={lang} value={lang}>
-                {lang}
-              </option>
-            ))}
-          </select>
+      {/* Preferences */}
+      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900/5 text-slate-700">
+            <Settings className="h-4 w-4" />
+          </span>
+          <h2 className="text-sm font-semibold text-slate-900">Preferences</h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <Languages className="h-3.5 w-3.5" /> Resume language
+            </label>
+            <div className="relative">
+              <select
+                className="w-full cursor-not-allowed rounded-md border border-slate-200 bg-slate-50 px-3 py-2 pr-16 text-sm text-slate-500 outline-none"
+                value={resumeLanguage}
+                onChange={(e) => setResumeLanguage(e.target.value)}
+                disabled={true}
+              >
+                {languageOptions.map((lang) => (
+                  <option key={lang} value={lang}>
+                    {lang}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute right-7 top-1/2 -translate-y-1/2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Soon
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              <CalendarDays className="h-3.5 w-3.5" /> Date format
+            </label>
+            <select
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-900/10"
+              value={dateFormat}
+              onChange={(e) => setDateFormat(e.target.value)}
+              disabled={loading}
+            >
+              {dateFormats.map((fmt) => (
+                <option key={fmt} value={fmt}>
+                  {fmt}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-slate-600">
-            Date format
-          </label>
-          <select
-            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-            value={dateFormat}
-            onChange={(e) => setDateFormat(e.target.value)}
-            disabled={loading}
-          >
-            {dateFormats.map((fmt) => (
-              <option key={fmt} value={fmt}>
-                {fmt}
-              </option>
-            ))}
-          </select>
+        <div className="mt-4">
+          <Button className="rounded-md" onClick={handleSaveSettings} disabled={savingSettings}>
+            {savingSettings ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <SaveIcon className="mr-2 h-4 w-4" />
+            )}
+            {savingSettings ? "Saving…" : "Save settings"}
+          </Button>
         </div>
-
-        <Button
-          className="rounded-lg"
-          onClick={handleSaveSettings}
-          disabled={savingSettings}
-        >
-          <SaveIcon />
-          {savingSettings ? "Saving..." : "Save settings"}
-        </Button>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg shadow-xl bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold text-slate-900">Data controls</h2>
-          <p className="mt-2 text-sm text-slate-500">
-            Remove your saved scan history from the job tracker.
-          </p>
+      {/* Data controls */}
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex items-start gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900/5 text-slate-700">
+            <Database className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Data controls</h2>
+            <p className="text-sm text-slate-500">
+              Remove your saved scan history from the job tracker.
+            </p>
+          </div>
         </div>
         <Button
           variant="outline"
-          className="mt-4 rounded-md"
+          className="shrink-0 rounded-md"
           onClick={handleClearHistory}
           disabled={clearingHistory}
         >
-          <Trash2Icon />
-          {clearingHistory ? "Deleting..." : "Delete all scan history"}
+          {clearingHistory ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2Icon className="mr-2 h-4 w-4" />
+          )}
+          {clearingHistory ? "Deleting…" : "Delete all scan history"}
         </Button>
       </div>
 
-      <div id="dashboard-pricing" className="rounded-lg shadow-xl bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">Plans</h2>
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <p className="mt-2 text-sm text-slate-500">
-            <span className="font-medium">Current plan:</span>{" "}
-            <span className="font-medium text-slate-900">
+      {/* Plans */}
+      <div
+        id="dashboard-pricing"
+        className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900/5 text-slate-700">
+              <CreditCard className="h-4 w-4" />
+            </span>
+            <h2 className="text-sm font-semibold text-slate-900">Plans</h2>
+          </div>
+          <p className="text-sm text-slate-500">
+            Current plan:{" "}
+            <span className="font-semibold text-slate-900">
               {subscriptionLoading
-                ? "Loading..."
+                ? "Loading…"
                 : subscription.hasActivePlan
                 ? subscription.planName
                 : "Free"}
             </span>
             {!subscriptionLoading && subscription.status !== "none" ? (
-              <span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+              <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
                 {subscription.status}
               </span>
             ) : null}
           </p>
-          {/* {subscription.hasActivePlan ? (
-            <Button
-              variant="outline"
-              className="rounded-md"
-              onClick={handleUnsubscribe}
-              disabled={unsubscribing}
-            >
-              <UserMinus />
-              {unsubscribing ? "Unsubscribing..." : "Unsubscribe"}
-            </Button>
-          ) : null} */}
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
           {SUBSCRIPTION_PLANS.map((plan) => {
             const isCurrent = subscription.planKey === plan.key && subscription.hasActivePlan;
-            let cta = `Choose ${plan.name} Plan`;
+            let cta = `Choose ${plan.name} plan`;
             if (isCurrent) {
               cta = "Current plan";
             } else if (subscription.planKey === "speed" && plan.key === "pro") {
@@ -542,30 +572,46 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
               <div
                 key={plan.key}
                 className={cn(
-                  "rounded-lg border border-slate-200 p-4",
-                  isCurrent && "border-slate-900 bg-slate-50"
+                  "relative rounded-xl border bg-white p-5 transition",
+                  isCurrent
+                    ? "border-slate-900 ring-1 ring-slate-900/10"
+                    : "border-slate-200 hover:border-slate-300"
                 )}
               >
+                {isCurrent ? (
+                  <span className="absolute right-4 top-4 rounded-full bg-slate-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                    Current
+                  </span>
+                ) : null}
                 <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
                 <p className="mt-1 text-sm text-slate-500">{plan.description}</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900">₹{plan.priceInr}</p>
-                <p className="text-xs text-slate-500 font-medium">per month</p>
-                <ul className="mt-4 space-y-2 text-sm text-slate-700">
+                <div className="mt-3 flex items-baseline gap-1">
+                  <span className="text-3xl font-bold text-slate-900">₹{plan.priceInr}</span>
+                  <span className="text-xs font-medium text-slate-500">/ month</span>
+                </div>
+                <ul className="mt-4 space-y-2.5 text-sm">
                   {plan.features.map((feature: PlanFeature) => {
                     const isUnavailable = isUnavailableFeature(feature);
 
                     return (
                       <li key={feature.title} className="flex items-start gap-2">
                         {isUnavailable ? (
-                          <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                          <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
                         ) : (
-                          <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                          <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
                         )}
-                        <span className="leading-5">{feature.title}</span>
+                        <span
+                          className={cn(
+                            "leading-5",
+                            isUnavailable ? "text-slate-400" : "text-slate-700"
+                          )}
+                        >
+                          {feature.title}
+                        </span>
                         {feature.tooltip ? (
                           <Tooltip>
                             <TooltipTrigger className="mt-0.5 cursor-help">
-                              <CircleHelp className="h-4 w-4 text-gray-500" />
+                              <CircleHelp className="h-4 w-4 text-slate-400" />
                             </TooltipTrigger>
                             <TooltipContent>{feature.tooltip}</TooltipContent>
                           </Tooltip>
@@ -575,13 +621,17 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
                   })}
                 </ul>
                 <Button
-                  className="mt-4 w-full rounded-md"
+                  className="mt-5 w-full rounded-md"
                   variant={isCurrent ? "outline" : "default"}
                   disabled={isCurrent || planActionLoading === plan.key}
                   onClick={() => handleSelectPlan(plan.key)}
                 >
-                  <PlusCircleIcon />
-                  {planActionLoading === plan.key ? "Processing..." : cta}
+                  {planActionLoading === plan.key ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <PlusCircleIcon className="mr-2 h-4 w-4" />
+                  )}
+                  {planActionLoading === plan.key ? "Processing…" : cta}
                 </Button>
               </div>
             );
@@ -589,22 +639,31 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
         </div>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg shadow-xl bg-red-50 p-6">
-        <div className="flex flex-col gap-2">
-          <h2 className="flex gap-1 items-center text-lg font-semibold text-red-900"><AlertOctagonIcon /> Danger zone</h2>
-          <p className="mt-2 text-sm text-red-700 font-medium">
-            Delete your account and all associated data. This action cannot be
-            undone.
-          </p>
+      {/* Danger zone */}
+      <div className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex items-start gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-rose-100 text-rose-700">
+            <AlertOctagonIcon className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-rose-900">Danger zone</h2>
+            <p className="text-sm text-rose-700">
+              Delete your account and all associated data. This action cannot be undone.
+            </p>
+          </div>
         </div>
         <Button
           variant="destructive"
-          className="mt-4 rounded-md"
+          className="shrink-0 rounded-md"
           onClick={handleDeleteAccount}
           disabled={deletingAccount}
         >
-          <Trash2Icon />
-          {deletingAccount ? "Deleting..." : "Delete account"}
+          {deletingAccount ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2Icon className="mr-2 h-4 w-4" />
+          )}
+          {deletingAccount ? "Deleting…" : "Delete account"}
         </Button>
       </div>
     </section>

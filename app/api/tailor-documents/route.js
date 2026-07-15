@@ -99,6 +99,20 @@ const extractProfileLinksOnly = (text = "") =>
     )
     .slice(0, 6);
 
+// A label-only line ("CONTACT", "Email:", "Get in touch") — a section heading
+// or field label with no actual data on it.
+const CONTACT_LABEL_LINE_RE =
+  /^(contact( (information|details|info|me))?|get in touch|reach me|e-?mail|phone|mobile|tel|address|location)\s*:?\s*$/i;
+
+// Bullet lines are body content (experience/projects), never contact info.
+const BULLET_LINE_RE = /^[-*•·▪◦]\s/;
+// Hard contact evidence: an email, URL, known profile domain, or phone number.
+const HARD_CONTACT_EVIDENCE_RE =
+  /@|https?:\/\/|www\.|linkedin\.com|github\.com|behance\.net|\+\d[\d\s().-]{7,}\d/i;
+// A labelled contact field ("Phone: …", "Email - …"). Bare keywords are NOT
+// enough — sentences like "…web and mobile clients" must not qualify.
+const CONTACT_LABEL_INLINE_RE = /\b(?:phone|mobile|tel|e-?mail|contact)\s*[:–-]/i;
+
 const extractContactLines = (text = "") => {
   const lines = String(text || "")
     .split("\n")
@@ -108,11 +122,8 @@ const extractContactLines = (text = "") => {
   const output = [];
 
   for (const line of lines.slice(0, 20)) {
-    if (
-      /@|https?:\/\/|www\.|linkedin\.com|github\.com|behance\.net|phone\b|mobile\b|contact\b|email\b|\+\d[\d\s().-]{7,}\d/i.test(
-        line
-      )
-    ) {
+    if (CONTACT_LABEL_LINE_RE.test(line) || BULLET_LINE_RE.test(line)) continue;
+    if (HARD_CONTACT_EVIDENCE_RE.test(line) || CONTACT_LABEL_INLINE_RE.test(line)) {
       const key = normalizeText(line);
       if (!seen.has(key)) {
         seen.add(key);
@@ -150,19 +161,119 @@ const includesLineLoosely = (text = "", line = "") => {
   return t.includes(l);
 };
 
-const extractCandidateName = (resume = "") => {
-  const first = resume
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean)[0];
-  if (!first) return "";
-  let name = first.replace(/[^a-zA-Z.\s-]/g, "").trim();
+// Resume headers often put the job title on the same line as the name
+// ("Priya Deshpande | Full Stack Developer (MERN)"). Cut at the separator, and
+// as a fallback (separators can be lost in PDF text extraction) trim a
+// trailing job-title phrase recognized by its occupational keyword.
+const NAME_SEGMENT_SPLIT_RE = /\s*(?:\||·|•|—|–|,|\/|\t| {3,}| - )\s*/;
+const TRAILING_TITLE_RE =
+  /\s+(?:senior|junior|lead|principal|staff|full[ -]?stack|front[ -]?end|back[ -]?end|software|web|mobile|devops|cloud|engineer|developer|manager|analyst|designer|consultant|architect|scientist|specialist)\b[\s\S]*$/i;
+
+// Section headers that two-column PDFs often emit BEFORE the candidate's name
+// (the sidebar is extracted first, so the text can start with "CONTACT").
+const NAME_SECTION_HEADER_RE =
+  /^(contact(?:\s+(?:information|details|info|me))?|get in touch|summary|professional summary|profile|about(?:\s+me)?|objective|career objective|skills?|technical skills|core competencies|education|experience|work experience|professional experience|employment(?:\s+history)?|projects?|certifications?|licenses?|languages?|interests?|hobbies|references?|achievements?|awards?|publications?|volunteering|links?|portfolio|curriculum vitae|resume|cv)\s*:?\s*$/i;
+
+// "Ithaca, NY" — a City, ST location line, not a name.
+const LOCATION_LINE_RE = /,\s*[A-Z]{2}\.?$/;
+
+// Letter-spaced name headers ("D E E   N I T A O") — collapse single spaces
+// inside words, keeping 2+ space runs as word boundaries ("DEE NITAO").
+const collapseLetterSpacing = (line = "") => {
+  const tokens = line.trim().split(" ").filter(Boolean);
+  const singles = tokens.filter((t) => t.length === 1).length;
+  if (tokens.length < 4 || singles < tokens.length * 0.7) return line;
+  return line
+    .trim()
+    .split(/\s{2,}/)
+    .map((word) => word.replace(/ /g, ""))
+    .join(" ");
+};
+
+const cleanNameLine = (line = "") => {
+  const collapsed = collapseLetterSpacing(line);
+  const nameSegment = collapsed.split(NAME_SEGMENT_SPLIT_RE).filter(Boolean)[0] || collapsed;
+  let name = nameSegment.replace(/[^a-zA-Z.\s-]/g, "").trim();
   // Restore word boundaries when the name header was extracted glued together
   // (e.g. "AleenaMariamBenny" from a tightly-kerned PDF heading).
   if (name && !/\s/.test(name) && /[a-z][A-Z]/.test(name)) {
     name = name.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
   }
+  name = name.replace(TRAILING_TITLE_RE, "").trim() || name;
   return name;
+};
+
+// A lone occupational word ("Developer", "Manager") — the headline title, not
+// part of a stacked name.
+const SINGLE_TITLE_WORD_RE =
+  /^(senior|junior|lead|principal|staff|freelance|software|web|mobile|devops|cloud|engineer|developer|manager|analyst|designer|consultant|architect|scientist|specialist|director|coordinator|intern|marketer|accountant|nurse|teacher|lawyer)$/i;
+
+const isPlausibleNameLine = (line = "") => {
+  if (NAME_SECTION_HEADER_RE.test(line)) return false;
+  if (/[@\d]|https?:\/\/|www\./i.test(line)) return false;
+  if (LOCATION_LINE_RE.test(line)) return false;
+  const cleaned = cleanNameLine(line);
+  if (cleaned.length < 2 || cleaned.length > 60) return false;
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  return words.length >= 1 && words.length <= 5;
+};
+
+const extractCandidateName = (resume = "") => {
+  const lines = resume
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return "";
+
+  // Usual case: the resume starts with the candidate's name.
+  if (isPlausibleNameLine(lines[0])) {
+    let name = cleanNameLine(lines[0]);
+    // Stacked name headers put each name word on its own line ("PRIYA" /
+    // "NAIR"). Absorb following single-word name-like lines; when the resume
+    // has an email, each absorbed word must appear in its local part.
+    if (name && !name.includes(" ")) {
+      const emailLocal = extractCandidateEmail(resume).split("@")[0].toLowerCase();
+      for (let i = 1; i < Math.min(lines.length, 4); i += 1) {
+        const line = lines[i];
+        if (!/^[A-Za-z][A-Za-z.'-]*$/.test(line)) break;
+        if (NAME_SECTION_HEADER_RE.test(line) || SINGLE_TITLE_WORD_RE.test(line)) break;
+        const word = line.toLowerCase().replace(/[^a-z]/g, "");
+        if (emailLocal && word.length >= 3 && !emailLocal.includes(word)) break;
+        name = `${name} ${line}`;
+        if (name.split(" ").length >= 4) break;
+      }
+    }
+    return name;
+  }
+
+  // Two-column/sidebar PDFs emit the sidebar first ("CONTACT", email, phone…)
+  // and the name header can land anywhere — often at the very end of the text.
+  // Resume emails are almost always derived from the name, so anchor on a
+  // name-like line that shares a token with the email local part.
+  const email = extractCandidateEmail(resume);
+  const emailTokens = email
+    .split("@")[0]
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length >= 3);
+  if (emailTokens.length) {
+    for (const line of lines) {
+      if (!isPlausibleNameLine(line)) continue;
+      const lower = line.toLowerCase();
+      if (emailTokens.some((token) => lower.includes(token))) {
+        return cleanNameLine(line);
+      }
+    }
+  }
+
+  // Otherwise take the first plausible multi-word line near the top.
+  for (const line of lines.slice(0, 12)) {
+    if (isPlausibleNameLine(line) && cleanNameLine(line).includes(" ")) {
+      return cleanNameLine(line);
+    }
+  }
+
+  return cleanNameLine(lines[0]);
 };
 
 const extractCandidateEmail = (resume = "") => {
@@ -292,6 +403,54 @@ const normalizeLanguageList = (value) => {
   return out;
 };
 
+// The LANGUAGES resume section means HUMAN languages. Sidebar templates often
+// reuse "Languages" as a SKILLS sub-heading for programming languages (HTML,
+// CSS, Python…), which the section parser can't tell apart structurally — so
+// gate every language entry on actually naming a human language.
+const HUMAN_LANGUAGES = new Set([
+  "english", "spanish", "french", "german", "italian", "portuguese", "dutch",
+  "russian", "polish", "ukrainian", "czech", "slovak", "romanian", "hungarian",
+  "bulgarian", "greek", "turkish", "arabic", "hebrew", "persian", "farsi",
+  "urdu", "hindi", "bengali", "punjabi", "gujarati", "marathi", "tamil",
+  "telugu", "kannada", "malayalam", "odia", "oriya", "assamese", "sinhala",
+  "sinhalese", "nepali", "chinese", "mandarin", "cantonese", "japanese",
+  "korean", "vietnamese", "thai", "indonesian", "malay", "tagalog", "filipino",
+  "swahili", "amharic", "yoruba", "igbo", "hausa", "zulu", "xhosa",
+  "afrikaans", "swedish", "norwegian", "danish", "finnish", "icelandic",
+  "estonian", "latvian", "lithuanian", "serbian", "croatian", "bosnian",
+  "slovenian", "macedonian", "albanian", "armenian", "georgian", "azerbaijani",
+  "kazakh", "uzbek", "mongolian", "burmese", "khmer", "lao", "pashto", "dari",
+  "kurdish", "somali", "tigrinya", "wolof", "twi", "luganda", "kinyarwanda",
+  "creole", "catalan", "basque", "galician", "welsh", "irish", "gaelic",
+  "maltese", "luxembourgish", "javanese", "sundanese", "cebuano", "hmong",
+  "quechua", "guarani", "haitian", "samoan", "tongan", "fijian", "maori",
+  "esperanto", "latin", "sanskrit", "yiddish", "bhojpuri", "maithili",
+  "konkani", "kashmiri", "sindhi", "dogri", "manipuri", "bodo", "santali",
+  "tulu", "rajasthani", "haryanvi", "chhattisgarhi", "magahi", "awadhi",
+]);
+const isHumanLanguageEntry = (entry = "") =>
+  entry
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .some((word) => HUMAN_LANGUAGES.has(word));
+
+// Rewritten summaries sometimes keep the original resume's role-title opener
+// AND add the requested one ("Front-End Developer with proven experience at
+// Zillow. Senior Frontend Engineer with over 4 years…") — a double
+// introduction. When the first two sentences are both role-title openers,
+// keep only the second (the role-targeted one).
+const ROLE_OPENER_RE =
+  /^[A-Z][A-Za-z+#./ -]{0,60}\b(developer|engineer|designer|analyst|manager|architect|consultant|specialist|scientist|administrator|accountant|marketer|writer|nurse|teacher|lawyer)\b[^.!?]{0,80}\bwith\b/i;
+const dropDuplicateRoleOpener = (summary = "") => {
+  const sentences = summary.split(/(?<=[.!?])\s+/).filter(Boolean);
+  if (sentences.length < 2) return summary;
+  if (ROLE_OPENER_RE.test(sentences[0]) && ROLE_OPENER_RE.test(sentences[1])) {
+    return sentences.slice(1).join(" ");
+  }
+  return summary;
+};
+
 const resumeSectionsToText = (payload = {}) => {
   const blocks = [];
   const summary = ensureString(payload?.summary);
@@ -357,6 +516,16 @@ const resumeSectionsToText = (payload = {}) => {
     blocks.push("LANGUAGES");
     languages.forEach((language) => blocks.push(`- ${language}`));
   }
+  const additionalSections = Array.isArray(payload?.additionalSections)
+    ? payload.additionalSections
+    : [];
+  additionalSections.forEach((section) => {
+    const title = ensureString(section?.title);
+    const items = ensureStringArray(section?.items);
+    if (!title || !items.length) return;
+    blocks.push(title.toUpperCase());
+    items.forEach((item) => blocks.push(`- ${item}`));
+  });
 
   return blocks.join("\n").trim();
 };
@@ -393,7 +562,7 @@ const STRUCTURED_RESUME_SCHEMA_LINES = [
 const normalizeResumeObject = (obj = {}) => {
   const o = obj && typeof obj === "object" ? obj : {};
   return {
-    summary: ensureString(o.summary),
+    summary: dropDuplicateRoleOpener(ensureString(o.summary)),
     skills: ensureStringArray(o.skills),
     experience: (Array.isArray(o.experience) ? o.experience : [])
       .map((e) => ({
@@ -424,7 +593,13 @@ const normalizeResumeObject = (obj = {}) => {
       }))
       .filter((ed) => ed.qualification || ed.institution),
     certifications: ensureStringArray(o.certifications),
-    languages: normalizeLanguageList(o.languages),
+    languages: normalizeLanguageList(o.languages).filter(isHumanLanguageEntry),
+    additionalSections: (Array.isArray(o.additionalSections) ? o.additionalSections : [])
+      .map((section) => ({
+        title: ensureString(section?.title),
+        items: ensureStringArray(section?.items),
+      }))
+      .filter((section) => section.title && section.items.length),
   };
 };
 
@@ -511,20 +686,105 @@ const dropNonJobExperience = (experience = []) =>
     return true;
   });
 
-// Pick the location line out of the raw contact lines (not an email, link, or
-// phone number).
-const extractContactLocation = (contactLines = []) => {
-  const candidate = (contactLines || []).find((line) => {
-    const l = ensureString(line);
-    if (!l || /@/.test(l)) return false;
-    if (/https?:\/\/|www\.|linkedin|github|behance|gitlab|medium|dribbble/i.test(l)) {
-      return false;
-    }
-    const digitCount = (l.match(/\d/g) || []).length;
-    if (digitCount >= 7) return false; // looks like a phone number
-    return /[a-zA-Z]/.test(l);
+// Backstop: drop experience entries the model fabricated from the resume's
+// HEADLINE (the job-title line under the candidate's name, e.g. "Freelance
+// Front-End Developer") rather than from the work-history section. These show
+// up with a placeholder company ("None", "N/A") because no employer exists.
+const PLACEHOLDER_COMPANY_RE =
+  /^(none|n\/?a|nil|unknown|not\s+(?:applicable|specified|available)|-+|—+)$/i;
+const dropFabricatedExperience = (experience = [], resumeText = "") => {
+  const headlineLines = ensureString(resumeText)
+    .split("\n")
+    .map((line) => normalizeText(line))
+    .filter(Boolean)
+    .slice(0, 5);
+  return (Array.isArray(experience) ? experience : []).filter((entry) => {
+    const company = ensureString(entry?.company);
+    if (company && !PLACEHOLDER_COMPANY_RE.test(company)) return true;
+    // No real employer: keep only if it still looks like a genuine role —
+    // it has bullets AND its title wasn't lifted from the resume headline.
+    const bullets = ensureStringArray(entry?.responsibilities);
+    if (!bullets.length) return false;
+    const designation = normalizeText(ensureString(entry?.designation));
+    if (designation && headlineLines.includes(designation)) return false;
+    return true;
   });
-  return ensureString(candidate);
+};
+
+// Shaped like "City, Region" — alpha words split by one or two commas. Kept
+// strict so skill lists ("PHP, Laravel, MySQL, REST APIs") don't slip in.
+const LOCATION_SHAPE_RE = /^[A-Za-z][A-Za-z .'()-]*,\s*[A-Za-z][A-Za-z .'()-]*(,\s*[A-Za-z][A-Za-z .'()-]*)?$/;
+const TITLE_WORD_RE =
+  /\b(engineer|developer|manager|coordinator|teacher|analyst|specialist|assistant|consultant|intern|lead|officer|executive|designer|architect|scientist)\b/i;
+
+const isPlausibleContactLine = (l) => {
+  if (!l || /@/.test(l)) return false;
+  if (CONTACT_LABEL_LINE_RE.test(l)) return false; // bare heading like "CONTACT"
+  if (BULLET_LINE_RE.test(l) || l.length > 60) return false; // body bullet / sentence
+  if (/https?:\/\/|www\.|linkedin|github|behance|gitlab|medium|dribbble/i.test(l)) {
+    return false;
+  }
+  const digitCount = (l.match(/\d/g) || []).length;
+  if (digitCount >= 7) return false; // looks like a phone number
+  return /[a-zA-Z]/.test(l);
+};
+
+// Pick the location line out of the raw contact lines (not an email, link, or
+// phone number). Falls back to scanning the resume head for a "City, Region"
+// line sitting next to the email/phone — many resumes list the location bare,
+// so it never qualifies as a contact line by keyword.
+// A conversational/greeting line ("Hi, I'm Jake") — comma-shaped like a
+// location but never one.
+const GREETING_LINE_RE = /^(hi|hello|hey|greetings)\b|\bI['’]?m\b|\bI am\b/i;
+
+const extractContactLocation = (contactLines = [], resumeText = "") => {
+  const candidate = (contactLines || []).find((line) =>
+    isPlausibleContactLine(ensureString(line))
+  );
+  if (candidate) return ensureString(candidate);
+
+  const lines = String(resumeText || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .slice(0, 20);
+  const anchorIndexes = lines
+    .map((line, index) =>
+      /@|\+?\d[\d\s().-]{7,}\d/.test(line) ? index : -1
+    )
+    .filter((index) => index >= 0);
+
+  // Single-row contact headers pack everything together
+  // ("email | +1 … | Denver, CO | site.me | linkedin.com/…"). Strip the hard
+  // contact tokens from the anchor line itself and look for a "City, Region"
+  // fragment in what remains. Runs FIRST: a fragment from the contact row
+  // itself is far more reliable than a shape-matched neighboring line.
+  for (const anchor of anchorIndexes) {
+    const stripped = lines[anchor]
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, " ")
+      .replace(/(?:https?:\/\/|www\.)\S+/gi, " ")
+      .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/\S*)?/gi, " ") // bare domains/links
+      .replace(/\+?\d[\d\s().-]{7,}\d/g, " ");
+    const fragment = stripped.match(
+      /[A-Z][A-Za-z.'-]*(?: [A-Z][A-Za-z.'-]*)*,\s*[A-Z][A-Za-z.'-]*(?: [A-Z][A-Za-z.'-]*)*/
+    );
+    if (
+      fragment &&
+      fragment[0].length <= 60 &&
+      !TITLE_WORD_RE.test(fragment[0]) &&
+      !GREETING_LINE_RE.test(fragment[0])
+    ) {
+      return ensureString(fragment[0]);
+    }
+  }
+
+  // Fallback: a bare "City, Region" line sitting next to the email/phone.
+  const fallback = lines.find((line, index) => {
+    if (!anchorIndexes.some((anchor) => Math.abs(anchor - index) <= 2)) return false;
+    if (line.length > 60 || TITLE_WORD_RE.test(line)) return false;
+    if (GREETING_LINE_RE.test(line)) return false;
+    return LOCATION_SHAPE_RE.test(line) && isPlausibleContactLine(line);
+  });
+  return fallback ? ensureString(fallback) : "";
 };
 
 // --- Anti-fabrication grounding -------------------------------------------
@@ -633,17 +893,18 @@ const resumeObjectToText = (data = {}) => {
 // the whole line — but only on lines that pass the heading-shape guard below,
 // so body sentences that merely contain a keyword are not treated as headers.
 const SECTION_HEADER_KEYWORDS = [
-  ["summary", /\b(summary|profile|objective|about\s+me)\b/i],
-  ["experience", /\b(experience|employment|internships?|work\s+history)\b/i],
+  ["summary", /\b(summary|profile|objective|about(\s+me)?)\b/i],
+  ["experience", /\b(experience|employment|internships?|work(\s+(history|information))?|career(\s+history)?)\b/i],
   ["interests", /\b(interests?|hobbies|activities|areas?\s+of\s+expertise)\b/i],
   ["projects", /\bprojects?\b/i],
-  ["education", /\b(education|academics?|academic\s+background|qualifications?)\b/i],
+  ["education", /\b(education|academics?|academic\s+background|qualifications?|studies)\b/i],
   [
     "certifications",
     /\b(certifications?|certificates?|licen[sc]es?|courses?|trainings?|workshops?)\b/i,
   ],
   ["languages", /\b(languages?|language\s+competenc(?:y|ies))\b/i],
-  ["skills", /\b(skills?|competenc(?:y|ies)|proficienc(?:y|ies))\b/i],
+  ["skills", /\b(skills?|competenc(?:y|ies)|proficienc(?:y|ies)|expertise|tools?)\b/i],
+  ["contact", /\b(contact(\s+(details|information|info))?|get\s+in\s+touch)\b/i],
 ];
 
 // True when a line LOOKS like a section header: short, no sentence-ending
@@ -731,6 +992,87 @@ const parseExperienceFromRawResume = (resumeText = "") => {
     const bullet = line.match(/^[-*•]\s+(.+)$/);
     if (bullet && current) {
       current.bullets.push(ensureString(bullet[1]));
+      continue;
+    }
+
+    // A standalone accolade-section heading ("Selected Product Wins") ends the
+    // current entry — its list items are not experience bullets.
+    if (
+      looksLikeHeading(line) &&
+      isHeadingCased(line) &&
+      ADDITIONAL_SECTION_TITLE_RE.test(line)
+    ) {
+      flush();
+      continue;
+    }
+
+    // Format: "Designation Duration" ("Group Product Manager 2024 – Present"),
+    // with "Company — Location" on the following line.
+    const durationTail = line.match(DURATION_RANGE_TAIL_PATTERN);
+    if (durationTail && !line.includes("|") && !/^[a-z]/.test(line)) {
+      const prefix = ensureString(line.slice(0, durationTail.index))
+        .replace(/[,—–|-]\s*$/, "")
+        .trim();
+      if (prefix && TITLE_WORD_RE.test(prefix) && !/[.?!]$/.test(prefix)) {
+        flush();
+        current = {
+          company: "",
+          designation: prefix,
+          location: "",
+          duration: ensureString(durationTail[1]),
+          bullets: [],
+        };
+        continue;
+      }
+    }
+
+    // Format: "Location | Duration" — the metadata line under a
+    // "Designation — Company" header (handled below). Must run BEFORE the
+    // "Designation | Company" branch, which would otherwise turn the location
+    // into a designation and the date range into a company.
+    if (current && !current.duration && line.includes("|") && durationRangeRegex.test(line)) {
+      const [leftRaw, rightRaw] = line.split("|");
+      const left = ensureString(leftRaw);
+      const right = ensureString(rightRaw);
+      const leftLooksLikeLocation =
+        /^(remote|hybrid|on-?site)$/i.test(left) ||
+        /^[A-Za-z][A-Za-z .'-]*(,\s*[A-Za-z][A-Za-z .'-]*)+$/.test(left);
+      if (leftLooksLikeLocation && durationRangeRegex.test(right)) {
+        if (!current.location) current.location = left;
+        current.duration = right;
+        continue;
+      }
+    }
+
+    // Em/en-dash header line. Two shapes share it:
+    //   "Designation — Company"  (new entry; location/duration follow)
+    //   "Company — Location"     (metadata for the "Designation Duration"
+    //                             entry begun on the previous line)
+    const dashHeader = line.match(/^(.{2,80}?)\s+[—–]\s+(.{2,80})$/);
+    if (
+      dashHeader &&
+      !durationRangeRegex.test(line) &&
+      !/[.?!]$/.test(line) &&
+      /^[A-Z0-9]/.test(line) &&
+      !/\b(implemented|improved|designed|developed|built|created|led|worked|enhanced)\b/i.test(line)
+    ) {
+      const left = ensureString(dashHeader[1]);
+      const right = ensureString(dashHeader[2]);
+      const rightIsLocation =
+        /^(remote|hybrid|on-?site)$/i.test(right) || LOCATION_SHAPE_RE.test(right);
+      if (current && current.designation && !current.company && rightIsLocation) {
+        current.company = left;
+        if (!current.location) current.location = right;
+        continue;
+      }
+      flush();
+      current = {
+        company: right,
+        designation: left,
+        location: "",
+        duration: "",
+        bullets: [],
+      };
       continue;
     }
 
@@ -837,9 +1179,52 @@ const normalizeCombinedExperienceEntry = (entry = {}) => {
 // A line that is really a different section header, not a job title/company.
 const NON_EXPERIENCE_LABEL_RE =
   /^(education|academic\s+background|qualifications?|language\s+competencies|languages?|languages\s+known|skills|technical\s+skills|core\s+skills|key\s+skills|certifications?|certificates?|courses?|licenses?|summary|professional\s+summary|profile|objective|projects?|interests|hobbies|references?|awards?|achievements?)\b/i;
-// An academic degree — should never be an employer or job title.
+// An academic degree — should never be an employer or job title. "associate"
+// and "master" need degree context: "Associate Product Manager" and
+// "Scrum Master" are job titles, not degrees.
 const DEGREE_LABEL_RE =
-  /\b(bachelor|master|associate|diploma|ph\.?d|doctorate|mba|m\.?sc|b\.?sc|b\.?tech|m\.?tech|bca|mca|b\.?a|m\.?a|b\.?com|m\.?com|ll\.?b|ll\.?m|bba)\b/i;
+  /\b(bachelor|master(?:'?s)?\s+(?:of|in|degree)|associate(?:'?s)?\s+(?:degree|diploma|of\s+[a-z]+)|diploma|ph\.?d|doctorate|mba|m\.?sc|b\.?sc|b\.?tech|m\.?tech|bca|mca|b\.?a|m\.?a|b\.?com|m\.?com|ll\.?b|ll\.?m|bba)\b/i;
+
+// Skills must never duplicate the certifications section. When the model emits
+// a "Certifications:"/"Licenses:" category inside skills anyway, remove it and
+// move any items the certifications field doesn't already cover.
+const CERT_SKILL_CATEGORY_RE =
+  /^\s*(certifications?|licen[sc]es?|credentials?)(\s*(&|and)\s*(certifications?|licen[sc]es?|credentials?))?\s*$/i;
+const stripCertificationSkills = (skills = [], certifications = []) => {
+  const keptSkills = [];
+  const movedItems = [];
+  for (const line of skills) {
+    const match = String(line || "").match(/^([^:]+):\s*(.*)$/);
+    if (match && CERT_SKILL_CATEGORY_RE.test(match[1])) {
+      match[2]
+        .split(/[,;]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .forEach((item) => movedItems.push(item));
+      continue;
+    }
+    keptSkills.push(line);
+  }
+  const mergedCertifications = certifications.slice();
+  const existingLower = mergedCertifications.map((cert) => cert.toLowerCase());
+  movedItems.forEach((item) => {
+    const lower = item.toLowerCase();
+    if (!existingLower.some((cert) => cert.includes(lower))) {
+      mergedCertifications.push(item);
+      existingLower.push(lower);
+    }
+  });
+  return { skills: keptSkills, certifications: mergedCertifications };
+};
+
+// A company/designation that is really a date ("May 2020", "Aug 2022 – Present")
+// — the telltale of a misparsed header line. Such entries must never enter the
+// factual baseline: reconcileExperienceObjects REPLACES the model's experience
+// with the baseline when they disagree, so junk here destroys good output.
+const DATE_SHAPED_HEADER_RE = new RegExp(
+  `^(?:${DURATION_DATE_TOKEN}(?:\\s*[-–—]\\s*(?:present|current|ongoing|${DURATION_DATE_TOKEN}))?)$`,
+  "i"
+);
 
 const sanitizeExperienceEntries = (entries = []) => {
   const clean = Array.isArray(entries) ? entries : [];
@@ -877,6 +1262,16 @@ const sanitizeExperienceEntries = (entries = []) => {
         DEGREE_LABEL_RE.test(item.company) ||
         DEGREE_LABEL_RE.test(item.designation);
       if (looksLikeOtherSection) return false;
+      // Date-shaped or location-shaped header fields mean the parser latched
+      // onto a metadata line, not a real "title @ employer" pair.
+      if (
+        DATE_SHAPED_HEADER_RE.test(item.company) ||
+        DATE_SHAPED_HEADER_RE.test(item.designation) ||
+        (LOCATION_SHAPE_RE.test(item.designation) && !TITLE_WORD_RE.test(item.designation)) ||
+        (LOCATION_SHAPE_RE.test(item.company) && !TITLE_WORD_RE.test(item.designation))
+      ) {
+        return false;
+      }
       const looksLikeRealRole =
         item.company.length > 1 &&
         item.designation.length > 1 &&
@@ -938,11 +1333,87 @@ const parseEducationFromSection = (sectionLines = []) => {
   return entries;
 };
 
+// Sections with no dedicated schema slot — awards, publications, speaking,
+// volunteering, interests, memberships… Parsed deterministically from the
+// original resume so they can be preserved verbatim in the output. The model
+// never generates these: factual accolades are not tailoring targets.
+const ADDITIONAL_SECTION_TITLE_RE =
+  /\b(awards?|honou?rs?|recognition|publications?|talks?|speaking|community|volunteer(?:ing)?|exhibitions?|teaching|professional\s+development|interests?|hobbies|patents?|memberships?|affiliations?|extracurriculars?|clients|wins)\b/i;
+
+// Section headers are Title Case or ALL CAPS ("Speaking & Community",
+// "AWARDS"); list items usually aren't ("Community radio", "Various clients").
+const HEADING_CONNECTOR_WORDS = new Set(["and", "or", "of", "the", "in", "for", "with", "to", "at", "on", "a", "an"]);
+const isHeadingCased = (line = "") => {
+  const significant = line
+    .split(/\s+/)
+    .filter((word) => word.replace(/[^A-Za-z]/g, "").length >= 3)
+    .filter((word) => !HEADING_CONNECTOR_WORDS.has(word.toLowerCase()));
+  return significant.length > 0 && significant.every((word) => /^[A-Z]/.test(word));
+};
+
+const parseAdditionalSections = (resumeText = "") => {
+  const lines = String(resumeText || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const sections = [];
+  let current = null;
+  let sectionHasBullets = false;
+  for (const line of lines) {
+    if (
+      looksLikeHeading(line) &&
+      isHeadingCased(line) &&
+      ADDITIONAL_SECTION_TITLE_RE.test(line) &&
+      !/^[-*•·▪◦]/.test(line)
+    ) {
+      current = { title: line.replace(/[\s:]+$/, "").trim(), items: [] };
+      sections.push(current);
+      sectionHasBullets = false;
+      continue;
+    }
+    // Any other recognized section header — or a stray education line (degree
+    // names bleed into sidebar flows on multi-column PDFs) — ends the section.
+    if (detectSectionHeader(line) || DEGREE_LABEL_RE.test(line)) {
+      current = null;
+      continue;
+    }
+    if (!current) continue;
+    const isBulleted = /^[-*•·▪◦]\s*/.test(line);
+    const item = line.replace(/^[-*•·▪◦]\s*/, "").trim();
+    if (!item) continue;
+    if (isBulleted) sectionHasBullets = true;
+    // Continuation detection: in a bulleted section, any non-bulleted line is
+    // a wrap of the previous item. In unbulleted sections, fall back to shape
+    // signals (starts lowercase/digit/punctuation, or previous item ends
+    // mid-phrase with a connector word or comma).
+    const prev = current.items[current.items.length - 1] || "";
+    const isContinuation =
+      !isBulleted &&
+      current.items.length > 0 &&
+      (sectionHasBullets ||
+        /^[a-z0-9(&"'—–-]/.test(item) ||
+        /[,&/—–-]$/.test(prev) ||
+        /\b(?:and|or|of|the|in|for|with|to|at|on|a|an)$/i.test(prev));
+    if (isContinuation) {
+      current.items[current.items.length - 1] += ` ${item}`;
+    } else {
+      current.items.push(item);
+    }
+  }
+  return sections
+    .map((section) => ({
+      title: section.title,
+      items: section.items.filter(Boolean).slice(0, 12),
+    }))
+    .filter((section) => section.items.length)
+    .slice(0, 6);
+};
+
 // Flattens the LANGUAGES section of a raw resume into individual language
 // entries. Source lines are frequently bullet- or comma-joined on a single line
 // (e.g. "• English • Hindi • Malayalam"), so split aggressively.
 const parseLanguagesFromSection = (sectionLines = []) =>
-  normalizeLanguageList(sectionLines);
+  normalizeLanguageList(sectionLines).filter(isHumanLanguageEntry);
 
 // Extracts project entries (name + bullets) from the PROJECTS section of a raw
 // resume so the model can be told to preserve them. Project names are heading
@@ -1137,6 +1608,7 @@ export async function POST(req) {
       extractSectionsFromText(resume).languages || []
     ).slice(0, 12);
     const hasLanguagesSection = factualLanguagesBaseline.length > 0;
+    const additionalSectionsBaseline = parseAdditionalSections(resume);
 
     const safeWeightedKeywords = Array.isArray(weightedKeywords) ? weightedKeywords : [];
     const matchedKeywordSet = new Set(safeMatched.map((k) => k.toLowerCase()));
@@ -1169,10 +1641,10 @@ export async function POST(req) {
       "",
       "PER-SECTION RULES:",
       hasSummary
-        ? `1. summary (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
+        ? `1. summary (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). REWRITE means REPLACE: produce one cohesive paragraph with EXACTLY ONE role-title opening sentence — never keep the original summary's opening sentence and then add a second "Title with N years..." opener after it; fold the original's facts (employers, achievements) into the new sentences instead. Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
         : `1. summary (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
-      "2. skills: An array of 3-6 strings, each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Certifications, Systems/EMR, Patient Care; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. Include every matched keyword and every missing keyword that has evidence in the candidate's original resume. List concrete, recognizable hard skills, tools, and certifications. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player'); genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
-      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Provide 3-6 bullets per role, each starting with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
+      "2. skills: An array of 3-6 strings, each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Systems/EMR, Patient Care, Communication; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. NEVER use a 'Certifications' or 'Licenses' category in skills — certifications have their own dedicated field and must not be duplicated here. Include every matched keyword and every missing keyword that has evidence in the candidate's original resume. List concrete, recognizable hard skills and tools. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player'); genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
+      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Provide 3-6 bullets per role, each starting with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
       hasProjectsSection
         ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Add keywords only where the project truly used them. Never drop a project to save space."
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
@@ -1327,7 +1799,10 @@ export async function POST(req) {
     }
     // Backstop: drop anything that slipped into experience but is really
     // education / skills / interests (mis-placed by the model).
-    resumeData.experience = dropNonJobExperience(resumeData.experience);
+    resumeData.experience = dropFabricatedExperience(
+      dropNonJobExperience(resumeData.experience),
+      resume
+    );
 
     // Safety net: original resume had a projects section but the model dropped
     // it across the passes — re-inject the original projects verbatim.
@@ -1339,11 +1814,36 @@ export async function POST(req) {
         responsibilities: ensureStringArray(project.bullets),
       }));
     }
+    // Inverse guard: no projects section in the original resume means NO
+    // projects in the output. The model sometimes misfiles stray content here
+    // (speaking engagements, community roles) despite being told to omit it.
+    if (!hasProjectsSection) {
+      resumeData.projects = [];
+    }
 
     // Safety net: original listed languages but the model dropped/merged them.
     if (hasLanguagesSection && !resumeData.languages.length) {
       resumeData.languages = factualLanguagesBaseline.slice();
     }
+
+    // Additional sections (awards, publications, speaking, volunteering,
+    // interests…) have no schema slot for the model. They are attached
+    // deterministically from the original resume AFTER all model passes:
+    // factual accolades are preserved verbatim, never tailored or invented.
+    resumeData.additionalSections = additionalSectionsBaseline.map((section) => ({
+      title: section.title,
+      items: section.items.slice(),
+    }));
+
+    // Certifications listed inside the skills section duplicate the dedicated
+    // CERTIFICATIONS section — strip them, moving unlisted items across. Runs
+    // before certification grounding so moved items are verified too.
+    const certSkillSplit = stripCertificationSkills(
+      resumeData.skills,
+      resumeData.certifications
+    );
+    resumeData.skills = certSkillSplit.skills;
+    resumeData.certifications = certSkillSplit.certifications;
 
     // Anti-fabrication: drop any education entry or certification the model
     // invented (not grounded in the original resume). A resume must never claim
@@ -1371,7 +1871,7 @@ export async function POST(req) {
     resumeData.contact = {
       email: candidateEmail,
       phone: candidatePhone,
-      location: extractContactLocation(sourceContactLines),
+      location: extractContactLocation(sourceContactLines, resume),
       links: sourceLinks
         .map((url) => ({ url: ensureString(url) }))
         .filter((l) => l.url),
@@ -1393,16 +1893,16 @@ export async function POST(req) {
     let finalCoverLetter = "";
     if (shouldGenerateCoverLetter) {
       const coverLetterPrompt = [
-        "You are an expert cover letter writer crafting concise, role-tailored cover letters.",
-        "Generate a cover letter for the target role grounded in the resume below.",
-        "Structure (four short paragraphs):",
-        "1. Opening (2-3 sentences): name the organization and designation, briefly state interest and a high-level value statement.",
-        "2. Role fit (3-4 sentences): cite 2-3 specific skills/experiences from the resume that map to the JD's top requirements.",
-        "3. Impact (2-3 sentences): reference one quantified achievement from the resume showing relevant impact.",
-        "4. Closing (1-2 sentences): express enthusiasm and a clear call to action.",
+        "You are an expert cover letter writer crafting short, high-impact, role-tailored cover letters.",
+        "Generate a concise cover letter for the target role grounded in the resume below.",
+        "Structure (three short paragraphs):",
+        "1. Opening (1-2 sentences): name the organization and designation, and state the single strongest reason the candidate fits, drawn from their actual experience.",
+        "2. Evidence (2-3 sentences): connect the candidate's most relevant experience and skills from the resume to the JD's top requirements, including one quantified achievement if the resume has one.",
+        "3. Closing (1-2 sentences): brief enthusiasm and a clear call to action.",
         "Hard rules:",
-        "- 250-350 words total.",
+        "- 120-180 words total. Never exceed 200 words. Shorter is better than padded.",
         "- Truthful and grounded ONLY in the resume content. Do not invent employers, titles, schools, certifications, or metrics.",
+        "- Every claim must trace back to the candidate's actual experience in the resume; do not claim familiarity with JD requirements the resume does not support.",
         "- Explicitly mention the organization name at least once in the opening paragraph.",
         "- Do not include any salutation (Dear/Hiring Manager), date, address, sign-off, or candidate name - these are added separately.",
         "- Do not include heading text like 'Tailored Cover Letter' or 'Cover Letter'.",
@@ -1422,7 +1922,7 @@ export async function POST(req) {
       const coverLetterRaw = await generateWithModel({
         apiKey,
         prompt: coverLetterPrompt,
-        maxTokens: 1500,
+        maxTokens: 800,
       });
 
       finalCoverLetter = stripPlaceholdersAndTemplateLabels(coverLetterRaw);

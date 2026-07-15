@@ -59,9 +59,11 @@ const DashboardPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const refreshSubscription = async (userId) => {
+  // silent: refresh in the background without flipping the loading flag, so
+  // the header badge and subscription-locked UI don't flicker mid-session.
+  const refreshSubscription = async (userId, { silent = false } = {}) => {
     if (!userId) return;
-    setSubscriptionLoading(true);
+    if (!silent) setSubscriptionLoading(true);
     try {
       const response = await fetch(`/api/subscription/status?userId=${userId}`);
       const json = await response.json();
@@ -78,7 +80,7 @@ const DashboardPageContent = () => {
           scansUsedThisWeek: Number(subscriptionData.scansUsedThisWeek || 0),
           scansRemainingThisWeek: Number(subscriptionData.scansRemainingThisWeek || 0),
         });
-      } else {
+      } else if (!silent) {
         setSubscription({
           hasActivePlan: false,
           planKey: null,
@@ -93,19 +95,22 @@ const DashboardPageContent = () => {
       }
     } catch (error) {
       console.error("Failed to fetch subscription status:", error);
-      setSubscription({
-        hasActivePlan: false,
-        planKey: null,
-        planName: null,
-        status: "none",
-        allowsJobTracker: false,
-        allowsCoverLetter: false,
-        weeklyScanLimit: 0,
-        scansUsedThisWeek: 0,
-        scansRemainingThisWeek: 0,
-      });
+      // A failed silent refresh keeps the last known subscription state.
+      if (!silent) {
+        setSubscription({
+          hasActivePlan: false,
+          planKey: null,
+          planName: null,
+          status: "none",
+          allowsJobTracker: false,
+          allowsCoverLetter: false,
+          weeklyScanLimit: 0,
+          scansUsedThisWeek: 0,
+          scansRemainingThisWeek: 0,
+        });
+      }
     } finally {
-      setSubscriptionLoading(false);
+      if (!silent) setSubscriptionLoading(false);
     }
   };
 
@@ -172,6 +177,7 @@ const DashboardPageContent = () => {
           subscriptionLocked={subscriptionLocked}
           planKey={subscription.planKey}
           allowsCoverLetter={subscription.allowsCoverLetter}
+          onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
         />
       );
     }
@@ -192,6 +198,7 @@ const DashboardPageContent = () => {
         subscriptionLocked={subscriptionLocked}
         planKey={subscription.planKey}
         allowsCoverLetter={subscription.allowsCoverLetter}
+        onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
       />
     );
   };
