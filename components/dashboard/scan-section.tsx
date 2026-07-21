@@ -2070,7 +2070,7 @@ export const ScanSection = ({
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <h3 className="text-lg font-semibold text-slate-900">
                     {shouldAllowCoverLetter
-                      ? "Tailored CV & cover letter"
+                      ? "Tailored CV & Cover Letter"
                       : "Tailored CV preview"}
                   </h3>
                   {isComputingFinalScore ? (

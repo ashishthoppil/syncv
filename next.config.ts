@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["pdf-parse"],
+  // These load native/binary assets at runtime and must not be bundled by the
+  // Next.js server compiler. @sparticuz/chromium ships the Chromium binary that
+  // powers serverless PDF generation.
+  serverExternalPackages: ["pdf-parse", "puppeteer-core", "@sparticuz/chromium"],
 };
 
 export default nextConfig;
