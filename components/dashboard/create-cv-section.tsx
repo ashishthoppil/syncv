@@ -511,7 +511,7 @@ export const CreateCvSection = () => {
 
   const downloadPdf = async () => {
     setDownloading(true);
-    try {
+    try { 
       const response = await fetch("/api/generate-pdf", {
         method: "POST",
         body: JSON.stringify({ html: previewHtml, type: "tailored-cv" }),
