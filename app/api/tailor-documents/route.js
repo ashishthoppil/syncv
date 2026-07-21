@@ -64,6 +64,16 @@ const normalizeUrlCandidate = (value = "") => {
   return "";
 };
 
+// Identity key for a URL so the same profile listed in two forms — with/without
+// "www.", "http" vs "https", a trailing slash, or differing case — dedupes to a
+// single entry (e.g. "www.linkedin.com/in/x" and "linkedin.com/in/x").
+const canonicalLinkKey = (url = "") =>
+  ensureString(url)
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/+$/, "");
+
 const extractExternalLinks = (text = "") => {
   const content = String(text || "");
   const links = [];
@@ -72,7 +82,7 @@ const extractExternalLinks = (text = "") => {
   const add = (raw = "") => {
     const normalized = normalizeUrlCandidate(raw);
     if (!normalized) return;
-    const key = normalizeText(normalized);
+    const key = canonicalLinkKey(normalized);
     if (seen.has(key)) return;
     seen.add(key);
     links.push(normalized);
