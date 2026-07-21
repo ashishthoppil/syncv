@@ -1222,12 +1222,13 @@ const stripCertificationSkills = (skills = [], certifications = []) => {
 // producing a wall of single-item groups that reads as keyword stuffing. This
 // deterministic pass merges same-named categories and collapses any overflow —
 // thinnest groups first — into one "Additional Skills" line, so the 3-6
-// category target the prompt asks for actually holds. Keywords are preserved
-// (score is not sacrificed): a folded lone-example group contributes its NAME,
-// which is the token that actually matched the JD.
+// category target the prompt asks for actually holds.
+//
+// It is purely a PRESENTATION pass: every skill token is preserved (nothing is
+// dropped), so keyword-match scoring is unaffected — the wall of categories
+// just becomes fewer lines carrying the same terms.
 const MAX_SKILL_CATEGORIES = 6;
 const OVERFLOW_SKILL_CATEGORY = "Additional Skills";
-const MAX_OVERFLOW_ITEMS = 14;
 // Generic grouping labels ("Backend", "Tools") carry no keyword value on their
 // own — only their items do. A non-generic name ("Distributed computing",
 // "Security") IS the JD keyword, so it is worth preserving when the group is
@@ -1302,16 +1303,16 @@ const consolidateSkillCategories = (skills = []) => {
 
   const overflowItems = [];
   for (const cat of overflow) {
-    // Always keep the real skills. Also keep the category name when it is a
-    // concept keyword rather than a generic bucket label, so a JD term like
-    // "Distributed computing" survives while "Backend" (a mere label) does not
-    // crowd out its actual tool.
+    // Keep every real skill (never dropped — scoring depends on it). Also keep
+    // the category name when it is a concept keyword rather than a generic
+    // bucket label, so a JD term like "Distributed computing" survives while
+    // "Backend" (a mere label) does not crowd out its actual tool.
     overflowItems.push(...cat.items);
     if (!GENERIC_SKILL_BUCKETS.has(cat.category.toLowerCase())) {
       overflowItems.push(cat.category);
     }
   }
-  const additional = dedupeSkillItems(overflowItems).slice(0, MAX_OVERFLOW_ITEMS);
+  const additional = dedupeSkillItems(overflowItems);
 
   const result = kept.sort((a, b) => a.index - b.index).map(toLine);
   if (additional.length) {
@@ -1746,7 +1747,7 @@ export async function POST(req) {
       hasSummary
         ? `1. summary (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). REWRITE means REPLACE: produce one cohesive paragraph with EXACTLY ONE role-title opening sentence — never keep the original summary's opening sentence and then add a second "Title with N years..." opener after it; fold the original's facts (employers, achievements) into the new sentences instead. Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
         : `1. summary (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
-      "2. skills: An array of 3-6 strings (NEVER more than 6), each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Systems/EMR, Patient Care, Communication; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. NEVER use a 'Certifications' or 'Licenses' category in skills — certifications have their own dedicated field and must not be duplicated here. Fold every relevant matched and missing keyword INTO these 3-6 categories — do NOT create a separate category per keyword, and every category must group several genuinely related skills (a one-item category is a red flag). Keywords that name a broad concept, method, or practice rather than a concrete tool (e.g. 'Distributed computing', 'Code review', 'Documentation', 'Project management', 'Information retrieval', 'Large-scale system design') belong in the relevant EXPERIENCE bullet where the candidate did that work — NOT as their own skill category. NEVER invent an example item just to host a keyword (e.g. do not write 'Security: Authentication, Authorization' unless the resume shows those). List concrete, recognizable hard skills and tools. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player'); genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
+      "2. skills: An array of 3-6 strings (NEVER more than 6), each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Systems/EMR, Patient Care, Communication; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. NEVER use a 'Certifications' or 'Licenses' category in skills — certifications have their own dedicated field and must not be duplicated here. Include every matched keyword and every missing keyword that has evidence in the candidate's original resume — but FOLD them into these 3-6 broad categories rather than creating a separate category per keyword. Group several genuinely related skills under each category; do not emit many one-item categories. A concept or practice keyword (e.g. 'Distributed computing', 'Code review', 'Documentation') may sit as an item inside a fitting category (e.g. 'Concepts') or appear in an experience bullet — either keeps it in the resume; just never give it its own standalone category. List concrete, recognizable hard skills and tools. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player'); genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
       "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Provide 3-6 bullets per role, each starting with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
       hasProjectsSection
         ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Add keywords only where the project truly used them. Never drop a project to save space."
@@ -1824,15 +1825,14 @@ export async function POST(req) {
 
     if (uncoveredAfterPass1.length) {
       const revisionPrompt = [
-        "Revise the resume below to naturally weave in the listed keywords WHERE THEY ARE TRUTHFUL — without losing truthfulness or padding the resume.",
+        "Revise the resume below to naturally include EVERY one of the listed keywords without losing truthfulness.",
         "",
         "OUTPUT FORMAT:",
         ...STRUCTURED_RESUME_SCHEMA_LINES,
         "",
         "Integration rules:",
         "- Add a keyword that names a concrete tool/framework/technology to the MOST RELATED existing skills category. Do NOT create a new category per keyword; keep skills to at most 6 categories, each grouping several related items.",
-        "- Add a keyword that names a method, practice, or broad concept (e.g. code review, documentation, distributed computing, system design) to an experience bullet where the candidate actually performed that work — NOT to the skills array.",
-        "- Never invent an example skill just to host a keyword; if a keyword has no truthful home in this resume, leave it out.",
+        "- Add a keyword that names a method, practice, or broad concept (e.g. code review, documentation, distributed computing, system design) to an experience bullet where the candidate performed that work; if none fits, include it as an item inside a related skills category. Either way it must appear in the resume — do NOT give it its own standalone category.",
         "- Never fabricate companies, dates, titles, projects, certifications, or numeric outcomes.",
         "- Preserve EVERY experience role, project, education entry, certification, and language already present — do not drop or merge any.",
         "- Every bullet starts with a strong action verb.",
