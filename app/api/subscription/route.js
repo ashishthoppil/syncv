@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   countWeeklyScans,
+  countFreeTrialScans,
+  FREE_TRIAL_SCAN_LIMIT,
   getPlanForUser,
   getSupabaseAdminClient,
   getActiveSubscriptionForUser,
@@ -26,6 +28,14 @@ export async function GET(request) {
     const scansRemainingThisWeek =
       weeklyScanLimit > 0 ? Math.max(0, weeklyScanLimit - scansUsedThisWeek) : 0;
 
+    // Users without an active plan get a lifetime free-trial allowance before
+    // they are asked to subscribe.
+    const freeTrialUsed = plan ? 0 : await countFreeTrialScans(supabase, userId);
+    const freeTrialRemaining = plan
+      ? 0
+      : Math.max(0, FREE_TRIAL_SCAN_LIMIT - freeTrialUsed);
+    const canScan = Boolean(plan) || freeTrialRemaining > 0;
+
     return NextResponse.json({
       data: {
         ...normalized,
@@ -34,6 +44,10 @@ export async function GET(request) {
         weeklyScanLimit,
         scansUsedThisWeek,
         scansRemainingThisWeek,
+        freeTrialLimit: FREE_TRIAL_SCAN_LIMIT,
+        freeTrialUsed,
+        freeTrialRemaining,
+        canScan,
         allowsJobTracker: Boolean(plan?.allowsJobTracker),
         allowsCoverLetter: Boolean(plan?.allowsCoverLetter),
       },

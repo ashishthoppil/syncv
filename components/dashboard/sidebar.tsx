@@ -4,15 +4,16 @@ import { cn } from "@/lib/utils";
 import {
   ScanLine,
   BriefcaseBusiness,
-  FilePlus2,
   UserRound,
   SettingsIcon,
 } from "lucide-react";
 
+// "Create CV from Scratch" is intentionally omitted from the sidebar — the base
+// resume replaces it as the single source of truth. The component and its
+// ?section=create-cv route are kept in case it needs to return.
 export const DASHBOARD_SECTIONS = [
   { id: "scan", label: "Scan Resume", icon: ScanLine },
-  { id: "create-cv", label: "Create CV from Scratch", icon: FilePlus2 },
-  { id: "profile", label: "Profile", icon: UserRound },
+  { id: "base-resume", label: "Base Resume", icon: UserRound },
   { id: "job-tracker", label: "Job Tracker", icon: BriefcaseBusiness },
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];

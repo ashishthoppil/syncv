@@ -7,7 +7,6 @@ import {
   Settings2,
 } from "lucide-react";
 import React from "react";
-import { ScanSection } from "./dashboard/scan-section";
 
 const features = [
   {
@@ -70,17 +69,6 @@ const Features = () => {
             </p>
           </div>
         ))}
-      </div>
-    </div>
-    <div id="guest-scan" className="w-full py-12 xs:py-20 px-6">
-      <h2 className="text-3xl xs:text-4xl sm:text-5xl font-bold tracking-tight text-center">
-        Optimize Your Resume for Free
-      </h2>
-      <p className="mt-4 text-sm text-slate-500 text-center">
-        Get started with a one-time free trial.
-      </p>
-      <div className="w-full max-w-screen-lg mx-auto mt-10 sm:mt-16">
-        <ScanSection guestTrial hideTopHeading className="space-y-0" />
       </div>
     </div>
     </>

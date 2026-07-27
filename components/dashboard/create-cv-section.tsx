@@ -688,8 +688,8 @@ export const CreateCvSection = () => {
                   </div>
                   {skillCategories.length > 0 ? (
                     <div className="mt-3 space-y-2.5">
-                      {skillCategories.map((category) => (
-                        <div key={category.category}>
+                      {skillCategories.map((category, index) => (
+                        <div key={`${category.category}-${index}`}>
                           <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                             {category.category}
                           </p>

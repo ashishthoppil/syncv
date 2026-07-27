@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getPlanForUser, getSupabaseAdminClient } from "@/lib/server/subscriptions";
+import {
+  countFreeTrialScans,
+  FREE_TRIAL_SCAN_LIMIT,
+  getPlanForUser,
+  getSupabaseAdminClient,
+} from "@/lib/server/subscriptions";
 
 const normalizeText = (value = "") =>
   value
@@ -444,6 +449,16 @@ const isHumanLanguageEntry = (entry = "") =>
     .replace(/[^a-z\s]/g, " ")
     .split(/\s+/)
     .some((word) => HUMAN_LANGUAGES.has(word));
+
+// The set of human-language words named in an entry (e.g. "English (Native)"
+// -> {"english"}). Used to ground model-emitted languages against the ones the
+// original resume actually listed, so a language is never fabricated.
+const languageWordsIn = (entry = "") =>
+  entry
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .split(/\s+/)
+    .filter((word) => HUMAN_LANGUAGES.has(word));
 
 // Rewritten summaries sometimes keep the original resume's role-title opener
 // AND add the requested one ("Front-End Developer with proven experience at
@@ -1650,13 +1665,21 @@ export async function POST(req) {
     if (userId) {
       const supabase = getSupabaseAdminClient();
       const activePlan = await getPlanForUser(supabase, userId);
-      if (!activePlan) {
-        return NextResponse.json({
-          success: false,
-          message: "Please subscribe to a plan to optimize your resume.",
-        });
-      }
-      if (!activePlan.allowsCoverLetter) {
+      if (activePlan) {
+        if (!activePlan.allowsCoverLetter) {
+          shouldGenerateCoverLetter = false;
+        }
+      } else {
+        // Free-trial users may optimize the result of a scan they already spent
+        // a free trial on, but never get a cover letter. Once the trial is
+        // fully exhausted with no active plan, block and ask them to subscribe.
+        const freeTrialUsed = await countFreeTrialScans(supabase, userId);
+        if (freeTrialUsed < 1 || freeTrialUsed > FREE_TRIAL_SCAN_LIMIT) {
+          return NextResponse.json({
+            success: false,
+            message: "Please subscribe to a plan to optimize your resume.",
+          });
+        }
         shouldGenerateCoverLetter = false;
       }
     }
@@ -1764,7 +1787,7 @@ export async function POST(req) {
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
       "5. education: Output ONLY the education entries that literally appear in the original resume (match the factual education baseline below) — output exactly that many entries, no more. NEVER add, split, duplicate, or invent a degree, institution, or graduation year (e.g. do not add a Bachelor's the candidate never listed). Each object has qualification, institution, location, duration as separate fields, plus optional detail strings for honors/coursework. Put the city/country in the location field — never merge it into institution or duration. Preserve every degree exactly as written.",
       "6. certifications: Array of strings, each 'Cert name — Issuer (year if known)'. Include ONLY certifications that appear in the original resume — never invent a credential. If the original resume includes a verification/credential URL for a certification or course, append it to that string EXACTLY as written (e.g. 'Front-End Web Development with React — Coursera — https://coursera.org/verify/ABC123'). Never invent, guess, or shorten URLs — include one only if it is present in the original resume.",
-      "7. languages: Array of spoken/written languages exactly as listed in the original resume, ONE language per array item (e.g. ['English', 'Hindi', 'Malayalam'] or ['English (Native)', 'Spanish (Fluent)']). Never cram multiple languages into a single string and never bullet-join them. Do NOT place spoken languages in the skills section. Omit the key entirely if the resume lists no languages.",
+      "7. languages: Array of spoken/written languages exactly as listed in the original resume, ONE language per array item (format each item like 'Language' or 'Language (Proficiency)'). Copy ONLY languages that literally appear in the original resume — never add a language the candidate did not list, and never infer one from the candidate's name, location, or nationality. Never cram multiple languages into a single string and never bullet-join them. Do NOT place spoken languages in the skills section. Omit the key entirely if the resume lists no languages.",
       "",
       "HARD CONSTRAINTS (zero tolerance):",
       "- Never invent employers, dates, titles, certifications, degrees, or quantified achievements.",
@@ -1935,9 +1958,25 @@ export async function POST(req) {
       resumeData.projects = [];
     }
 
-    // Safety net: original listed languages but the model dropped/merged them.
-    if (hasLanguagesSection && !resumeData.languages.length) {
-      resumeData.languages = factualLanguagesBaseline.slice();
+    // Anti-fabrication for languages. The model is prone to inventing a
+    // languages section (or adding extra languages) that the candidate never
+    // listed — e.g. seeding "Hindi" for an India-based candidate. Mirror the
+    // projects guards: if the original resume has no languages section, output
+    // none; otherwise keep only languages grounded in the original list.
+    if (!hasLanguagesSection) {
+      resumeData.languages = [];
+    } else {
+      const baselineLanguageWords = new Set(
+        factualLanguagesBaseline.flatMap((entry) => languageWordsIn(entry))
+      );
+      resumeData.languages = resumeData.languages.filter((entry) =>
+        languageWordsIn(entry).some((word) => baselineLanguageWords.has(word))
+      );
+      // Safety net: original listed languages but the model dropped/merged them
+      // (or grounding filtered everything) — restore the factual baseline.
+      if (!resumeData.languages.length) {
+        resumeData.languages = factualLanguagesBaseline.slice();
+      }
     }
 
     // Additional sections (awards, publications, speaking, volunteering,

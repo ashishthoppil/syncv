@@ -77,7 +77,12 @@ ALTER TABLE profiles
   ADD COLUMN IF NOT EXISTS photo_url TEXT,
   ADD COLUMN IF NOT EXISTS resume_language TEXT,
   ADD COLUMN IF NOT EXISTS date_format TEXT,
-  ADD COLUMN IF NOT EXISTS plan TEXT;
+  ADD COLUMN IF NOT EXISTS plan TEXT,
+  -- Full structured base resume (editable draft) + a plain-text serialization
+  -- consumed by the scan/analyze/tailor pipeline.
+  ADD COLUMN IF NOT EXISTS base_resume JSONB,
+  ADD COLUMN IF NOT EXISTS base_resume_text TEXT,
+  ADD COLUMN IF NOT EXISTS base_resume_updated_at TIMESTAMPTZ;
 
 -- Job tracker additions for storing generated resume/cover-letter outputs
 ALTER TABLE job_tracker

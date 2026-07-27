@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   countWeeklyScans,
+  countFreeTrialScans,
+  FREE_TRIAL_PLAN_KEY,
+  FREE_TRIAL_SCAN_LIMIT,
   getPlanForUser,
   getSupabaseAdminClient,
 } from "@/lib/server/subscriptions";
@@ -1387,22 +1390,28 @@ export async function POST(req) {
 
     let activePlan = null;
     let scansUsedThisWeek = 0;
+    let usingFreeTrial = false;
     if (userId) {
       const supabase = getSupabaseAdminClient();
       activePlan = await getPlanForUser(supabase, userId);
-      if (!activePlan) {
-        return NextResponse.json({
-          success: false,
-          message: "Please subscribe to a plan to optimize your resume.",
-        });
-      }
-
-      scansUsedThisWeek = await countWeeklyScans(supabase, userId);
-      if (!skipUsageTracking && scansUsedThisWeek >= activePlan.weeklyScanLimit) {
-        return NextResponse.json({
-          success: false,
-          message: `Weekly scan limit reached for ${activePlan.name} plan (${activePlan.weeklyScanLimit}/week).`,
-        });
+      if (activePlan) {
+        scansUsedThisWeek = await countWeeklyScans(supabase, userId);
+        if (!skipUsageTracking && scansUsedThisWeek >= activePlan.weeklyScanLimit) {
+          return NextResponse.json({
+            success: false,
+            message: `Weekly scan limit reached for ${activePlan.name} plan (${activePlan.weeklyScanLimit}/week).`,
+          });
+        }
+      } else {
+        // No active plan — fall back to the lifetime free-trial allowance.
+        const freeTrialUsed = await countFreeTrialScans(supabase, userId);
+        if (!skipUsageTracking && freeTrialUsed >= FREE_TRIAL_SCAN_LIMIT) {
+          return NextResponse.json({
+            success: false,
+            message: `You've used all ${FREE_TRIAL_SCAN_LIMIT} free scans. Please subscribe to a plan to continue.`,
+          });
+        }
+        usingFreeTrial = true;
       }
     }
 
@@ -1478,11 +1487,11 @@ export async function POST(req) {
       targetRole: designation || "",
     });
 
-    if (userId && activePlan && !skipUsageTracking) {
+    if (userId && (activePlan || usingFreeTrial) && !skipUsageTracking) {
       const supabase = getSupabaseAdminClient();
       const { error: usageError } = await supabase.from("scan_usage").insert({
         user_id: userId,
-        plan_key: activePlan.key,
+        plan_key: activePlan ? activePlan.key : FREE_TRIAL_PLAN_KEY,
       });
       if (usageError) {
         console.error("Failed to store scan usage:", usageError);

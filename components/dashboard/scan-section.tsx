@@ -183,6 +183,10 @@ export const ScanSection = ({
     behance: "",
     otherLink: "",
   });
+  // The resume is no longer uploaded per-scan — it comes from the saved base
+  // resume. `baseResumeLoading` guards the empty-state message until we know.
+  const [hasBaseResume, setHasBaseResume] = useState(false);
+  const [baseResumeLoading, setBaseResumeLoading] = useState(!guestTrial);
   const [finalScore, setFinalScore] = useState<number | null>(null);
   const [isComputingFinalScore, setIsComputingFinalScore] = useState(false);
   const [editableResumeText, setEditableResumeText] = useState("");
@@ -672,7 +676,9 @@ export const ScanSection = ({
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("email, phone, linkedin, portfolio, github, behance, other_link")
+        .select(
+          "email, phone, linkedin, portfolio, github, behance, other_link, base_resume_text"
+        )
         .eq("id", userId)
         .maybeSingle();
 
@@ -689,10 +695,19 @@ export const ScanSection = ({
       };
 
       setProfileContact(nextProfile);
+
+      // Feed the saved base resume into the (now hidden) resume field so the
+      // analyze/tailor pipeline keeps working unchanged.
+      const baseResumeText = (data?.base_resume_text || "").trim();
+      setHasBaseResume(Boolean(baseResumeText));
+      if (baseResumeText) setForm((prev) => ({ ...prev, resume: baseResumeText }));
+
       return nextProfile;
     } catch (error) {
       console.error("Failed to load profile contact:", error);
       return null;
+    } finally {
+      setBaseResumeLoading(false);
     }
   }, []);
 
@@ -1713,79 +1728,146 @@ export const ScanSection = ({
             </div>
           </div>
 
-          <div className={cn("grid gap-4", true ? "md:grid-cols-2" : "grid-cols-1")}>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-600">
-                Job description <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                className={cn(
-                  true ? "min-h-[140px]" : "min-h-[140px]",
-                  "w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
-                  formErrors.jd &&
-                    "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
-                )}
-                placeholder="Paste the key responsibilities, required skills, etc."
-                value={form.jd}
-                onChange={(event) => updateForm("jd", event.target.value)}
-              />
-              {formErrors.jd && (
-                <p className="text-xs text-red-600">{formErrors.jd}</p>
-              )}
-            </div>
+          {guestTrial ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-600">
+                    Job description <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    className={cn(
+                      "min-h-[140px] w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
+                      formErrors.jd &&
+                        "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
+                    )}
+                    placeholder="Paste the key responsibilities, required skills, etc."
+                    value={form.jd}
+                    onChange={(event) => updateForm("jd", event.target.value)}
+                  />
+                  {formErrors.jd && (
+                    <p className="text-xs text-red-600">{formErrors.jd}</p>
+                  )}
+                </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-600">
-                Resume content <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                className={cn(
-                  "min-h-[140px] w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
-                  formErrors.resume &&
-                    "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
-                )}
-                placeholder="Paste your resume or upload a PDF/DOC/DOCX file."
-                value={form.resume}
-                onChange={(event) => updateForm("resume", event.target.value)}
-              />
-              {formErrors.resume && (
-                <p className="text-xs text-red-600">{formErrors.resume}</p>
-              )}
-            </div>
-          </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-600">
+                    Resume content <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    className={cn(
+                      "min-h-[140px] w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
+                      formErrors.resume &&
+                        "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
+                    )}
+                    placeholder="Paste your resume or upload a PDF/DOC/DOCX file."
+                    value={form.resume}
+                    onChange={(event) => updateForm("resume", event.target.value)}
+                  />
+                  {formErrors.resume && (
+                    <p className="text-xs text-red-600">{formErrors.resume}</p>
+                  )}
+                </div>
+              </div>
 
-          <div
-            className="flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500"
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              handleDrop(event.dataTransfer.files);
-            }}
-          >
-            <UploadCloud className="h-8 w-8 text-slate-400" />
-            <p className="text-sm">
-              Drag and drop a PDF/DOC/DOCX or{" "}
-              <button
-                type="button"
-                className="font-semibold text-slate-900 underline"
-                onClick={() => fileInputRef.current?.click()}
+              <div
+                className="flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed border-slate-200 bg-slate-50 p-6 text-center text-slate-500"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  handleDrop(event.dataTransfer.files);
+                }}
               >
-                browse files
-              </button>
-            </p>
-            <p className="text-xs text-slate-400">
-              {isUploading
-                ? "Parsing resume..."
-                : "Only the first file will be processed."}
-            </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.doc,.docx"
-              className="hidden"
-              onChange={(event) => handleDrop(event.target.files)}
-            />
-          </div>
+                <UploadCloud className="h-8 w-8 text-slate-400" />
+                <p className="text-sm">
+                  Drag and drop a PDF/DOC/DOCX or{" "}
+                  <button
+                    type="button"
+                    className="font-semibold text-slate-900 underline"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    browse files
+                  </button>
+                </p>
+                <p className="text-xs text-slate-400">
+                  {isUploading
+                    ? "Parsing resume..."
+                    : "Only the first file will be processed."}
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  className="hidden"
+                  onChange={(event) => handleDrop(event.target.files)}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-600">
+                  Job description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  className={cn(
+                    "min-h-[160px] w-full rounded-md border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20",
+                    formErrors.jd &&
+                      "border-red-500 focus-visible:ring-red-500 focus-visible:ring-2"
+                  )}
+                  placeholder="Paste the key responsibilities, required skills, etc."
+                  value={form.jd}
+                  onChange={(event) => updateForm("jd", event.target.value)}
+                />
+                {formErrors.jd && (
+                  <p className="text-xs text-red-600">{formErrors.jd}</p>
+                )}
+              </div>
+
+              {baseResumeLoading ? (
+                <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading your base resume…
+                </div>
+              ) : hasBaseResume ? (
+                <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-4">
+                  <FileText className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+                  <div className="flex-1 text-sm text-slate-600">
+                    <p className="font-medium text-slate-800">
+                      Scanning against your base resume
+                    </p>
+                    <p className="mt-0.5 text-slate-500">
+                      This job description is compared to the base resume saved in your
+                      profile.{" "}
+                      <button
+                        type="button"
+                        className="font-semibold text-slate-900 underline"
+                        onClick={() => router.push("/scan?section=base-resume")}
+                      >
+                        Edit base resume
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+                  <AlertCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+                  <div className="flex-1 text-sm text-amber-800">
+                    <p className="font-medium">No base resume yet</p>
+                    <p className="mt-0.5">
+                      Set up your base resume first — every scan is tailored from it.
+                    </p>
+                    <Button
+                      size="sm"
+                      className="mt-3 rounded-md"
+                      onClick={() => router.push("/scan?section=base-resume")}
+                    >
+                      Set up base resume
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-3">
             <Button

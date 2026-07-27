@@ -261,6 +261,187 @@ const extractProfileWithAI = async (resumeText = "") => {
   return sanitizeProfile(JSON.parse(jsonBlock));
 };
 
+const ensureStringArray = (value) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => ensureString(item)).filter(Boolean);
+  }
+  const single = ensureString(value);
+  return single ? [single] : [];
+};
+
+// Extract the FULL structured resume (not just contact fields) so it can serve
+// as the user's editable base resume. Grounded strictly in the resume text —
+// never invents roles, degrees, skills, or languages.
+const extractBaseResumeWithAI = async (resumeText = "") => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set.");
+  }
+
+  const schema = {
+    candidateName: "string",
+    designation: "string",
+    experienceYears: "string",
+    contact: {
+      email: "string",
+      phone: "string",
+      location: "string",
+      links: [{ label: "string", url: "string" }],
+    },
+    summary: "string",
+    skills: ["Frontend: React, TypeScript", "Tools: Git, Figma"],
+    experience: [
+      {
+        designation: "string",
+        company: "string",
+        location: "string",
+        duration: "string",
+        responsibilities: ["string"],
+      },
+    ],
+    projects: [{ name: "string", link: "string", responsibilities: ["string"] }],
+    education: [
+      {
+        qualification: "string",
+        institution: "string",
+        location: "string",
+        duration: "string",
+        details: ["string"],
+      },
+    ],
+    certifications: ["string"],
+    languages: ["string"],
+    additionalSections: [{ title: "string", items: ["string"] }],
+  };
+
+  const prompt = [
+    "Extract the candidate's resume into structured JSON so it can be edited later.",
+    "",
+    "Rules:",
+    "1) Use ONLY facts explicitly present in the resume. Never invent or infer values.",
+    "2) Return empty strings/arrays for absent sections. Omit nothing from the schema keys.",
+    "3) candidateName is the person's name. designation is their current/most-recent job title.",
+    "4) experienceYears is total professional experience as a whole-number string, or empty if unknown.",
+    "5) contact.location is the candidate's own city/country, not an employer location.",
+    "6) contact.links: every profile/portfolio URL in the resume, each with a short label (e.g. LinkedIn, GitHub, Portfolio). Preserve exact URLs, adding https:// only if the resume omits it.",
+    "7) skills: group into 3-6 'CategoryName: item, item' strings using the candidate's real skills, where CategoryName is a real, distinct category you choose (e.g. Frontend, Cloud, Tools) — never the literal word 'Category', and never repeat a category name. Do not fabricate.",
+    "8) experience.responsibilities: the bullet points exactly as written (cleaned of leading dashes/bullets).",
+    "9) languages: spoken/written human languages only, ONE per array item, exactly as listed. If the resume lists none, return an empty array.",
+    "10) additionalSections: any resume section that is NOT summary/skills/experience/projects/education/certifications/languages (e.g. Awards, Publications, Volunteering, Interests). Use the resume's own heading as title.",
+    "",
+    "Return compact JSON only with this schema:",
+    JSON.stringify(schema),
+    "",
+    "Resume text:",
+    resumeText.slice(0, 16000),
+  ].join("\n");
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      temperature: 0,
+      max_tokens: 3000,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You extract resume data with high precision. Return valid compact JSON only. Never fabricate facts not present in the resume.",
+        },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("OpenAI returned empty resume extraction.");
+  }
+
+  const jsonBlock = extractFirstJsonObject(content);
+  if (!jsonBlock) {
+    throw new Error("OpenAI returned non-JSON resume extraction.");
+  }
+
+  return sanitizeBaseResume(JSON.parse(jsonBlock));
+};
+
+const sanitizeBaseResume = (data = {}) => {
+  const contact = data.contact || {};
+  const links = Array.isArray(contact.links) ? contact.links : [];
+  return {
+    candidateName: restoreNameSpacing(data.candidateName),
+    designation: ensureString(data.designation),
+    experienceYears: normalizeExperienceYears(
+      data.experienceYears ?? data.experience_years
+    ),
+    contact: {
+      email: ensureString(contact.email),
+      phone: ensureString(contact.phone),
+      location: ensureString(contact.location),
+      links: links
+        .map((link) => ({
+          label: ensureString(link?.label),
+          url: normalizeProfileUrl(link?.url),
+        }))
+        .filter((link) => link.url),
+    },
+    summary: ensureString(data.summary),
+    skills: ensureStringArray(data.skills),
+    experience: (Array.isArray(data.experience) ? data.experience : [])
+      .map((entry) => ({
+        designation: ensureString(entry?.designation),
+        company: ensureString(entry?.company),
+        location: ensureString(entry?.location),
+        duration: ensureString(entry?.duration),
+        responsibilities: ensureStringArray(entry?.responsibilities),
+      }))
+      .filter(
+        (entry) =>
+          entry.designation ||
+          entry.company ||
+          entry.responsibilities.length
+      ),
+    projects: (Array.isArray(data.projects) ? data.projects : [])
+      .map((entry) => ({
+        name: ensureString(entry?.name),
+        link: normalizeProfileUrl(entry?.link),
+        responsibilities: ensureStringArray(entry?.responsibilities),
+      }))
+      .filter((entry) => entry.name || entry.responsibilities.length),
+    education: (Array.isArray(data.education) ? data.education : [])
+      .map((entry) => ({
+        qualification: ensureString(entry?.qualification),
+        institution: ensureString(entry?.institution),
+        location: ensureString(entry?.location),
+        duration: ensureString(entry?.duration),
+        details: ensureStringArray(entry?.details),
+      }))
+      .filter((entry) => entry.qualification || entry.institution),
+    certifications: ensureStringArray(data.certifications),
+    languages: ensureStringArray(data.languages),
+    additionalSections: (Array.isArray(data.additionalSections)
+      ? data.additionalSections
+      : [])
+      .map((section) => ({
+        title: ensureString(section?.title),
+        items: ensureStringArray(section?.items),
+      }))
+      .filter((section) => section.title && section.items.length),
+  };
+};
+
 // pdf-parse's default page renderer concatenates adjacent text items with no
 // separator. Many PDFs encode each word (or glyph run) as a separate item with
 // no trailing space and rely on positioning for spacing, so the default output
@@ -439,6 +620,7 @@ export async function POST(req) {
     const formData = await req.formData();
     const file = formData.get("file");
     const shouldExtractProfile = formData.get("extractProfile") === "true";
+    const shouldExtractBaseResume = formData.get("extractBaseResume") === "true";
 
     if (!file) {
       return NextResponse.json({
@@ -476,6 +658,11 @@ export async function POST(req) {
         success: false,
         message: "We could not extract any readable text from this file.",
       });
+    }
+
+    if (shouldExtractBaseResume) {
+      const baseResume = await extractBaseResumeWithAI(cleaned);
+      return NextResponse.json({ success: true, message: cleaned, baseResume });
     }
 
     if (!shouldExtractProfile) {

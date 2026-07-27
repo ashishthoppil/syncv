@@ -13,15 +13,18 @@ import { ScanSection } from "@/components/dashboard/scan-section";
 import { CreateCvSection } from "@/components/dashboard/create-cv-section";
 import { JobTrackerSection } from "@/components/dashboard/job-tracker-section";
 import { SettingsSection } from "@/components/dashboard/settings-section";
-import { ProfileSection } from "@/components/dashboard/profile-section";
+import { BaseResumeSection } from "@/components/dashboard/base-resume-section";
 import { Loader2, LogOut, LayoutDashboard } from "lucide-react";
 import { toast } from "react-toastify";
 import { Logo } from "@/components/navbar/logo";
 
+// "create-cv" and legacy "profile" are kept in the map so their routes still
+// resolve, but only the entries in DASHBOARD_SECTIONS appear in the sidebar.
 const sectionMap = {
   scan: ScanSection,
   "create-cv": CreateCvSection,
-  profile: ProfileSection,
+  "base-resume": BaseResumeSection,
+  profile: BaseResumeSection,
   "job-tracker": JobTrackerSection,
   settings: SettingsSection,
 };
@@ -29,7 +32,8 @@ const sectionMap = {
 const sectionLabels = {
   scan: "Scan",
   "create-cv": "Create CV from Scratch",
-  profile: "Profile",
+  "base-resume": "Base Resume",
+  profile: "Base Resume",
   "job-tracker": "Job Tracker",
   settings: "Settings",
 };
@@ -54,6 +58,10 @@ const DashboardPageContent = () => {
     weeklyScanLimit: 0,
     scansUsedThisWeek: 0,
     scansRemainingThisWeek: 0,
+    freeTrialLimit: 0,
+    freeTrialUsed: 0,
+    freeTrialRemaining: 0,
+    canScan: false,
   });
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const router = useRouter();
@@ -79,6 +87,10 @@ const DashboardPageContent = () => {
           weeklyScanLimit: Number(subscriptionData.weeklyScanLimit || 0),
           scansUsedThisWeek: Number(subscriptionData.scansUsedThisWeek || 0),
           scansRemainingThisWeek: Number(subscriptionData.scansRemainingThisWeek || 0),
+          freeTrialLimit: Number(subscriptionData.freeTrialLimit || 0),
+          freeTrialUsed: Number(subscriptionData.freeTrialUsed || 0),
+          freeTrialRemaining: Number(subscriptionData.freeTrialRemaining || 0),
+          canScan: Boolean(subscriptionData.canScan),
         });
       } else if (!silent) {
         setSubscription({
@@ -91,6 +103,10 @@ const DashboardPageContent = () => {
           weeklyScanLimit: 0,
           scansUsedThisWeek: 0,
           scansRemainingThisWeek: 0,
+          freeTrialLimit: 0,
+          freeTrialUsed: 0,
+          freeTrialRemaining: 0,
+          canScan: false,
         });
       }
     } catch (error) {
@@ -107,6 +123,10 @@ const DashboardPageContent = () => {
           weeklyScanLimit: 0,
           scansUsedThisWeek: 0,
           scansRemainingThisWeek: 0,
+          freeTrialLimit: 0,
+          freeTrialUsed: 0,
+          freeTrialRemaining: 0,
+          canScan: false,
         });
       }
     } finally {
@@ -169,7 +189,9 @@ const DashboardPageContent = () => {
   };
 
   const renderSection = () => {
-    const subscriptionLocked = subscriptionLoading || !subscription.hasActivePlan;
+    // Free-trial users can scan until their allowance is exhausted; paid users
+    // until their plan lapses. Only lock once neither path grants access.
+    const subscriptionLocked = subscriptionLoading || !subscription.canScan;
 
     if (activeSection === "scan") {
       return (
@@ -184,8 +206,8 @@ const DashboardPageContent = () => {
     if (activeSection === "create-cv") {
       return <CreateCvSection />;
     }
-    if (activeSection === "profile") {
-      return <ProfileSection user={user} />;
+    if (activeSection === "base-resume" || activeSection === "profile") {
+      return <BaseResumeSection user={user} />;
     }
     if (activeSection === "job-tracker") {
       return <JobTrackerSection subscriptionLocked={subscriptionLocked || !subscription.allowsJobTracker} />;
@@ -220,10 +242,15 @@ const DashboardPageContent = () => {
   const visibleSections = DASHBOARD_SECTIONS.filter(
     (section) => section.id !== "job-tracker" || subscription.allowsJobTracker
   );
-  const scansRemaining = Number(subscription.scansRemainingThisWeek || 0);
+  // Paid users see their weekly balance; free-trial users see trial scans left.
+  const scansRemaining = subscription.hasActivePlan
+    ? Number(subscription.scansRemainingThisWeek || 0)
+    : Number(subscription.freeTrialRemaining || 0);
   const scansRemainingLabel = subscriptionLoading
     ? "Loading scans"
-    : `${scansRemaining} scan${scansRemaining === 1 ? "" : "s"} left`;
+    : subscription.hasActivePlan
+    ? `${scansRemaining} scan${scansRemaining === 1 ? "" : "s"} left`
+    : `${scansRemaining} free scan${scansRemaining === 1 ? "" : "s"} left`;
 
   return (
     <div className="flex min-h-screen bg-slate-50">
