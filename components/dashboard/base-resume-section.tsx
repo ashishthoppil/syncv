@@ -1,23 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { toast } from "react-toastify";
 import {
+  ArrowLeft,
+  Copy,
   Download,
   Eye,
   FileText,
   Loader2,
   Minus,
+  MoreVertical,
   Palette,
   Plus,
   SaveIcon,
+  Star,
+  Trash2,
   UploadCloud,
   UserCircle2Icon,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabaseClient";
 import {
   RESUME_FONT_OPTIONS,
   resolveResumeTemplateTheme,
@@ -47,101 +51,102 @@ import {
   type BaseResumeDraft,
   type ExtractedBaseResume,
 } from "@/components/dashboard/resume-form";
-import { saveBaseResume, type StoredBaseResume } from "@/lib/base-resume";
+import {
+  createBaseResume,
+  deleteBaseResume,
+  duplicateBaseResume,
+  listBaseResumes,
+  setDefaultBaseResume,
+  updateBaseResume,
+  MAX_BASE_RESUMES,
+  type BaseResumeRecord,
+} from "@/lib/base-resume";
 
-type BaseResumeSectionProps = {
-  user: {
-    id?: string;
-    email?: string;
-    user_metadata?: Record<string, unknown>;
-  } | null;
+type SectionUser = {
+  id?: string;
+  email?: string;
+  user_metadata?: Record<string, unknown>;
+} | null;
+
+// What the editor is bound to. `id: null` means a new, unsaved resume.
+type EditorInitial = {
+  id: string | null;
+  name: string;
+  draft: BaseResumeDraft;
+  template: ResumeTemplateId;
+  overrides?: ResumeTemplateThemeOverrides;
 };
 
-export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
-  const [draft, setDraft] = useState<BaseResumeDraft>(emptyBaseResumeDraft());
-  const [selectedTemplate, setSelectedTemplate] =
-    useState<ResumeTemplateId>("bold-modern");
+const buildPreviewHtml = (rec: {
+  draft: BaseResumeDraft;
+  template: ResumeTemplateId;
+  overrides?: ResumeTemplateThemeOverrides;
+}) =>
+  renderResumeFromData({
+    data: draftToResumeData(rec.draft),
+    templateId: rec.template,
+    candidateName: rec.draft.candidateName.trim() || "Your Name",
+    designation: rec.draft.designation,
+    overrides: rec.overrides,
+  });
+
+const downloadPdfFromHtml = async (html: string, fileBase: string) => {
+  const response = await fetch("/api/generate-pdf", {
+    method: "POST",
+    body: JSON.stringify({ html, type: "tailored-cv" }),
+  });
+  if (!response.ok) throw new Error("Failed to generate PDF.");
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = `${toSlugPart(fileBase || "base")}-resume.pdf`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+};
+
+// ---------------------------------------------------------------------------
+// Editor — the full single-resume editing surface (content + design + preview).
+// ---------------------------------------------------------------------------
+
+const BaseResumeEditor = ({
+  user,
+  initial,
+  onBack,
+  onSaved,
+}: {
+  user: SectionUser;
+  initial: EditorInitial;
+  onBack: () => void;
+  onSaved: () => void;
+}) => {
+  const [recordId, setRecordId] = useState<string | null>(initial.id);
+  const [name, setName] = useState(initial.name);
+  const [draft, setDraft] = useState<BaseResumeDraft>(initial.draft);
+  const [selectedTemplate, setSelectedTemplate] = useState<ResumeTemplateId>(
+    initial.template
+  );
   const [templateOverrides, setTemplateOverrides] = useState<
     Record<string, ResumeTemplateThemeOverrides>
-  >({});
+  >(initial.overrides ? { [initial.template]: initial.overrides } : {});
   const [editorTab, setEditorTab] = useState<"content" | "design">("content");
   const [previewZoom, setPreviewZoom] = useState(1);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [parsingResume, setParsingResume] = useState(false);
 
   const overrides = templateOverrides[selectedTemplate];
   const theme = resolveResumeTemplateTheme(selectedTemplate, overrides);
-  const displayName = draft.candidateName.trim() || "Your Name";
 
   const update = (patch: Partial<BaseResumeDraft>) =>
     setDraft((current) => ({ ...current, ...patch }));
 
-  // Load the saved base resume (or fall back to contact-level profile fields).
-  useEffect(() => {
-    const load = async () => {
-      if (!user?.id) {
-        setLoading(false);
-        return;
-      }
-      const { data } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-
-      const stored = data?.base_resume as StoredBaseResume | null;
-      if (stored?.draft) {
-        setDraft(stored.draft);
-        if (stored.template) setSelectedTemplate(stored.template);
-        if (stored.overrides)
-          setTemplateOverrides({ [stored.template || "bold-modern"]: stored.overrides });
-      } else if (data) {
-        // No structured base resume yet — seed contact from profile columns.
-        setDraft((current) => ({
-          ...current,
-          candidateName: data.full_name || "",
-          designation: data.headline || "",
-          email: data.email || user.email || "",
-          phone: data.phone || "",
-          location: [data.city, data.country].filter(Boolean).join(", "),
-          experienceYears:
-            data.experience_years !== null && data.experience_years !== undefined
-              ? String(data.experience_years)
-              : "",
-          links: {
-            ...current.links,
-            linkedin: data.linkedin || "",
-            portfolio: data.portfolio || "",
-            behance: data.behance || "",
-            github: data.github || "",
-            other: data.other_link || "",
-          },
-        }));
-      } else if (user.email) {
-        setDraft((current) => ({ ...current, email: user.email || "" }));
-      }
-      setLoading(false);
-    };
-    load().catch((error) => {
-      console.error("Failed to load base resume:", error);
-      setLoading(false);
-    });
-  }, [user?.id, user?.email]);
-
-  const data = useMemo(() => draftToResumeData(draft), [draft]);
   const previewHtml = useMemo(
-    () =>
-      renderResumeFromData({
-        data,
-        templateId: selectedTemplate,
-        candidateName: displayName,
-        designation: draft.designation,
-        overrides,
-      }),
-    [data, selectedTemplate, displayName, draft.designation, overrides]
+    () => buildPreviewHtml({ draft, template: selectedTemplate, overrides }),
+    [draft, selectedTemplate, overrides]
   );
 
   const updateOverrides = (patch: ResumeTemplateThemeOverrides) =>
@@ -184,18 +189,25 @@ export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
   };
 
   const persist = async () => {
-    if (!user?.id) {
-      toast.error("No user session. Please log in again.");
-      return;
-    }
     setSaving(true);
     try {
-      await saveBaseResume(user, draft, selectedTemplate, overrides);
+      const input = {
+        name: name.trim() || "Untitled resume",
+        draft,
+        template: selectedTemplate,
+        overrides,
+      };
+      const record = recordId
+        ? await updateBaseResume(user, recordId, input)
+        : await createBaseResume(user, input);
+      setRecordId(record.id);
+      if (!name.trim()) setName(record.name);
       toast.success("Base resume saved.");
+      onSaved();
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Failed to save base resume.";
-      toast.error(message);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to save base resume."
+      );
     } finally {
       setSaving(false);
     }
@@ -204,20 +216,7 @@ export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
   const downloadPdf = async () => {
     setDownloading(true);
     try {
-      const response = await fetch("/api/generate-pdf", {
-        method: "POST",
-        body: JSON.stringify({ html: previewHtml, type: "tailored-cv" }),
-      });
-      if (!response.ok) throw new Error("Failed to generate PDF.");
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = `${toSlugPart(draft.candidateName || "base")}-resume.pdf`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+      await downloadPdfFromHtml(previewHtml, draft.candidateName || name);
     } catch (error) {
       console.error(error);
       toast.error("Unable to download PDF right now.");
@@ -226,27 +225,24 @@ export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-      </div>
-    );
-  }
-
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
-            <UserCircle2Icon className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">Base Resume</h1>
-            <p className="text-sm text-slate-500">
-              This is the master resume every scan is tailored from. Edit any field and save.
-            </p>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 rounded-md"
+            onClick={onBack}
+          >
+            <ArrowLeft className="h-4 w-4" /> Base resumes
+          </Button>
+          <input
+            className="w-56 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Name this resume"
+          />
         </div>
         <div className="flex flex-wrap gap-2">
           <label
@@ -260,7 +256,7 @@ export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
             ) : (
               <UploadCloud className="h-4 w-4" />
             )}
-            {parsingResume ? "Reading…" : "Re-upload"}
+            {parsingResume ? "Reading…" : "Replace from file"}
             <input
               type="file"
               className="hidden"
@@ -272,7 +268,12 @@ export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
           <Button variant="outline" className="rounded-md" onClick={() => setPreviewOpen(true)}>
             <Eye className="mr-2 h-4 w-4" /> Preview
           </Button>
-          <Button variant="outline" className="rounded-md" onClick={downloadPdf} disabled={downloading}>
+          <Button
+            variant="outline"
+            className="rounded-md"
+            onClick={downloadPdf}
+            disabled={downloading}
+          >
             {downloading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -292,7 +293,7 @@ export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* ---- Left: editor ---- */}
+        {/* Left: editor */}
         <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
           <div className="flex shrink-0 gap-1 bg-white px-4 pt-3">
             <button
@@ -475,7 +476,7 @@ export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
           </div>
         </div>
 
-        {/* ---- Right: live preview ---- */}
+        {/* Right: live preview */}
         <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-100 lg:sticky lg:top-4 lg:self-start">
           <div className="flex shrink-0 items-center justify-between px-4 py-2.5">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -542,6 +543,397 @@ export const BaseResumeSection = ({ user }: BaseResumeSectionProps) => {
           </div>
         </div>
       ) : null}
+    </section>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Manager — the table of base resumes with create / duplicate / default / delete.
+// ---------------------------------------------------------------------------
+
+const formatDate = (iso: string) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+};
+
+export const BaseResumeSection = ({ user }: { user: SectionUser }) => {
+  const [records, setRecords] = useState<BaseResumeRecord[] | null>(null);
+  const [editor, setEditor] = useState<EditorInitial | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  // Fixed-position coords for the open row menu so it isn't clipped by the
+  // table's overflow container.
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+
+  const openRowMenu = (id: string, event: React.MouseEvent<HTMLButtonElement>) => {
+    if (menuId === id) {
+      setMenuId(null);
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+    setMenuId(id);
+  };
+
+  const reload = useCallback(async () => {
+    if (!user?.id) {
+      setRecords([]);
+      return;
+    }
+    try {
+      setRecords(await listBaseResumes(user.id));
+    } catch (error) {
+      console.error("Failed to load base resumes:", error);
+      toast.error("Could not load your base resumes.");
+      setRecords([]);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const atLimit = (records?.length || 0) >= MAX_BASE_RESUMES;
+
+  const startManual = () => {
+    setAddMenuOpen(false);
+    const draft = emptyBaseResumeDraft();
+    if (user?.email) draft.email = user.email;
+    setEditor({ id: null, name: "", draft, template: "bold-modern" });
+  };
+
+  const startUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setAddMenuOpen(false);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("extractBaseResume", "true");
+    setParsing(true);
+    try {
+      const response = await fetch("/api/scan", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!data.success || !data.baseResume) {
+        toast.error(data.message || "We couldn't read that resume.");
+        return;
+      }
+      const draft = extractedToDraft(data.baseResume as ExtractedBaseResume);
+      if (!draft.email && user?.email) draft.email = user.email;
+      const fileBase = file.name.replace(/\.[^.]+$/, "");
+      setEditor({ id: null, name: fileBase, draft, template: "bold-modern" });
+    } catch (error) {
+      console.error(error);
+      toast.error("We couldn't read that resume.");
+    } finally {
+      setParsing(false);
+      event.target.value = "";
+    }
+  };
+
+  const openEdit = (rec: BaseResumeRecord) =>
+    setEditor({
+      id: rec.id,
+      name: rec.name,
+      draft: rec.draft,
+      template: rec.template,
+      overrides: rec.overrides,
+    });
+
+  const handleDuplicate = async (rec: BaseResumeRecord) => {
+    if (atLimit) {
+      toast.info(`You can have at most ${MAX_BASE_RESUMES} base resumes.`);
+      return;
+    }
+    setBusyId(rec.id);
+    setMenuId(null);
+    try {
+      const copy = await duplicateBaseResume(user, rec);
+      await reload();
+      openEdit(copy);
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Could not duplicate.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleSetDefault = async (rec: BaseResumeRecord) => {
+    if (!user?.id) return;
+    setBusyId(rec.id);
+    setMenuId(null);
+    try {
+      await setDefaultBaseResume(user.id, rec.id);
+      await reload();
+      toast.success(`“${rec.name}” is now your default.`);
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not set default.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (rec: BaseResumeRecord) => {
+    if (!user?.id) return;
+    if (!window.confirm(`Delete “${rec.name}”? This can't be undone.`)) return;
+    setBusyId(rec.id);
+    setMenuId(null);
+    try {
+      await deleteBaseResume(user.id, rec.id);
+      await reload();
+      toast.success("Base resume deleted.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not delete base resume.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleDownload = async (rec: BaseResumeRecord) => {
+    setBusyId(rec.id);
+    setMenuId(null);
+    try {
+      await downloadPdfFromHtml(
+        buildPreviewHtml(rec),
+        rec.draft.candidateName || rec.name
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error("Unable to download PDF right now.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (editor) {
+    return (
+      <BaseResumeEditor
+        user={user}
+        initial={editor}
+        onBack={() => {
+          setEditor(null);
+          reload();
+        }}
+        onSaved={reload}
+      />
+    );
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+            <UserCircle2Icon className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="text-xl font-semibold text-slate-900">Base Resumes</h1>
+            <p className="text-sm text-slate-500">
+              Keep up to {MAX_BASE_RESUMES} master resumes. Scans are tailored from the one
+              you pick. Your default is used unless you choose another.
+            </p>
+          </div>
+        </div>
+
+        <div className="relative">
+          <Button
+            className="rounded-md"
+            onClick={() => setAddMenuOpen((open) => !open)}
+            disabled={atLimit || parsing}
+            title={atLimit ? `Limit of ${MAX_BASE_RESUMES} reached` : undefined}
+          >
+            {parsing ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="mr-2 h-4 w-4" />
+            )}
+            Add base resume
+          </Button>
+          {addMenuOpen && !atLimit ? (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setAddMenuOpen(false)}
+              />
+              <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <UploadCloud className="h-4 w-4 text-slate-500" />
+                  <span>
+                    Upload a resume
+                    <span className="block text-[11px] text-slate-400">
+                      Extract from PDF / DOC
+                    </span>
+                  </span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx"
+                    onChange={startUpload}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  onClick={startManual}
+                >
+                  <FileText className="h-4 w-4 text-slate-500" />
+                  <span>
+                    Start from scratch
+                    <span className="block text-[11px] text-slate-400">
+                      Fill in the details
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      {atLimit ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          You&apos;ve reached the limit of {MAX_BASE_RESUMES} base resumes. Delete one to add
+          another.
+        </p>
+      ) : null}
+
+      {records === null ? (
+        <div className="flex min-h-[30vh] items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+        </div>
+      ) : records.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/60 p-10 text-center">
+          <p className="text-sm font-medium text-slate-700">No base resumes yet</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Add your first one — upload a file or build it from scratch.
+          </p>
+          <Button className="mt-4 rounded-md" onClick={startManual}>
+            <Plus className="mr-2 h-4 w-4" /> Create base resume
+          </Button>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-100 bg-slate-50/60 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="hidden px-4 py-3 sm:table-cell">Owner</th>
+                  <th className="hidden px-4 py-3 md:table-cell">Updated</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {records.map((rec) => (
+                  <tr key={rec.id} className="group hover:bg-slate-50/60">
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(rec)}
+                        className="flex items-center gap-2 text-left font-medium text-slate-900 hover:underline"
+                      >
+                        {rec.name}
+                        {rec.isDefault ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            <Star className="h-3 w-3 fill-emerald-500 text-emerald-500" />
+                            Default
+                          </span>
+                        ) : null}
+                      </button>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {rec.draft.designation || "No title"}
+                      </p>
+                    </td>
+                    <td className="hidden px-4 py-3 text-slate-600 sm:table-cell">
+                      {rec.draft.candidateName || "—"}
+                    </td>
+                    <td className="hidden px-4 py-3 text-slate-500 md:table-cell">
+                      {formatDate(rec.updatedAt)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="rounded-md"
+                          onClick={() => openEdit(rec)}
+                        >
+                          Edit
+                        </Button>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            aria-label="More actions"
+                            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100"
+                            onClick={(event) => openRowMenu(rec.id, event)}
+                            disabled={busyId === rec.id}
+                          >
+                            {busyId === rec.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <MoreVertical className="h-4 w-4" />
+                            )}
+                          </button>
+                          {menuId === rec.id && menuPos ? (
+                            <>
+                              <div
+                                className="fixed inset-0 z-40"
+                                onClick={() => setMenuId(null)}
+                              />
+                              <div
+                                className="fixed z-50 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl"
+                                style={{ top: menuPos.top, right: menuPos.right }}
+                              >
+                                {!rec.isDefault ? (
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                    onClick={() => handleSetDefault(rec)}
+                                  >
+                                    <Star className="h-4 w-4 text-slate-500" /> Set as default
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                  onClick={() => handleDuplicate(rec)}
+                                  disabled={atLimit}
+                                >
+                                  <Copy className="h-4 w-4 text-slate-500" /> Duplicate
+                                </button>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                                  onClick={() => handleDownload(rec)}
+                                >
+                                  <Download className="h-4 w-4 text-slate-500" /> Download
+                                </button>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50"
+                                  onClick={() => handleDelete(rec)}
+                                >
+                                  <Trash2 className="h-4 w-4" /> Delete
+                                </button>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

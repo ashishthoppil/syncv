@@ -5,6 +5,13 @@ import {
   getPlanForUser,
   getSupabaseAdminClient,
 } from "@/lib/server/subscriptions";
+import {
+  isHumanLanguageEntry,
+  isLanguageKeyword,
+  languageWordsIn,
+  languageNamesFromKeywords,
+  sharesLanguage,
+} from "@/lib/languages";
 
 const normalizeText = (value = "") =>
   value
@@ -418,47 +425,8 @@ const normalizeLanguageList = (value) => {
   return out;
 };
 
-// The LANGUAGES resume section means HUMAN languages. Sidebar templates often
-// reuse "Languages" as a SKILLS sub-heading for programming languages (HTML,
-// CSS, Python…), which the section parser can't tell apart structurally — so
-// gate every language entry on actually naming a human language.
-const HUMAN_LANGUAGES = new Set([
-  "english", "spanish", "french", "german", "italian", "portuguese", "dutch",
-  "russian", "polish", "ukrainian", "czech", "slovak", "romanian", "hungarian",
-  "bulgarian", "greek", "turkish", "arabic", "hebrew", "persian", "farsi",
-  "urdu", "hindi", "bengali", "punjabi", "gujarati", "marathi", "tamil",
-  "telugu", "kannada", "malayalam", "odia", "oriya", "assamese", "sinhala",
-  "sinhalese", "nepali", "chinese", "mandarin", "cantonese", "japanese",
-  "korean", "vietnamese", "thai", "indonesian", "malay", "tagalog", "filipino",
-  "swahili", "amharic", "yoruba", "igbo", "hausa", "zulu", "xhosa",
-  "afrikaans", "swedish", "norwegian", "danish", "finnish", "icelandic",
-  "estonian", "latvian", "lithuanian", "serbian", "croatian", "bosnian",
-  "slovenian", "macedonian", "albanian", "armenian", "georgian", "azerbaijani",
-  "kazakh", "uzbek", "mongolian", "burmese", "khmer", "lao", "pashto", "dari",
-  "kurdish", "somali", "tigrinya", "wolof", "twi", "luganda", "kinyarwanda",
-  "creole", "catalan", "basque", "galician", "welsh", "irish", "gaelic",
-  "maltese", "luxembourgish", "javanese", "sundanese", "cebuano", "hmong",
-  "quechua", "guarani", "haitian", "samoan", "tongan", "fijian", "maori",
-  "esperanto", "latin", "sanskrit", "yiddish", "bhojpuri", "maithili",
-  "konkani", "kashmiri", "sindhi", "dogri", "manipuri", "bodo", "santali",
-  "tulu", "rajasthani", "haryanvi", "chhattisgarhi", "magahi", "awadhi",
-]);
-const isHumanLanguageEntry = (entry = "") =>
-  entry
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, " ")
-    .split(/\s+/)
-    .some((word) => HUMAN_LANGUAGES.has(word));
-
-// The set of human-language words named in an entry (e.g. "English (Native)"
-// -> {"english"}). Used to ground model-emitted languages against the ones the
-// original resume actually listed, so a language is never fabricated.
-const languageWordsIn = (entry = "") =>
-  entry
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, " ")
-    .split(/\s+/)
-    .filter((word) => HUMAN_LANGUAGES.has(word));
+// Human-language vocabulary + helpers are shared with the keyword-picker UI so
+// language-fluency keywords are handled identically on both sides.
 
 // Rewritten summaries sometimes keep the original resume's role-title opener
 // AND add the requested one ("Front-End Developer with proven experience at
@@ -652,7 +620,23 @@ const normCompanyKey = (value) =>
 // factual baseline role survives (the model sometimes merges/drops roles that
 // share a title). Optimized bullets are matched back to their role by company.
 const reconcileExperienceObjects = (experience = [], baseline = []) => {
-  if (baseline.length < 2) return experience;
+  if (baseline.length < 2) {
+    // A single real role must still survive. Keep the model's rewritten role;
+    // only restore it from the factual baseline if the model dropped it entirely.
+    if (baseline.length === 1 && experience.length === 0) {
+      const only = baseline[0];
+      return [
+        {
+          designation: ensureString(only.designation),
+          company: ensureString(only.company),
+          location: ensureString(only.location),
+          duration: ensureString(only.duration),
+          responsibilities: ensureStringArray(only.bullets),
+        },
+      ];
+    }
+    return experience;
+  }
   const present = (company) => {
     const key = normCompanyKey(company);
     if (!key) return false;
@@ -682,6 +666,25 @@ const reconcileExperienceObjects = (experience = [], baseline = []) => {
     };
   });
 };
+
+// Safety net: a role must never be hollowed out. If the model kept a role but
+// stripped its bullets (e.g. because it read as off-target for the JD), restore
+// that role's original bullets from the factual baseline. Roles are matched by
+// company; the goal is to modify/re-angle experience, never to gut it.
+const backfillEmptyRoleBullets = (experience = [], baseline = []) =>
+  (Array.isArray(experience) ? experience : []).map((entry) => {
+    if (ensureStringArray(entry?.responsibilities).length) return entry;
+    const key = normCompanyKey(entry?.company);
+    if (!key) return entry;
+    const match = baseline.find((b) => {
+      const bk = normCompanyKey(b.company);
+      return bk && (bk.includes(key) || key.includes(bk));
+    });
+    const baselineBullets = ensureStringArray(match?.bullets);
+    return baselineBullets.length
+      ? { ...entry, responsibilities: baselineBullets }
+      : entry;
+  });
 
 // Backstop: drop "experience" entries that are actually education, skills, or
 // other non-job content the model may have mis-placed. Identity checks against
@@ -1652,6 +1655,10 @@ export async function POST(req) {
       resumeRoleFamily = "",
       targetRoleFamily = "",
       includeCoverLetter = true,
+      // When true, the user has explicitly chosen (in the pre-optimization
+      // modal) which missing keywords they can genuinely back up. Only those
+      // are integrated — everything else stays out to preserve no-fabrication.
+      keywordSelectionApplied = false,
     } = await req.json();
 
     if (!resume || !jd) {
@@ -1671,8 +1678,8 @@ export async function POST(req) {
         }
       } else {
         // Free-trial users may optimize the result of a scan they already spent
-        // a free trial on, but never get a cover letter. Once the trial is
-        // fully exhausted with no active plan, block and ask them to subscribe.
+        // a free trial on — including a cover letter, so the trial covers every
+        // feature. Once the trial is fully exhausted, ask them to subscribe.
         const freeTrialUsed = await countFreeTrialScans(supabase, userId);
         if (freeTrialUsed < 1 || freeTrialUsed > FREE_TRIAL_SCAN_LIMIT) {
           return NextResponse.json({
@@ -1680,15 +1687,14 @@ export async function POST(req) {
             message: "Please subscribe to a plan to optimize your resume.",
           });
         }
-        shouldGenerateCoverLetter = false;
       }
     }
 
     const safeMissing = Array.isArray(missingKeywords)
-      ? missingKeywords.filter(Boolean).slice(0, 25)
+      ? missingKeywords.filter(Boolean).slice(0, 50)
       : [];
     const safeSelectedMissing = Array.isArray(selectedMissingKeywords)
-      ? selectedMissingKeywords.filter(Boolean).slice(0, 25)
+      ? selectedMissingKeywords.filter(Boolean).slice(0, 50)
       : [];
     const hasExplicitCareerSelection = Array.isArray(selectedMissingKeywords);
     const selectedFromMissing = safeSelectedMissing.filter((keyword) =>
@@ -1712,11 +1718,25 @@ export async function POST(req) {
     const candidatePhone = extractCandidatePhone(resume);
     const sourceLinks = extractProfileLinksOnly(resume);
     const sourceContactLines = extractContactLines(resume);
-    const missingForCareerChange = careerChangeApproved
+    // The set of keywords the model is instructed to weave in. When the user
+    // has vouched for specific keywords in the pre-optimization modal, integrate
+    // ONLY those (may be empty). Otherwise fall back to the prior behavior.
+    const keywordsForIntegration = keywordSelectionApplied
+      ? selectedFromMissing
+      : careerChangeApproved
       ? hasExplicitCareerSelection
         ? selectedFromMissing
         : filterMissingByHandsOnEvidence(safeMissing, resume)
       : safeMissing;
+    // Language-fluency keywords never go to Skills or bullets — they belong in
+    // the LANGUAGES section, injected deterministically after the model pass.
+    // So keep them OUT of the set the model weaves into skills/experience.
+    const missingForCareerChange = keywordsForIntegration.filter(
+      (keyword) => !isLanguageKeyword(keyword)
+    );
+    const selectedLanguageNames = languageNamesFromKeywords(
+      keywordsForIntegration.filter((keyword) => isLanguageKeyword(keyword))
+    );
     const originalTitles = extractLikelyTitles(resume);
     const originalOrganizations = extractLikelyOrganizations(resume);
     const roleTransition =
@@ -1781,7 +1801,7 @@ export async function POST(req) {
         ? `1. summary (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). REWRITE means REPLACE: produce one cohesive paragraph with EXACTLY ONE role-title opening sentence — never keep the original summary's opening sentence and then add a second "Title with N years..." opener after it; fold the original's facts (employers, achievements) into the new sentences instead. Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
         : `1. summary (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
       "2. skills: An array of 3-6 strings (NEVER more than 6), each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Systems/EMR, Patient Care, Communication; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. NEVER use a 'Certifications' or 'Licenses' category in skills — certifications have their own dedicated field and must not be duplicated here. Include every matched keyword and every missing keyword that has evidence in the candidate's original resume — but FOLD them into these 3-6 broad categories rather than creating a separate category per keyword. Group several genuinely related skills under each category; do not emit many one-item categories. A concept or practice keyword (e.g. 'Distributed computing', 'Code review', 'Documentation') may sit as an item inside a fitting category (e.g. 'Concepts') or appear in an experience bullet — either keeps it in the resume; just never give it its own standalone category. List concrete, recognizable hard skills and tools. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player'); genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
-      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Provide 3-6 bullets per role, each starting with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
+      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. KEEP EVERY role from the work-history section — never drop, merge, or hollow out a role because it looks unrelated to the target job. When a role seems off-target, do NOT remove it: instead RE-ANGLE its bullets to foreground the responsibilities, transferable skills, tools, and outcomes most relevant to the target role and its keywords, while staying 100% truthful to what the candidate actually did. Every role must keep a substantive set of bullets (3-6), never be reduced to an empty or near-empty entry. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Each bullet starts with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
       hasProjectsSection
         ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Add keywords only where the project truly used them. Never drop a project to save space."
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
@@ -1940,6 +1960,14 @@ export async function POST(req) {
       dropNonJobExperience(resumeData.experience),
       resume
     );
+    // Never leave a surviving role without bullets — restore them from the
+    // original resume so experience is re-angled to the JD, not gutted.
+    if (factualExperienceBaseline.length) {
+      resumeData.experience = backfillEmptyRoleBullets(
+        resumeData.experience,
+        factualExperienceBaseline
+      );
+    }
 
     // Safety net: original resume had a projects section but the model dropped
     // it across the passes — re-inject the original projects verbatim.
@@ -1958,25 +1986,40 @@ export async function POST(req) {
       resumeData.projects = [];
     }
 
-    // Anti-fabrication for languages. The model is prone to inventing a
-    // languages section (or adding extra languages) that the candidate never
-    // listed — e.g. seeding "Hindi" for an India-based candidate. Mirror the
-    // projects guards: if the original resume has no languages section, output
-    // none; otherwise keep only languages grounded in the original list.
-    if (!hasLanguagesSection) {
-      resumeData.languages = [];
-    } else {
-      const baselineLanguageWords = new Set(
-        factualLanguagesBaseline.flatMap((entry) => languageWordsIn(entry))
-      );
-      resumeData.languages = resumeData.languages.filter((entry) =>
-        languageWordsIn(entry).some((word) => baselineLanguageWords.has(word))
-      );
-      // Safety net: original listed languages but the model dropped/merged them
-      // (or grounding filtered everything) — restore the factual baseline.
-      if (!resumeData.languages.length) {
-        resumeData.languages = factualLanguagesBaseline.slice();
-      }
+    // Languages. Two sources are legitimate: (1) languages already in the base
+    // resume, and (2) languages the user explicitly vouched for in the keyword
+    // picker (JD language requirements they confirmed they meet). Everything
+    // else the model may have invented is dropped (anti-fabrication, e.g.
+    // seeding "Hindi" for an India-based candidate). A LANGUAGES section is
+    // created when the user adds a language and none existed before.
+    {
+      const allowedLanguageWords = new Set([
+        ...factualLanguagesBaseline.flatMap((entry) => languageWordsIn(entry)),
+        ...selectedLanguageNames.flatMap((name) => languageWordsIn(name)),
+      ]);
+
+      // Start from the base resume's factual languages (preserved verbatim).
+      const finalLanguages = factualLanguagesBaseline.slice();
+
+      // Keep only model-emitted languages that are grounded (baseline or user-
+      // selected), and not already present.
+      resumeData.languages.forEach((entry) => {
+        const grounded = languageWordsIn(entry).some((word) =>
+          allowedLanguageWords.has(word)
+        );
+        if (grounded && !finalLanguages.some((existing) => sharesLanguage(existing, entry))) {
+          finalLanguages.push(entry);
+        }
+      });
+
+      // Add the user-vouched JD languages that aren't already listed.
+      selectedLanguageNames.forEach((name) => {
+        if (!finalLanguages.some((existing) => sharesLanguage(existing, name))) {
+          finalLanguages.push(name);
+        }
+      });
+
+      resumeData.languages = finalLanguages.filter(isHumanLanguageEntry);
     }
 
     // Additional sections (awards, publications, speaking, volunteering,
@@ -2040,10 +2083,14 @@ export async function POST(req) {
     // downloads. The object remains the source of truth.
     const optimizedResumeText = resumeObjectToText(resumeData);
 
-    const stillMissingKeywords = missingForCareerChange.filter(
+    // Coverage is reported against the FULL missing list (not just the
+    // integration target) so the UI can show everything that was left out —
+    // including keywords the user chose not to add.
+    const coverageKeywords = safeMissing.length ? safeMissing : missingForCareerChange;
+    const stillMissingKeywords = coverageKeywords.filter(
       (keyword) => !hasKeyword(optimizedResumeText, keyword)
     );
-    const incorporatedKeywords = missingForCareerChange.filter((keyword) =>
+    const incorporatedKeywords = coverageKeywords.filter((keyword) =>
       hasKeyword(optimizedResumeText, keyword)
     );
 

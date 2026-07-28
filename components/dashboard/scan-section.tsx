@@ -4,6 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { isLanguageKeyword } from "@/lib/languages";
+import {
+  listBaseResumes,
+  contactFromDraft,
+  type BaseResumeRecord,
+} from "@/lib/base-resume";
 import { toast } from "react-toastify";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
@@ -31,10 +37,14 @@ import {
   AlertCircleIcon,
   AlertTriangle,
   ArrowRight,
+  Check,
   CheckCircle2,
+  ChevronDown,
   Circle,
   Download,
   FileText,
+  Info,
+  Languages,
   Layers,
   Lightbulb,
   Loader2,
@@ -43,6 +53,8 @@ import {
   Plus,
   RefreshCcw,
   ScanLine,
+  ShieldCheck,
+  Star,
   TrendingUp,
   UploadCloud,
   UserPlus,
@@ -128,6 +140,24 @@ const initialFormState = {
   resume: "",
 };
 
+// The ATS score is a weighted composite. Only the first two components respond
+// to adding keywords; the rest are structural (they depend on the resume's
+// actual experience, titles, and quantified results), which is why a keyword
+// pass alone can't push the score to 100.
+const SCORE_COMPONENTS: {
+  key: keyof NonNullable<ScanSummary["scoreBreakdown"]>;
+  label: string;
+  weight: number;
+  keywordDriven?: boolean;
+}[] = [
+  { key: "keywordMatch", label: "Keyword match", weight: 40, keywordDriven: true },
+  { key: "skillsCoverage", label: "Skills coverage", weight: 15, keywordDriven: true },
+  { key: "experienceRelevance", label: "Experience relevance", weight: 15 },
+  { key: "titleMatch", label: "Title match", weight: 10 },
+  { key: "achievements", label: "Quantified achievements", weight: 10 },
+  { key: "sectionCompleteness", label: "Section completeness", weight: 10 },
+];
+
 type FormField = keyof typeof initialFormState;
 type FormErrors = Partial<Record<FormField, string>>;
 
@@ -187,7 +217,14 @@ export const ScanSection = ({
   // resume. `baseResumeLoading` guards the empty-state message until we know.
   const [hasBaseResume, setHasBaseResume] = useState(false);
   const [baseResumeLoading, setBaseResumeLoading] = useState(!guestTrial);
+  const [baseResumeList, setBaseResumeList] = useState<BaseResumeRecord[]>([]);
+  const [selectedBaseResumeId, setSelectedBaseResumeId] = useState<string>("");
+  // Ref mirror so the loader keeps the user's picked resume across refreshes.
+  const selectedBaseResumeIdRef = useRef<string>("");
   const [finalScore, setFinalScore] = useState<number | null>(null);
+  const [finalScoreBreakdown, setFinalScoreBreakdown] =
+    useState<ScanSummary["scoreBreakdown"] | null>(null);
+  const [scoreBreakdownOpen, setScoreBreakdownOpen] = useState(false);
   const [isComputingFinalScore, setIsComputingFinalScore] = useState(false);
   const [editableResumeText, setEditableResumeText] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
@@ -203,6 +240,9 @@ export const ScanSection = ({
   const [showCareerWarning, setShowCareerWarning] = useState(false);
   const [showCareerKeywordPicker, setShowCareerKeywordPicker] = useState(false);
   const [careerSelectedKeywords, setCareerSelectedKeywords] = useState<string[]>([]);
+  // Whether the keyword picker was opened from the career-change path (vs a
+  // normal optimization). Carried so "Continue" resumes the right flow.
+  const [keywordPickerCareerChange, setKeywordPickerCareerChange] = useState(false);
   const [analysisStepIndex, setAnalysisStepIndex] = useState(0);
   const [optimizationStepIndex, setOptimizationStepIndex] = useState(0);
   const [previewView, setPreviewView] = useState<"resume" | "cover">("resume");
@@ -666,6 +706,18 @@ export const ScanSection = ({
     }
   }, [resolvePhotoUrl]);
 
+  // Apply a chosen base resume to the scan: its text feeds analyze/tailor, and
+  // its contact fills the optimized resume header.
+  const applyBaseResume = (record: BaseResumeRecord) => {
+    selectedBaseResumeIdRef.current = record.id;
+    setSelectedBaseResumeId(record.id);
+    setForm((prev) => ({ ...prev, resume: record.resumeText }));
+    setProfileContact(contactFromDraft(record.draft));
+  };
+
+  // Loads the user's base resumes and applies the selected one (kept across
+  // refreshes; falls back to the default, then the first). Returns the applied
+  // resume's contact for the tailor request.
   const loadProfileContact = useCallback(async () => {
     try {
       const {
@@ -674,37 +726,22 @@ export const ScanSection = ({
       const userId = session?.user?.id;
       if (!userId) return null;
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(
-          "email, phone, linkedin, portfolio, github, behance, other_link, base_resume_text"
-        )
-        .eq("id", userId)
-        .maybeSingle();
+      const list = await listBaseResumes(userId);
+      setBaseResumeList(list);
+      setHasBaseResume(list.length > 0);
+      if (!list.length) return null;
 
-      if (error) return null;
+      const current = list.find((r) => r.id === selectedBaseResumeIdRef.current);
+      const chosen = current || list.find((r) => r.isDefault) || list[0];
+      selectedBaseResumeIdRef.current = chosen.id;
+      setSelectedBaseResumeId(chosen.id);
+      setForm((prev) => ({ ...prev, resume: chosen.resumeText }));
 
-      const nextProfile = {
-        email: data?.email || session?.user?.email || "",
-        phone: data?.phone || "",
-        linkedin: data?.linkedin || "",
-        portfolio: data?.portfolio || "",
-        github: data?.github || "",
-        behance: data?.behance || "",
-        otherLink: data?.other_link || "",
-      };
-
+      const nextProfile = contactFromDraft(chosen.draft);
       setProfileContact(nextProfile);
-
-      // Feed the saved base resume into the (now hidden) resume field so the
-      // analyze/tailor pipeline keeps working unchanged.
-      const baseResumeText = (data?.base_resume_text || "").trim();
-      setHasBaseResume(Boolean(baseResumeText));
-      if (baseResumeText) setForm((prev) => ({ ...prev, resume: baseResumeText }));
-
       return nextProfile;
     } catch (error) {
-      console.error("Failed to load profile contact:", error);
+      console.error("Failed to load base resumes:", error);
       return null;
     } finally {
       setBaseResumeLoading(false);
@@ -1068,27 +1105,27 @@ export const ScanSection = ({
       }
     }
 
-    if (
-      careerChangeApproved &&
-      selectedCareerKeywords === undefined &&
-      result.missingKeywords.length
-    ) {
+    // Pre-optimization keyword selection: the user picks which missing keywords
+    // they can genuinely back up. Only those are woven in — nothing is invented.
+    if (selectedCareerKeywords === undefined && result.missingKeywords.length) {
       setCareerSelectedKeywords([]);
+      setKeywordPickerCareerChange(careerChangeApproved);
       setShowCareerKeywordPicker(true);
       return;
     }
 
-    const keywordsForTailoring = careerChangeApproved
-      ? selectedCareerKeywords || []
-      : result.missingKeywords;
+    const keywordsForTailoring = selectedCareerKeywords || [];
+    const keywordSelectionApplied = selectedCareerKeywords !== undefined;
 
     setOptimizationStepIndex(0);
     setIsGeneratingDocs(true);
     setFinalScore(null);
+    setFinalScoreBreakdown(null);
+    setScoreBreakdownOpen(false);
     try {
-      const latestProfile = guestTrial
-        ? profileContact
-        : (await loadProfileContact()) || profileContact;
+      // profileContact already reflects the selected base resume (or the guest's
+      // profile), applied when the resume was chosen.
+      const latestProfile = profileContact;
       const response = await fetch("/api/tailor-documents", {
         method: "POST",
         body: JSON.stringify({
@@ -1097,8 +1134,9 @@ export const ScanSection = ({
           jd: form.jd,
           organization: form.organization,
           designation: form.designation,
-          missingKeywords: keywordsForTailoring,
-          selectedMissingKeywords: careerChangeApproved ? keywordsForTailoring : [],
+          missingKeywords: result.missingKeywords,
+          selectedMissingKeywords: keywordsForTailoring,
+          keywordSelectionApplied,
           matchedKeywords: result.matchedKeywords,
           weightedKeywords: result.weightedKeywords || [],
           hasSummary: result.sectionAnalysis?.foundSections?.summary ?? false,
@@ -1151,6 +1189,7 @@ export const ScanSection = ({
         if (finalScoreData.success) {
           optimizedScore = finalScoreData.message.initialScore;
           setFinalScore(optimizedScore);
+          setFinalScoreBreakdown(finalScoreData.message.scoreBreakdown || null);
         }
       } catch (scoreError) {
         console.error("Unable to compute final score:", scoreError);
@@ -1278,6 +1317,7 @@ export const ScanSection = ({
       const data = await response.json();
       if (data.success) {
         setFinalScore(data.message.initialScore);
+        setFinalScoreBreakdown(data.message.scoreBreakdown || null);
         setHasResumePreviewEdits(false);
         toast.success("Score updated for your edits.");
       } else {
@@ -1829,24 +1869,88 @@ export const ScanSection = ({
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading your base resume…
                 </div>
               ) : hasBaseResume ? (
-                <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-4">
-                  <FileText className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
-                  <div className="flex-1 text-sm text-slate-600">
-                    <p className="font-medium text-slate-800">
-                      Scanning against your base resume
-                    </p>
-                    <p className="mt-0.5 text-slate-500">
-                      This job description is compared to the base resume saved in your
-                      profile.{" "}
-                      <button
-                        type="button"
-                        className="font-semibold text-slate-900 underline"
-                        onClick={() => router.push("/scan?section=base-resume")}
-                      >
-                        Edit base resume
-                      </button>
-                    </p>
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-900/5 text-slate-600">
+                        <FileText className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">
+                          {baseResumeList.length > 1
+                            ? "Choose a base resume to tailor"
+                            : "Scanning against your base resume"}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          The JD is compared to the selected resume.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 text-xs font-semibold text-slate-600 underline-offset-2 hover:text-slate-900 hover:underline"
+                      onClick={() => router.push("/scan?section=base-resume")}
+                    >
+                      Manage
+                    </button>
                   </div>
+
+                  {baseResumeList.length > 1 ? (
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {baseResumeList.map((record) => {
+                        const active = record.id === selectedBaseResumeId;
+                        return (
+                          <button
+                            key={record.id}
+                            type="button"
+                            onClick={() => applyBaseResume(record)}
+                            aria-pressed={active}
+                            className={cn(
+                              "flex items-start justify-between gap-2 rounded-lg border px-3 py-2.5 text-left transition",
+                              active
+                                ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900/10"
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                            )}
+                          >
+                            <span className="min-w-0">
+                              <span className="flex items-center gap-1.5">
+                                <span className="truncate text-sm font-medium text-slate-900">
+                                  {record.name}
+                                </span>
+                                {record.isDefault ? (
+                                  <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                    <Star className="h-2.5 w-2.5 fill-emerald-500 text-emerald-500" />
+                                    Default
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="mt-0.5 block truncate text-xs text-slate-400">
+                                {record.draft.designation || "No title"}
+                              </span>
+                            </span>
+                            <span
+                              className={cn(
+                                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition",
+                                active
+                                  ? "border-slate-900 bg-slate-900 text-white"
+                                  : "border-slate-300 bg-white text-transparent"
+                              )}
+                            >
+                              <Check className="h-3 w-3" />
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      Using{" "}
+                      <span className="font-semibold text-slate-800">
+                        {baseResumeList[0]?.name || "your base resume"}
+                      </span>
+                      .
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-4">
@@ -1976,38 +2080,50 @@ export const ScanSection = ({
 
       {showCareerKeywordPicker && result && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Select keywords to include
-                </h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  Choose only keywords you are comfortable adding for this career-change resume.
-                </p>
+          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 pb-4 pt-5">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <ShieldCheck className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Which of these can you back up?
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    We never invent experience. Select only the keywords you genuinely have —
+                    we&apos;ll weave those into your resume where they fit. The rest stay out.
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 onClick={() => setShowCareerKeywordPicker(false)}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-              <span>{careerSelectedKeywords.length} selected</span>
-              <div className="flex gap-2">
+            {/* Toolbar */}
+            <div className="flex items-center justify-between gap-3 px-6 pt-4">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                <Check className="h-3.5 w-3.5" />
+                {careerSelectedKeywords.length} of {result.missingKeywords.length} selected
+              </span>
+              <div className="flex items-center gap-3 text-xs">
                 <button
                   type="button"
-                  className="font-medium text-slate-700 underline"
+                  className="font-medium text-slate-600 hover:text-slate-900"
                   onClick={() => setCareerSelectedKeywords(result.missingKeywords)}
                 >
                   Select all
                 </button>
+                <span className="text-slate-300">|</span>
                 <button
                   type="button"
-                  className="font-medium text-slate-700 underline"
+                  className="font-medium text-slate-600 hover:text-slate-900"
                   onClick={() => setCareerSelectedKeywords([])}
                 >
                   Clear
@@ -2015,48 +2131,105 @@ export const ScanSection = ({
               </div>
             </div>
 
-            <div className="mt-3 max-h-64 overflow-y-auto rounded-xl border border-slate-200 p-3">
-              <div className="flex flex-wrap gap-2">
-                {result.missingKeywords.map((keyword) => {
-                  const selected = careerSelectedKeywords.includes(keyword);
-                  return (
-                    <button
-                      key={keyword}
-                      type="button"
-                      onClick={() => toggleCareerKeyword(keyword)}
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-xs font-medium transition",
-                        selected
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                          : "border-slate-200 bg-slate-50 text-slate-700"
-                      )}
-                    >
-                      {keyword}
-                    </button>
-                  );
-                })}
-              </div>
+            {/* Keyword chips, grouped so language requirements are called out */}
+            <div className="mt-3 flex-1 space-y-4 overflow-y-auto px-6 pb-2">
+              {[
+                {
+                  key: "skills",
+                  title: null,
+                  hint: null,
+                  keywords: result.missingKeywords.filter((k) => !isLanguageKeyword(k)),
+                },
+                {
+                  key: "languages",
+                  title: "Languages this role mentions",
+                  hint: "Select a language only if you actually speak or write it — it's added to a Languages section, never to Skills.",
+                  keywords: result.missingKeywords.filter((k) => isLanguageKeyword(k)),
+                },
+              ]
+                .filter((group) => group.keywords.length)
+                .map((group) => (
+                  <div key={group.key}>
+                    {group.title ? (
+                      <div className="mb-1.5 flex items-center gap-1.5">
+                        <Languages className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          {group.title}
+                        </span>
+                      </div>
+                    ) : null}
+                    {group.hint ? (
+                      <p className="mb-2 text-xs text-slate-500">{group.hint}</p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      {group.keywords.map((keyword) => {
+                        const selected = careerSelectedKeywords.includes(keyword);
+                        return (
+                          <button
+                            key={keyword}
+                            type="button"
+                            onClick={() => toggleCareerKeyword(keyword)}
+                            aria-pressed={selected}
+                            className={cn(
+                              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                              selected
+                                ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "flex h-4 w-4 items-center justify-center rounded-full border transition",
+                                selected
+                                  ? "border-emerald-500 bg-emerald-500 text-white"
+                                  : "border-slate-300 bg-white text-transparent"
+                              )}
+                            >
+                              <Check className="h-3 w-3" />
+                            </span>
+                            {keyword}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
             </div>
 
-            <p className="mt-3 text-xs text-slate-500">
-              You can continue with zero keywords selected if you only want structural optimization.
-            </p>
-
-            <div className="mt-5 flex justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setShowCareerKeywordPicker(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  setShowCareerKeywordPicker(false);
-                  createTailoredDocuments(true, careerSelectedKeywords);
-                }}
-              >
-                Continue
-              </Button>
+            {/* Footer */}
+            <div className="mt-2 border-t border-slate-100 px-6 py-4">
+              <p className="mb-3 flex items-start gap-1.5 text-xs text-slate-500">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Only selected keywords are added, and only where they truthfully fit your
+                experience. You can optimize with none selected for a structure-only pass.
+              </p>
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="outline"
+                  className="rounded-md"
+                  onClick={() => {
+                    setShowCareerKeywordPicker(false);
+                    createTailoredDocuments(keywordPickerCareerChange, []);
+                  }}
+                >
+                  Optimize without keywords
+                </Button>
+                <Button
+                  className="rounded-md"
+                  onClick={() => {
+                    setShowCareerKeywordPicker(false);
+                    createTailoredDocuments(
+                      keywordPickerCareerChange,
+                      careerSelectedKeywords
+                    );
+                  }}
+                >
+                  <WandSparkles className="mr-2 h-4 w-4" />
+                  {careerSelectedKeywords.length
+                    ? `Add ${careerSelectedKeywords.length} & optimize`
+                    : "Optimize"}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -2160,33 +2333,103 @@ export const ScanSection = ({
                       <Loader2 className="h-3.5 w-3.5 animate-spin" /> Scoring…
                     </span>
                   ) : finalScore !== null ? (
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-white shadow-sm ring-1",
-                        (scoreDelta ?? 0) >= 0
-                          ? "bg-emerald-600 ring-emerald-700/20"
-                          : "bg-rose-600 ring-rose-700/20"
-                      )}
-                    >
-                      <TrendingUp
-                        className={cn("h-4 w-4", (scoreDelta ?? 0) >= 0 ? "" : "rotate-180")}
-                      />
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-white/80">
-                        Score
-                      </span>
-                      <span className="flex items-baseline gap-1">
-                        <span className="text-sm font-medium text-white/70 line-through">
-                          {initialScanScore ?? "—"}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setScoreBreakdownOpen((open) => !open)}
+                        title="See score breakdown"
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-white shadow-sm ring-1 transition hover:brightness-110",
+                          (scoreDelta ?? 0) >= 0
+                            ? "bg-emerald-600 ring-emerald-700/20"
+                            : "bg-rose-600 ring-rose-700/20"
+                        )}
+                      >
+                        <TrendingUp
+                          className={cn("h-4 w-4", (scoreDelta ?? 0) >= 0 ? "" : "rotate-180")}
+                        />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-white/80">
+                          Score
                         </span>
-                        <span className="text-white/70">→</span>
-                        <span className="text-lg font-bold leading-none">{finalScore}</span>
-                      </span>
-                      {scoreDelta !== null ? (
-                        <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs font-bold tabular-nums">
-                          {scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta}
+                        <span className="flex items-baseline gap-1">
+                          <span className="text-sm font-medium text-white/70 line-through">
+                            {initialScanScore ?? "—"}
+                          </span>
+                          <span className="text-white/70">→</span>
+                          <span className="text-lg font-bold leading-none">{finalScore}</span>
                         </span>
+                        {scoreDelta !== null ? (
+                          <span className="rounded-full bg-white/25 px-2 py-0.5 text-xs font-bold tabular-nums">
+                            {scoreDelta >= 0 ? `+${scoreDelta}` : scoreDelta}
+                          </span>
+                        ) : null}
+                        <ChevronDown
+                          className={cn(
+                            "h-3.5 w-3.5 text-white/70 transition",
+                            scoreBreakdownOpen ? "rotate-180" : ""
+                          )}
+                        />
+                      </button>
+
+                      {scoreBreakdownOpen && finalScoreBreakdown ? (
+                        <div className="absolute left-0 top-full z-30 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-xl">
+                          <div className="mb-2 flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Score breakdown
+                            </p>
+                            <span className="text-sm font-bold text-slate-900">
+                              {finalScore}/100
+                            </span>
+                          </div>
+                          <div className="space-y-2.5">
+                            {SCORE_COMPONENTS.map((component) => {
+                              const value = Math.round(
+                                Number(finalScoreBreakdown?.[component.key] ?? 0)
+                              );
+                              const contribution = Math.round((value * component.weight) / 100);
+                              return (
+                                <div key={component.key}>
+                                  <div className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="flex items-center gap-1.5 text-slate-600">
+                                      {component.label}
+                                      <span
+                                        className={cn(
+                                          "rounded px-1 py-0.5 text-[10px] font-semibold",
+                                          component.keywordDriven
+                                            ? "bg-emerald-50 text-emerald-600"
+                                            : "bg-slate-100 text-slate-500"
+                                        )}
+                                      >
+                                        {component.weight}%
+                                      </span>
+                                    </span>
+                                    <span className="tabular-nums font-medium text-slate-700">
+                                      +{contribution}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                                    <div
+                                      className={cn(
+                                        "h-full rounded-full",
+                                        component.keywordDriven ? "bg-emerald-500" : "bg-slate-400"
+                                      )}
+                                      style={{ width: `${Math.min(100, value)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-3 border-t border-slate-100 pt-2.5 text-[11px] leading-snug text-slate-500">
+                            Only the two{" "}
+                            <span className="font-semibold text-emerald-600">keyword-driven</span>{" "}
+                            rows (55%) move when you add keywords. The rest reflect your real
+                            experience, titles, and quantified results — the honest ceiling on a
+                            keyword-only pass.
+                          </p>
+                        </div>
                       ) : null}
-                    </span>
+                    </div>
                   ) : null}
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
@@ -2552,13 +2795,26 @@ export const ScanSection = ({
               </div>
             )}
             <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3">
-              <p className="min-w-0 flex-1 truncate text-xs text-slate-500">
-                {tailoredDocs.incorporatedKeywords?.length
-                  ? `Added keywords: ${tailoredDocs.incorporatedKeywords
-                      .slice(0, 6)
-                      .join(", ")}`
-                  : ""}
-              </p>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                {tailoredDocs.incorporatedKeywords?.length ? (
+                  <p
+                    className="truncate text-xs text-emerald-700"
+                    title={tailoredDocs.incorporatedKeywords.join(", ")}
+                  >
+                    <span className="font-semibold">Added:</span>{" "}
+                    {tailoredDocs.incorporatedKeywords.join(", ")}
+                  </p>
+                ) : null}
+                {tailoredDocs.stillMissingKeywords?.length ? (
+                  <p
+                    className="truncate text-xs text-slate-500"
+                    title={tailoredDocs.stillMissingKeywords.join(", ")}
+                  >
+                    <span className="font-semibold text-slate-600">Not included:</span>{" "}
+                    {tailoredDocs.stillMissingKeywords.join(", ")}
+                  </p>
+                ) : null}
+              </div>
               <div className="flex shrink-0 items-center gap-2">
                 {previewView === "resume" && hasResumePreviewEdits ? (
                   <Button

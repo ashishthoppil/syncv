@@ -318,14 +318,15 @@ const extractBaseResumeWithAI = async (resumeText = "") => {
     "Extract the candidate's resume into structured JSON so it can be edited later.",
     "",
     "Rules:",
+    "0) PRESERVE ALL CONTENT. This becomes the candidate's master resume, so capture the resume's full keyword-rich detail. Do NOT summarize, condense, paraphrase, merge, shorten, or drop anything. Keep every listed tool, technology, metric, achievement, and phrase exactly as written. Losing detail here weakens every future job match.",
     "1) Use ONLY facts explicitly present in the resume. Never invent or infer values.",
     "2) Return empty strings/arrays for absent sections. Omit nothing from the schema keys.",
     "3) candidateName is the person's name. designation is their current/most-recent job title.",
     "4) experienceYears is total professional experience as a whole-number string, or empty if unknown.",
     "5) contact.location is the candidate's own city/country, not an employer location.",
     "6) contact.links: every profile/portfolio URL in the resume, each with a short label (e.g. LinkedIn, GitHub, Portfolio). Preserve exact URLs, adding https:// only if the resume omits it.",
-    "7) skills: group into 3-6 'CategoryName: item, item' strings using the candidate's real skills, where CategoryName is a real, distinct category you choose (e.g. Frontend, Cloud, Tools) — never the literal word 'Category', and never repeat a category name. Do not fabricate.",
-    "8) experience.responsibilities: the bullet points exactly as written (cleaned of leading dashes/bullets).",
+    "7) skills: include EVERY skill the candidate lists — never drop one to fit fewer groups. Organize them into concise 'CategoryName: item, item' strings, where CategoryName is a real, distinct category you choose (e.g. Frontend, Cloud, Tools) — never the literal word 'Category', and never repeat a category name. Use as many categories as needed to hold all skills. Do not fabricate.",
+    "8) experience.responsibilities: copy EVERY bullet point verbatim — do not summarize, paraphrase, merge, shorten, or omit any. Preserve exact tools, technologies, metrics, and wording (only strip a leading dash/bullet character).",
     "9) languages: spoken/written human languages only, ONE per array item, exactly as listed. If the resume lists none, return an empty array.",
     "10) additionalSections: any resume section that is NOT summary/skills/experience/projects/education/certifications/languages (e.g. Awards, Publications, Volunteering, Interests). Use the resume's own heading as title.",
     "",
@@ -345,13 +346,13 @@ const extractBaseResumeWithAI = async (resumeText = "") => {
     body: JSON.stringify({
       model: "gpt-4o",
       temperature: 0,
-      max_tokens: 3000,
+      max_tokens: 4096,
       response_format: { type: "json_object" },
       messages: [
         {
           role: "system",
           content:
-            "You extract resume data with high precision. Return valid compact JSON only. Never fabricate facts not present in the resume.",
+            "You extract resume data with high precision, preserving ALL of the resume's content verbatim. Return valid compact JSON only. Never fabricate facts not present in the resume, and never condense or drop detail that is present.",
         },
         { role: "user", content: prompt },
       ],

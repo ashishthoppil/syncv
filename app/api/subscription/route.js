@@ -48,8 +48,10 @@ export async function GET(request) {
         freeTrialUsed,
         freeTrialRemaining,
         canScan,
-        allowsJobTracker: Boolean(plan?.allowsJobTracker),
-        allowsCoverLetter: Boolean(plan?.allowsCoverLetter),
+        // Free-trial users get the full experience (cover letter + job tracker)
+        // so the trial showcases every feature; paid plans use their own flags.
+        allowsJobTracker: plan ? Boolean(plan.allowsJobTracker) : true,
+        allowsCoverLetter: plan ? Boolean(plan.allowsCoverLetter) : true,
       },
     });
   } catch (error) {

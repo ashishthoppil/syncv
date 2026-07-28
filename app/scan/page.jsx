@@ -151,19 +151,30 @@ const DashboardPageContent = () => {
     ensureSession();
   }, [router]);
 
+  // Base Resume is only available while the user can still scan — i.e. an active
+  // Speed/Pro plan, or free-trial scans remaining. Once the trial is over with
+  // no plan, it is hidden (like Job Tracker). Kept visible while loading to
+  // avoid a flicker.
+  const baseResumeLocked = !subscriptionLoading && !subscription.canScan;
+  const isBaseResumeSection = (id) => id === "base-resume" || id === "profile";
+
   useEffect(() => {
     const sectionFromQuery = searchParams?.get("section");
+    const jobTrackerBlocked =
+      sectionFromQuery === "job-tracker" && !subscription.allowsJobTracker;
+    const baseResumeBlocked = isBaseResumeSection(sectionFromQuery) && baseResumeLocked;
     if (
       sectionFromQuery &&
       sectionMap[sectionFromQuery] &&
-      (sectionFromQuery !== "job-tracker" || subscription.allowsJobTracker)
+      !jobTrackerBlocked &&
+      !baseResumeBlocked
     ) {
       setActiveSection(sectionFromQuery);
-    } else if (sectionFromQuery === "job-tracker" && !subscription.allowsJobTracker) {
+    } else if (jobTrackerBlocked || baseResumeBlocked) {
       setActiveSection("settings");
       router.replace("/scan?section=settings");
     }
-  }, [searchParams, subscription.allowsJobTracker, router]);
+  }, [searchParams, subscription.allowsJobTracker, baseResumeLocked, router]);
 
   useEffect(() => {
     const scrollTarget = searchParams?.get("scrollTo");
@@ -178,7 +189,10 @@ const DashboardPageContent = () => {
   }, [activeSection, searchParams]);
 
   const handleSectionChange = (sectionId) => {
-    if (sectionId === "job-tracker" && !subscription.allowsJobTracker) {
+    if (
+      (sectionId === "job-tracker" && !subscription.allowsJobTracker) ||
+      (isBaseResumeSection(sectionId) && baseResumeLocked)
+    ) {
       setActiveSection("settings");
       router.replace("/scan?section=settings");
       return;
@@ -206,7 +220,7 @@ const DashboardPageContent = () => {
     if (activeSection === "create-cv") {
       return <CreateCvSection />;
     }
-    if (activeSection === "base-resume" || activeSection === "profile") {
+    if (isBaseResumeSection(activeSection) && !baseResumeLocked) {
       return <BaseResumeSection user={user} />;
     }
     if (activeSection === "job-tracker") {
@@ -239,9 +253,11 @@ const DashboardPageContent = () => {
     return <Loading />;
   }
 
-  const visibleSections = DASHBOARD_SECTIONS.filter(
-    (section) => section.id !== "job-tracker" || subscription.allowsJobTracker
-  );
+  const visibleSections = DASHBOARD_SECTIONS.filter((section) => {
+    if (section.id === "job-tracker") return subscription.allowsJobTracker;
+    if (section.id === "base-resume") return !baseResumeLocked;
+    return true;
+  });
   // Paid users see their weekly balance; free-trial users see trial scans left.
   const scansRemaining = subscription.hasActivePlan
     ? Number(subscription.scansRemainingThisWeek || 0)

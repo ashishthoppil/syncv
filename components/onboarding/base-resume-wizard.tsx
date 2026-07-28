@@ -18,7 +18,7 @@ import {
   stepHasContent,
   type BaseResumeDraft,
 } from "@/components/dashboard/resume-form";
-import { saveBaseResume } from "@/lib/base-resume";
+import { createBaseResume, DEFAULT_BASE_RESUME_NAME } from "@/lib/base-resume";
 
 type WizardUser = { id?: string; email?: string } | null;
 
@@ -188,7 +188,12 @@ export const BaseResumeWizard = ({
     }
     setSaving(true);
     try {
-      await saveBaseResume(user, draft, "bold-modern");
+      await createBaseResume(user, {
+        name: DEFAULT_BASE_RESUME_NAME,
+        draft,
+        template: "bold-modern",
+        isDefault: true,
+      });
       toast.success("Base resume saved.");
       onComplete();
     } catch (error: unknown) {

@@ -98,7 +98,8 @@ const Navbar = ({ isHome = false }) => {
           )}
           {authenticated ? 
           <>
-            {scansRemainingLabel ? (
+            {/* The scans-left badge is intentionally hidden on the homepage. */}
+            {!isHome && scansRemainingLabel ? (
               <span className="hidden sm:inline-flex whitespace-nowrap rounded-md border border-slate-200 bg-white/70 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                 {scansRemainingLabel}
               </span>
