@@ -538,9 +538,19 @@ export const serializeResumeText = (draft: BaseResumeDraft): string => {
   if (data.experience?.length) {
     lines.push("", "EXPERIENCE");
     data.experience.forEach((entry) => {
-      const header = [entry.designation, entry.company].filter(Boolean).join(" — ");
-      const meta = [entry.location, entry.duration].filter(Boolean).join(" | ");
-      lines.push([header, meta].filter(Boolean).join(" | "));
+      const title = (entry.designation || "").trim();
+      const company = (entry.company || "").trim();
+      // "Designation at Company" on its own line keeps the two fields
+      // unambiguous; location + duration go on the following line. This avoids
+      // the parser/optimizer confusing company with location.
+      const titleLine =
+        title && company ? `${title} at ${company}` : title || company;
+      if (titleLine) lines.push(titleLine);
+      const meta = [entry.location, entry.duration]
+        .map((v) => (v || "").trim())
+        .filter(Boolean)
+        .join(" | ");
+      if (meta) lines.push(meta);
       (entry.responsibilities || []).forEach((bullet) => lines.push(`- ${bullet}`));
     });
   }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { isLanguageKeyword } from "@/lib/languages";
+import { draftToResumeData } from "@/components/dashboard/resume-form";
 import {
   listBaseResumes,
   contactFromDraft,
@@ -1129,6 +1130,14 @@ export const ScanSection = ({
       // profileContact already reflects the selected base resume (or the guest's
       // profile), applied when the resume was chosen.
       const latestProfile = profileContact;
+      // Authoritative structured experience from the selected base resume, so
+      // the optimizer preserves exact company/location/designation fields.
+      const selectedDraft = baseResumeList.find(
+        (r) => r.id === selectedBaseResumeId
+      )?.draft;
+      const structuredExperience = selectedDraft
+        ? draftToResumeData(selectedDraft).experience || []
+        : [];
       const response = await fetch("/api/tailor-documents", {
         method: "POST",
         body: JSON.stringify({
@@ -1153,6 +1162,10 @@ export const ScanSection = ({
           targetRoleFamily: fitInsight?.targetFamilyId || "",
           profileContact: latestProfile,
           includeCoverLetter: shouldAllowCoverLetter,
+          // The base resume's structured experience — authoritative field
+          // mapping (designation/company/location/duration) so the optimizer
+          // never has to re-parse it from ambiguous text.
+          structuredExperience,
         }),
       });
       const data = await response.json();

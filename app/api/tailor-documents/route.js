@@ -1683,6 +1683,10 @@ export async function POST(req) {
       // modal) which missing keywords they can genuinely back up. Only those
       // are integrated — everything else stays out to preserve no-fabrication.
       keywordSelectionApplied = false,
+      // The base resume's structured experience (authoritative field mapping).
+      // When present, it is used as the factual baseline instead of re-parsing
+      // the resume text — which loses the company/location distinction.
+      structuredExperience = [],
     } = await req.json();
 
     if (!resume || !jd) {
@@ -1775,9 +1779,23 @@ export async function POST(req) {
     const experienceSectionText = (extractSectionsFromText(resume).experience || []).join(
       "\n"
     );
-    const factualExperienceBaseline = sanitizeExperienceEntries(
-      parseExperienceFromRawResume(experienceSectionText || resume)
-    );
+    // Prefer the structured experience from the base resume (exact field
+    // mapping). Only fall back to text-parsing when it isn't supplied (guest
+    // scans, or a base resume with no experience entries).
+    const structuredBaseline = (Array.isArray(structuredExperience) ? structuredExperience : [])
+      .map((entry) => ({
+        designation: ensureString(entry?.designation),
+        company: ensureString(entry?.company),
+        location: ensureString(entry?.location),
+        duration: ensureString(entry?.duration),
+        bullets: ensureStringArray(entry?.responsibilities || entry?.bullets),
+      }))
+      .filter((entry) => entry.designation || entry.company || entry.bullets.length);
+    const factualExperienceBaseline = structuredBaseline.length
+      ? sanitizeExperienceEntries(structuredBaseline)
+      : sanitizeExperienceEntries(
+          parseExperienceFromRawResume(experienceSectionText || resume)
+        );
     const factualEducationBaseline = parseEducationFromSection(
       extractSectionsFromText(resume).education || resume.split("\n")
     ).slice(0, 8);
