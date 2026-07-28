@@ -189,6 +189,15 @@ const BaseResumeEditor = ({
   };
 
   const persist = async () => {
+    // Experience (years) is required — it drives the experience-relevance score.
+    if (
+      !draft.experienceYears.trim() ||
+      !Number.isFinite(Number(draft.experienceYears))
+    ) {
+      setEditorTab("content");
+      toast.error("Please enter your total years of experience (a number).");
+      return;
+    }
     setSaving(true);
     try {
       const input = {

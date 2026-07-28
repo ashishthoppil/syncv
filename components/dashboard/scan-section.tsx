@@ -580,6 +580,9 @@ export const ScanSection = ({
           organization: form.organization,
           designation: form.designation,
           userId: sessionUserId,
+          experienceYears:
+            baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
+              .experienceYears || "",
         }),
       });
       const data = await response.json();
@@ -1183,6 +1186,9 @@ export const ScanSection = ({
             designation: form.designation,
             userId: await getSessionUserId(),
             skipUsageTracking: true,
+            experienceYears:
+              baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
+                .experienceYears || "",
           }),
         });
         const finalScoreData = await finalScoreResponse.json();
@@ -1312,6 +1318,9 @@ export const ScanSection = ({
           designation: form.designation,
           userId: await getSessionUserId(),
           skipUsageTracking: true,
+          experienceYears:
+            baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
+              .experienceYears || "",
         }),
       });
       const data = await response.json();

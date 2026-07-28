@@ -1047,8 +1047,19 @@ const extractRequiredYearsFromJd = (jd = "") => {
   return Math.min(...matches);
 };
 
-const analyzeExperience = (resumeText = "", jdText = "") => {
-  const totalYears = estimateTotalExperienceYears(resumeText);
+const analyzeExperience = (resumeText = "", jdText = "", providedYears = null) => {
+  // Prefer the candidate's structured experienceYears (entered in the base
+  // resume) over parsing date ranges from text — parsing is fragile against JD
+  // noise, varied date formats, and gaps. Fall back to parsing only when no
+  // explicit value is supplied (e.g. guest scans).
+  const providedNum =
+    providedYears !== null && providedYears !== undefined && String(providedYears).trim() !== ""
+      ? Number(providedYears)
+      : NaN;
+  const totalYears =
+    Number.isFinite(providedNum) && providedNum >= 0
+      ? providedNum
+      : estimateTotalExperienceYears(resumeText);
   const requiredYears = extractRequiredYearsFromJd(jdText);
   if (!requiredYears) {
     // Smooth proportional curve when JD doesn't specify; reaches 90 at 6 years.
@@ -1078,8 +1089,27 @@ const analyzeExperience = (resumeText = "", jdText = "") => {
 const ACTION_VERB_PATTERN =
   /\b(led|managed|built|developed|designed|implemented|created|launched|delivered|architected|optimized|improved|reduced|increased|grew|drove|achieved|automated|streamlined|migrated|deployed|owned|spearheaded|mentored|coordinated|negotiated|saved|generated|boosted|accelerated|cut|scaled|engineered|established|introduced|refactored|integrated|orchestrated|maintained|resolved|prevented|expanded|standardized|simplified|enabled|trained|launched|championed)\b/i;
 
-const METRIC_PATTERN =
-  /(\d+(?:\.\d+)?\s*%|\$\s?\d+(?:\.\d+)?\s*[kmb]?|\b\d+(?:,\d{3})+\b|\b\d+(?:\.\d+)?\s*(x|times|hours|hrs|days|weeks|months|years|users|customers|clients|tickets|requests|transactions|deployments|releases|projects|teams|members|servers|nodes|pods|qps|rps|tps|ms|sec|seconds|minutes|gb|tb|mb)\b)/i;
+// A "measurable" achievement: a percentage / currency / "N+" / magnitude
+// number, OR a number followed (allowing up to 3 adjective words in between,
+// e.g. "10 high-impact websites") by a countable noun.
+const METRIC_NOUNS =
+  "x|times|hours|hrs|days|weeks|months|years|users|customers|clients|tickets|requests|transactions|deployments|releases|projects|teams|members|servers|nodes|pods|qps|rps|tps|ms|sec|seconds|minutes|gb|tb|mb|websites?|sites?|apps?|applications?|features?|pages?|components?|screens?|products?|modules?|services?|microservices?|apis?|endpoints?|integrations?|models?|dashboards?|reports?|campaigns?|articles?|posts?|blogs?|leads?|accounts?|stores?|orders?|courses?|students?|patients?|cases?|calls?|emails?|contracts?|hires?|candidates?|interviews?|people|million|billion|thousand";
+const METRIC_PATTERN = new RegExp(
+  [
+    "\\d+(?:\\.\\d+)?\\s*%", // percentage
+    "\\$\\s?\\d+(?:\\.\\d+)?\\s*[kmb]?", // currency
+    "\\b\\d+(?:\\.\\d+)?\\s*\\+", // "50+"
+    "\\b\\d+(?:\\.\\d+)?\\s*[kmb]\\b", // "10k", "2m"
+    "\\b\\d+(?:,\\d{3})+\\b", // "10,000"
+    // number + (up to 3 adjective words) + a curated countable unit
+    `\\b\\d+(?:\\.\\d+)?(?:[\\s-]+[a-z][a-z-]*){0,3}[\\s-]+(?:${METRIC_NOUNS})\\b`,
+    // general fallback: number + (up to 3 words) + any plural noun (>=4 chars)
+    "\\b\\d+(?:\\.\\d+)?(?:[\\s-]+[a-z][a-z-]*){0,3}[\\s-]+[a-z]{3,}s\\b",
+  ]
+    .map((part) => `(?:${part})`)
+    .join("|"),
+  "i"
+);
 
 const analyzeAchievements = (resumeText = "") => {
   const lines = String(resumeText || "")
@@ -1274,7 +1304,11 @@ const buildSuggestions = ({
   return Array.from(new Set(suggestions)).slice(0, 8);
 };
 
-const scoreResume = (resumeText, weightedKeywords, { jdText = "", targetRole = "" } = {}) => {
+const scoreResume = (
+  resumeText,
+  weightedKeywords,
+  { jdText = "", targetRole = "", experienceYears = null } = {}
+) => {
   const resumeIndex = buildResumeIndex(resumeText);
 
   let totalWeight = 0;
@@ -1322,7 +1356,7 @@ const scoreResume = (resumeText, weightedKeywords, { jdText = "", targetRole = "
       : keywordMatchScore;
 
   const titleAnalysis = analyzeTitleMatch(resumeText, targetRole);
-  const experienceAnalysis = analyzeExperience(resumeText, jdText);
+  const experienceAnalysis = analyzeExperience(resumeText, jdText, experienceYears);
   const achievementAnalysis = analyzeAchievements(resumeText);
   const sectionAnalysis = detectSections(resumeText);
   const formattingWarnings = detectFormattingWarnings(resumeText);
@@ -1379,6 +1413,9 @@ export async function POST(req) {
       designation,
       userId = "",
       skipUsageTracking = false,
+      // Candidate's total years of experience from the structured base resume;
+      // used directly for the experience score instead of parsing the text.
+      experienceYears = null,
     } = await req.json();
 
     if (!resume || !jd) {
@@ -1485,6 +1522,7 @@ export async function POST(req) {
     const results = scoreResume(resume, weightedKeywords, {
       jdText: jd,
       targetRole: designation || "",
+      experienceYears,
     });
 
     if (userId && (activePlan || usingFreeTrial) && !skipUsageTracking) {

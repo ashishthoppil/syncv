@@ -579,7 +579,14 @@ export const serializeResumeText = (draft: BaseResumeDraft): string => {
 // Validation used by the wizard to gate mandatory steps.
 export const stepHasContent = {
   personal: (draft: BaseResumeDraft) =>
-    Boolean(draft.candidateName.trim() && draft.email.trim()),
+    Boolean(
+      draft.candidateName.trim() &&
+        draft.email.trim() &&
+        // Experience (years) is required — it drives the experience-relevance
+        // score directly, so it must always be present.
+        draft.experienceYears.trim() &&
+        Number.isFinite(Number(draft.experienceYears))
+    ),
   summary: (draft: BaseResumeDraft) => Boolean(draft.summary.trim()),
   skills: (draft: BaseResumeDraft) =>
     draft.skillCategories.some((category) => category.items.length),
@@ -619,11 +626,14 @@ export const PersonalDetailsCard = ({
         />
       </div>
       <div className="space-y-1">
-        <span className={labelClass}>Experience (years)</span>
+        <span className={labelClass}>
+          Experience (years) <span className="text-red-500">*</span>
+        </span>
         <input
           className={inputClass}
           value={draft.experienceYears}
           onChange={(event) => update({ experienceYears: event.target.value })}
+          inputMode="decimal"
           placeholder="3"
         />
       </div>
