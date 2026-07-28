@@ -30,7 +30,14 @@ const hasKeyword = (text = "", keyword = "") => {
   const words = normalizedKeyword.split(" ").filter(Boolean);
   if (!words.length) return false;
   const pattern = words.map((word) => escapeRegex(word)).join("(?:\\W|_){1,3}");
-  const regex = new RegExp(`\\b${pattern}\\b`, "i");
+  // Only anchor with \b where the keyword edge is a word char. Keywords ending
+  // (or starting) with punctuation — "ES6+", "C++", "C#", ".NET" — would never
+  // match a trailing \b after the non-word char, so anchor conditionally.
+  const startAnchor = /\w/.test(normalizedKeyword[0]) ? "\\b" : "";
+  const endAnchor = /\w/.test(normalizedKeyword[normalizedKeyword.length - 1])
+    ? "\\b"
+    : "(?!\\w)";
+  const regex = new RegExp(`${startAnchor}${pattern}${endAnchor}`, "i");
   return regex.test(normalizedText);
 };
 
@@ -1297,6 +1304,23 @@ const dedupeSkillItems = (items = []) => {
   return out;
 };
 
+// Append user-confirmed keywords to the skills section (into an existing broad
+// category if one exists, else a new "Additional Skills" line). Used to
+// guarantee that keywords the user vouched for in the picker actually appear.
+const appendSelectedSkills = (skills = [], keywords = []) => {
+  const list = Array.isArray(skills) ? skills.slice() : [];
+  if (!keywords.length) return list;
+  const additions = keywords.join(", ");
+  const idx = list.findIndex((entry) =>
+    /^(additional skills|technical skills|core skills|skills|tools)\s*:/i.test(String(entry))
+  );
+  if (idx >= 0) {
+    list[idx] = `${String(list[idx]).replace(/[\s,]*$/, "")}, ${additions}`;
+    return list;
+  }
+  return [...list, `Additional Skills: ${additions}`];
+};
+
 const consolidateSkillCategories = (skills = []) => {
   // Parse + merge categories that share a name (first casing wins).
   const order = [];
@@ -1801,13 +1825,18 @@ export async function POST(req) {
         ? `1. summary (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). REWRITE means REPLACE: produce one cohesive paragraph with EXACTLY ONE role-title opening sentence — never keep the original summary's opening sentence and then add a second "Title with N years..." opener after it; fold the original's facts (employers, achievements) into the new sentences instead. Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
         : `1. summary (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
       "2. skills: An array of 3-6 strings (NEVER more than 6), each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Systems/EMR, Patient Care, Communication; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. NEVER use a 'Certifications' or 'Licenses' category in skills — certifications have their own dedicated field and must not be duplicated here. Include every matched keyword and every missing keyword that has evidence in the candidate's original resume — but FOLD them into these 3-6 broad categories rather than creating a separate category per keyword. Group several genuinely related skills under each category; do not emit many one-item categories. A concept or practice keyword (e.g. 'Distributed computing', 'Code review', 'Documentation') may sit as an item inside a fitting category (e.g. 'Concepts') or appear in an experience bullet — either keeps it in the resume; just never give it its own standalone category. List concrete, recognizable hard skills and tools. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player'); genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
-      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. KEEP EVERY role from the work-history section — never drop, merge, or hollow out a role because it looks unrelated to the target job. When a role seems off-target, do NOT remove it: instead RE-ANGLE its bullets to foreground the responsibilities, transferable skills, tools, and outcomes most relevant to the target role and its keywords, while staying 100% truthful to what the candidate actually did. Every role must keep a substantive set of bullets (3-6), never be reduced to an empty or near-empty entry. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Each bullet starts with a strong action verb. Lead with quantified impact wherever the resume provides ANY number, scale, or outcome — %, $, time saved, volume, users, team size, frequency, growth. If the original resume states a metric, preserve it; if it implies scale (e.g. 'large team', 'high traffic'), express it concretely only when the resume supports it. Integrate missing keywords ONLY where they describe actual past work. NEVER invent or inflate metrics, names, or claims.",
+      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. KEEP EVERY role from the work-history section — never drop, merge, or hollow out a role because it looks unrelated to the target job. When a role seems off-target, do NOT remove it: instead RE-ANGLE its bullets to foreground the responsibilities, transferable skills, tools, and outcomes most relevant to the target role and its keywords, while staying 100% truthful to what the candidate actually did. Every role must keep a substantive set of bullets (3-6), never be reduced to an empty or near-empty entry. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Each bullet starts with a strong action verb. QUANTIFICATION (critical): surface EVERY number, %, $, duration, volume, frequency, team size, or scale already present anywhere in the resume and LEAD the bullet with it. If the resume states a concrete fact that can be expressed as a figure (e.g. 'reduced load time from 5s to 2s' → 'cut load time 60%', 'handled tickets for 3 teams' → 'supported 3 teams'), express it as a metric — but ONLY when the resume literally supports the number. Do NOT dilute: prefer folding missing keywords INTO existing bullets over adding new bare bullets that merely name a keyword with no substance or metric. If the original resume states a metric, preserve it verbatim. NEVER invent, estimate, or inflate a number, percentage, employer, name, or claim the resume does not support.",
       hasProjectsSection
         ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Add keywords only where the project truly used them. Never drop a project to save space."
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
       "5. education: Output ONLY the education entries that literally appear in the original resume (match the factual education baseline below) — output exactly that many entries, no more. NEVER add, split, duplicate, or invent a degree, institution, or graduation year (e.g. do not add a Bachelor's the candidate never listed). Each object has qualification, institution, location, duration as separate fields, plus optional detail strings for honors/coursework. Put the city/country in the location field — never merge it into institution or duration. Preserve every degree exactly as written.",
       "6. certifications: Array of strings, each 'Cert name — Issuer (year if known)'. Include ONLY certifications that appear in the original resume — never invent a credential. If the original resume includes a verification/credential URL for a certification or course, append it to that string EXACTLY as written (e.g. 'Front-End Web Development with React — Coursera — https://coursera.org/verify/ABC123'). Never invent, guess, or shorten URLs — include one only if it is present in the original resume.",
       "7. languages: Array of spoken/written languages exactly as listed in the original resume, ONE language per array item (format each item like 'Language' or 'Language (Proficiency)'). Copy ONLY languages that literally appear in the original resume — never add a language the candidate did not list, and never infer one from the candidate's name, location, or nationality. Never cram multiple languages into a single string and never bullet-join them. Do NOT place spoken languages in the skills section. Omit the key entirely if the resume lists no languages.",
+      keywordSelectionApplied && missingForCareerChange.length
+        ? `USER-CONFIRMED SKILLS (MANDATORY): The candidate has personally confirmed they have hands-on experience with EACH of these keywords: ${missingForCareerChange.join(
+            ", "
+          )}. You MUST include EVERY one of them in the output — at minimum inside the skills categories (verbatim as written), and woven into the most relevant experience bullet wherever it fits naturally. The candidate's confirmation IS the evidence, so do NOT omit any as "unrelated" or "unevidenced". You may still NOT fabricate metrics, numbers, employers, dates, or achievements around them — only reflect the skill itself truthfully.`
+        : "",
       "",
       "HARD CONSTRAINTS (zero tolerance):",
       "- Never invent employers, dates, titles, certifications, degrees, or quantified achievements.",
@@ -2078,6 +2107,24 @@ export async function POST(req) {
     };
 
     resumeData = sanitizeResumeObject(resumeData);
+
+    // Guarantee: keywords the user personally confirmed in the picker must
+    // appear. If the model still omitted any, add them to the skills section —
+    // the safe, truthful place, since the user vouched for the skill itself.
+    // Never adds fabricated metrics or claims.
+    if (keywordSelectionApplied && missingForCareerChange.length) {
+      const projected = resumeObjectToText(resumeData);
+      const stillMissingSelected = missingForCareerChange.filter(
+        (keyword) => !hasKeyword(projected, keyword)
+      );
+      if (stillMissingSelected.length) {
+        resumeData.skills = appendSelectedSkills(
+          resumeData.skills,
+          stillMissingSelected
+        );
+        resumeData = sanitizeResumeObject(resumeData);
+      }
+    }
 
     // One-way plain-text projection for keyword coverage, the analyzer, and
     // downloads. The object remains the source of truth.
