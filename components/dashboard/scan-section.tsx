@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { isLanguageKeyword } from "@/lib/languages";
 import { draftToResumeData } from "@/components/dashboard/resume-form";
+import { ResumeTemplatePicker } from "@/components/dashboard/template-picker";
 import {
   listBaseResumes,
   contactFromDraft,
@@ -17,7 +18,6 @@ import { useRouter } from "next/navigation";
 import {
   getResumeTemplateConfig,
   RESUME_FONT_OPTIONS,
-  RESUME_TEMPLATE_CONFIGS,
   resolveResumeTemplateTheme,
 } from "@/components/resume-templates/config";
 import {
@@ -1441,7 +1441,11 @@ export const ScanSection = ({
   const scoreRingCircumference = 2 * Math.PI * 52;
   const scorePercent = Math.max(0, Math.min(100, initialScanScore ?? 0));
 
-  if (subscriptionLocked && !guestTrial) {
+  // Only take over the screen with the subscribe prompt when the user has no
+  // in-progress work. If a scan result or the optimized preview is open (e.g.
+  // the trial just got consumed by this very scan), keep it visible so the flow
+  // isn't interrupted — the lock applies to starting the NEXT scan.
+  if (subscriptionLocked && !guestTrial && !result && !previewOpen) {
     return (
       <section className="space-y-8">
         {!hideTopHeading ? (
@@ -1702,24 +1706,6 @@ export const ScanSection = ({
         </div>
       )}
 
-      {result?.formattingWarnings?.length ? (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-100 text-amber-700">
-              <AlertTriangle className="h-4 w-4" />
-            </span>
-            <p className="text-sm font-semibold text-amber-900">Formatting warnings</p>
-          </div>
-          <ul className="space-y-2">
-            {result.formattingWarnings.map((warning) => (
-              <li key={warning} className="flex gap-2 text-xs text-amber-800">
-                <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-amber-500" />
-                <span className="leading-relaxed">{warning}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </div>
   );
 
@@ -2569,41 +2555,10 @@ export const ScanSection = ({
                           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                             Template
                           </p>
-                          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                            {RESUME_TEMPLATE_CONFIGS.map((template) => {
-                              const thumbTheme = resolveResumeTemplateTheme(template.id);
-                              const active = selectedTemplate === template.id;
-                              return (
-                                <button
-                                  key={template.id}
-                                  type="button"
-                                  onClick={() => setSelectedTemplate(template.id)}
-                                  className={cn(
-                                    "overflow-hidden rounded-lg border bg-white text-left transition",
-                                    active
-                                      ? "border-slate-900 ring-2 ring-slate-900/10"
-                                      : "border-slate-200 hover:border-slate-400"
-                                  )}
-                                >
-                                  <div
-                                    className="h-1.5 w-full"
-                                    style={{ backgroundColor: thumbTheme.accent }}
-                                  />
-                                  <div className="space-y-1 p-2">
-                                    <div
-                                      className="h-1.5 w-3/4 rounded-full"
-                                      style={{ backgroundColor: thumbTheme.headingColor }}
-                                    />
-                                    <div className="h-1 w-full rounded-full bg-slate-200" />
-                                    <div className="h-1 w-5/6 rounded-full bg-slate-200" />
-                                    <p className="pt-1 text-[11px] font-medium text-slate-700">
-                                      {template.label}
-                                    </p>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <ResumeTemplatePicker
+                            selected={selectedTemplate}
+                            onSelect={setSelectedTemplate}
+                          />
                         </div>
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <div className="flex items-center justify-between gap-3">

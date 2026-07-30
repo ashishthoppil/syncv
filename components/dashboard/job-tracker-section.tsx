@@ -6,7 +6,12 @@ import { cn } from "@/lib/utils";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import { supabase } from "@/lib/supabaseClient";
-import { extractCandidateName } from "@/components/resume-templates/render";
+import {
+  extractCandidateName,
+  renderResumeHtml,
+  renderCoverLetterHtml,
+} from "@/components/resume-templates/render";
+import type { ResumeTemplateId } from "@/components/resume-templates/types";
 import {
   Briefcase,
   ChevronLeft,
@@ -178,14 +183,6 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
     }
   };
 
-  const escapeHtml = (value: string) =>
-    value
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-
   const toSlugPart = (value: string) =>
     value
       .trim()
@@ -193,89 +190,6 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "") || "unknown";
 
-  const toStructuredHtml = (content = "") => {
-    const paragraphs = content
-      .split(/\n{2,}/)
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map(
-        (part) =>
-          `<p style="font-size:13px;line-height:1.65;color:#334155;margin:0 0 10px;">${escapeHtml(
-            part
-          ).replace(/\n/g, "<br/>")}</p>`
-      )
-      .join("");
-    return paragraphs || '<p style="font-size:13px;color:#64748b;">No content available.</p>';
-  };
-
-  const toResumeTemplateHtml = (job: Job) => {
-    const content = job.generated_resume_text || "";
-    const candidateName = extractCandidateName(content);
-    const designation = job.designation || "";
-    const body = toStructuredHtml(content);
-    const templateId = job.resume_template_id || "classic-blue";
-
-    if (templateId === "bold-modern") {
-      return `
-        <section style="font-family:Arial,sans-serif;padding:24px;">
-          <div style="border-bottom:2px solid #111827;padding-bottom:10px;margin-bottom:12px;">
-            <h1 style="margin:0;font-size:34px;line-height:1.1;font-weight:800;color:#111827;">${escapeHtml(
-              candidateName
-            )}</h1>
-            <p style="margin:8px 0 0;font-size:14px;font-weight:700;color:#1f2937;">${escapeHtml(
-              designation
-            )}</p>
-          </div>
-          ${body}
-        </section>
-      `;
-    }
-
-    if (templateId === "analyst-photo") {
-      return `
-        <section style="font-family:Arial,sans-serif;padding:24px;">
-          <div style="border-bottom:2px solid #2563eb;padding-bottom:10px;margin-bottom:12px;">
-            <h1 style="margin:0;font-size:34px;line-height:1.1;font-weight:800;color:#2563eb;">${escapeHtml(
-              candidateName
-            )}</h1>
-            <p style="margin:8px 0 0;font-size:14px;font-weight:700;color:#1f2937;">${escapeHtml(
-              designation
-            )}</p>
-          </div>
-          ${body}
-        </section>
-      `;
-    }
-
-    return `
-      <section style="font-family:Arial,sans-serif;padding:24px;">
-        <div style="background:#7eb4df;height:12px;margin-bottom:12px;"></div>
-        <h1 style="margin:0;font-size:34px;line-height:1.1;font-weight:700;color:#334155;">${escapeHtml(
-          candidateName
-        )}</h1>
-        <p style="margin:8px 0 12px;font-size:14px;font-weight:700;color:#475569;">${escapeHtml(
-          designation
-        )}</p>
-        ${body}
-      </section>
-    `;
-  };
-
-  const toCoverHtml = (content = "") => {
-    const plain = content.replace(/\*\*(.+?)\*\*/g, "$1");
-    const paragraphs = plain
-      .split(/\n{2,}/)
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map(
-        (part) =>
-          `<p style="font-size:13px;line-height:1.7;color:#334155;margin:0 0 12px;">${escapeHtml(
-            part
-          ).replace(/\n/g, "<br/>")}</p>`
-      )
-      .join("");
-    return `<section style="font-family:Arial,sans-serif;padding:24px;">${paragraphs}</section>`;
-  };
 
   const downloadGeneratedDocument = async (job: Job, type: "resume" | "cover") => {
     const resumeText = job.generated_resume_text || "";
@@ -291,7 +205,18 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
 
     setDownloading(`${job.id}-${type}`);
     try {
-      const html = type === "resume" ? toResumeTemplateHtml(job) : toCoverHtml(coverText);
+      // Use the real template renderers (same engine as the scan preview) so
+      // downloads keep their template styling instead of a bland fallback.
+      const templateId = (job.resume_template_id || "classic-blue") as ResumeTemplateId;
+      const html =
+        type === "resume"
+          ? renderResumeHtml({
+              resumeText,
+              templateId,
+              candidateName: extractCandidateName(resumeText),
+              designation: job.designation || "",
+            })
+          : renderCoverLetterHtml(coverText);
       const response = await fetch("/api/generate-pdf", {
         method: "POST",
         body: JSON.stringify({
