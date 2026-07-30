@@ -1727,34 +1727,63 @@ export const renderCoverLetterHtml = (content: string) => {
   const dateAtLineEndRegex =
     /^(.*?)(?:\s{2,}|,\s+)(\w+\s+\d{1,2},\s+\d{4}|\d{1,2}\s+\w+\s+\d{4})\s*$/i;
 
+  // The closing/sign-off block ("Yours sincerely," + name + contact lines).
+  const closingRegex =
+    /^(yours\s+(sincerely|faithfully|truly)|sincerely|faithfully|best\s+regards|kind\s+regards|warm\s+regards|regards|respectfully|thank\s+you|best|cheers)\b/i;
+
   const paragraphs = blocks
     .map((part, index) => {
+      const lines = part.split("\n").map((line) => line.trim()).filter(Boolean);
+
+      // Sign-off: give it clear space above, keep the closing line apart from
+      // the name/contact lines, and breathe between those lines.
+      if (closingRegex.test(lines[0] || "")) {
+        const closing = `<p style="font-size:13px;line-height:1.7;color:#334155;margin:28px 0 12px;">${escapeHtml(
+          lines[0]
+        )}</p>`;
+        const rest = lines.slice(1);
+        const restMarkup = rest.length
+          ? `<p style="font-size:13px;line-height:1.9;color:#334155;margin:0;">${rest
+              .map((line) => escapeHtml(line))
+              .join("<br/>")}</p>`
+          : "";
+        return `${closing}${restMarkup}`;
+      }
+
+      // Greeting (first block): recipient / date line, with generous space
+      // before the body.
       if (index === 0) {
-        const firstLine = part.split("\n")[0]?.trim() || "";
-        const firstLineMatch = firstLine.match(dateAtLineEndRegex);
+        const firstLineMatch = (lines[0] || "").match(dateAtLineEndRegex);
         if (firstLineMatch) {
           const left = firstLineMatch[1].trim();
           const date = firstLineMatch[2].trim();
-          const rest = part.split("\n").slice(1).join("\n").trim();
-          const row = `<div style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13px;line-height:1.7;color:#334155;margin:0 0 4px;\"><span>${escapeHtml(
+          const rest = lines.slice(1).join("\n").trim();
+          const row = `<div style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13px;line-height:1.7;color:#334155;margin:0 0 6px;\"><span>${escapeHtml(
             left
           )}</span><span style=\"text-align:right;white-space:nowrap;\">${escapeHtml(
             date
           )}</span></div>`;
           const restMarkup = rest
-            ? `<p style=\"font-size:13px;line-height:1.7;color:#334155;margin:0 0 12px;\">${escapeHtml(
+            ? `<p style=\"font-size:13px;line-height:1.7;color:#334155;margin:0 0 22px;\">${escapeHtml(
                 rest
               ).replace(/\n/g, "<br/>")}</p>`
             : "";
           return `${row}${restMarkup}`;
         }
+        return `<p style="font-size:13px;line-height:1.7;color:#334155;margin:0 0 22px;">${escapeHtml(
+          part
+        ).replace(/\n/g, "<br/>")}</p>`;
       }
 
-      return `<p style=\"font-size:13px;line-height:1.7;color:#334155;margin:0 0 12px;\">${escapeHtml(
+      // Body paragraph.
+      return `<p style=\"font-size:13px;line-height:1.75;color:#334155;margin:0 0 16px;\">${escapeHtml(
         part
       ).replace(/\n/g, "<br/>")}</p>`;
     })
     .join("");
 
-  return `<section>${paragraphs}</section>`;
+  const heading =
+    '<h1 style="font-size:24px;font-weight:700;color:#0f172a;margin:0 0 24px;padding:0 0 12px;border-bottom:1px solid #e2e8f0;letter-spacing:-0.01em;">Cover Letter</h1>';
+
+  return `<section style="padding:8px 0;">${heading}${paragraphs}</section>`;
 };

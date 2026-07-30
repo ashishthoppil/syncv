@@ -1069,6 +1069,20 @@ export const ScanSection = ({
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
+
+      // Remember the template the user actually downloaded with, so a later
+      // download from the Job Tracker uses the same one (fire-and-forget).
+      if (type === "cv" && scanJobId && !guestTrial) {
+        fetch("/api/job-tracker", {
+          method: "PATCH",
+          body: JSON.stringify({
+            id: scanJobId,
+            resumeTemplateId: selectedTemplate,
+          }),
+        }).catch((persistError) =>
+          console.error("Failed to persist downloaded template:", persistError)
+        );
+      }
     } catch (error) {
       console.error(error);
       toast.error("Unable to download PDF right now.");
