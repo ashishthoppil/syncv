@@ -12,7 +12,7 @@ const Hero = () => {
       <div className="mx-auto grid max-w-screen-xl gap-10">
         <div className="flex flex-col items-center pt-10">
           <Badge className="rounded-full border-none bg-primary py-1">
-            🚀 Get 3 free scans - Try now!
+            🚀 Get 2 free scans - Try now!
           </Badge>
           <h1 className="text-center mt-6 max-w-[20ch] text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
             Turn Your Resume Into an Interview-Winning Machine
@@ -24,7 +24,7 @@ const Hero = () => {
           <div className="mt-8 flex flex-wrap gap-3">
             <Button size="lg" className="w-full  md:w-auto  rounded-full text-base" asChild>
               <Link href="/sign-up">
-                Get 3 Free Scans
+                Get 2 Free Scans
                 <BookDown className="h-5 w-5" />
               </Link>
             </Button>

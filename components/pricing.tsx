@@ -20,7 +20,7 @@ const tooltipContent = {
 const plans = [
   {
     name: "Speed",
-    price: 699,
+    price: 749,
     description:
       "Built for fast job applications with essential optimization tools.",
     features: [
@@ -35,7 +35,7 @@ const plans = [
   },
   {
     name: "Pro",
-    price: 749,
+    price: 945,
     isRecommended: true,
     description:
       "Best value for serious applicants who need faster and fuller workflow support.",
