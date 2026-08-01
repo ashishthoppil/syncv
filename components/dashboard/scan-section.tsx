@@ -22,6 +22,7 @@ import {
 } from "@/components/resume-templates/config";
 import {
   extractCandidateName,
+  highlightKeywordsInHtml,
   renderCoverLetterHtml,
   renderResumeFromData,
   renderResumeHtml,
@@ -2760,9 +2761,21 @@ export const ScanSection = ({
                 </div>
                 <div className="flex min-h-0 flex-col bg-slate-100">
                   <div className="flex shrink-0 items-center justify-between px-4 py-2.5">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      Preview
-                    </span>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        Preview
+                      </span>
+                      {tailoredDocs.incorporatedKeywords?.length ? (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                          <span
+                            aria-hidden
+                            className="inline-block h-2.5 w-4 rounded-sm"
+                            style={{ backgroundColor: "rgba(16,185,129,0.18)" }}
+                          />
+                          Added keywords — not shown in the download
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="flex items-center gap-1.5 text-slate-500">
                       <button
                         type="button"
@@ -2796,26 +2809,32 @@ export const ScanSection = ({
                     >
                       <div
                         dangerouslySetInnerHTML={{
-                          __html: resumeData
-                            ? renderResumeFromData({
-                                data: resumeData,
-                                templateId: selectedTemplate,
-                                candidateName: previewCandidateName,
-                                designation: previewDesignation,
-                                photoUrl: profilePhotoUrl,
-                                overrides: templateOverrides[selectedTemplate],
-                                useContactIcons: !guestTrial,
-                              })
-                            : renderResumeHtml({
-                                resumeText:
-                                  editableResumeText || tailoredDocs.optimizedResumeText,
-                                templateId: selectedTemplate,
-                                candidateName: previewCandidateName,
-                                designation: previewDesignation,
-                                photoUrl: profilePhotoUrl,
-                                overrides: templateOverrides[selectedTemplate],
-                                useContactIcons: !guestTrial,
-                              }),
+                          // Highlight AI-added keywords in the PREVIEW only —
+                          // downloadPdf() renders its own HTML, so the PDF is
+                          // never highlighted.
+                          __html: highlightKeywordsInHtml(
+                            resumeData
+                              ? renderResumeFromData({
+                                  data: resumeData,
+                                  templateId: selectedTemplate,
+                                  candidateName: previewCandidateName,
+                                  designation: previewDesignation,
+                                  photoUrl: profilePhotoUrl,
+                                  overrides: templateOverrides[selectedTemplate],
+                                  useContactIcons: !guestTrial,
+                                })
+                              : renderResumeHtml({
+                                  resumeText:
+                                    editableResumeText || tailoredDocs.optimizedResumeText,
+                                  templateId: selectedTemplate,
+                                  candidateName: previewCandidateName,
+                                  designation: previewDesignation,
+                                  photoUrl: profilePhotoUrl,
+                                  overrides: templateOverrides[selectedTemplate],
+                                  useContactIcons: !guestTrial,
+                                }),
+                            tailoredDocs.incorporatedKeywords || []
+                          ),
                         }}
                       />
                     </div>

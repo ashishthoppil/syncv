@@ -1717,6 +1717,63 @@ export const resumeDataToText = (data: ResumeData): string => {
   return blocks.join("\n").trim();
 };
 
+const escapeRegExpLiteral = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const KEYWORD_HIGHLIGHT_STYLE =
+  "background-color:rgba(16,185,129,0.18);color:inherit;border-radius:2px;padding:0 1px;";
+
+/**
+ * Wrap occurrences of `keywords` in a faint <mark> so the user can see what the
+ * AI added and where. PREVIEW ONLY — never call this for the download/PDF HTML.
+ *
+ * Highlighting is applied strictly to text BETWEEN tags: the templates are
+ * inline-style heavy, so replacing across the whole string would corrupt markup
+ * (e.g. a keyword like "Design" or "Grid" matching inside a style attribute).
+ */
+export const highlightKeywordsInHtml = (
+  html: string,
+  keywords: string[] = []
+): string => {
+  const unique = Array.from(
+    new Set(
+      (keywords || [])
+        .map((keyword) => String(keyword || "").trim())
+        .filter((keyword) => keyword.length > 1)
+    )
+    // Longest first so "Applicant Tracking Systems" wins over "Systems".
+  ).sort((a, b) => b.length - a.length);
+  if (!unique.length || !html) return html;
+
+  const patterns = unique
+    .map((keyword) => {
+      const words = keyword.split(/\s+/).filter(Boolean).map(escapeRegExpLiteral);
+      if (!words.length) return "";
+      // Allow flexible separators between words, and only anchor with \b where
+      // the keyword edge is a word char (so "ES6+", "CI/CD", "Node.js" match).
+      const body = words.join("(?:\\W|_){1,3}");
+      const start = /\w/.test(keyword[0]) ? "\\b" : "";
+      const end = /\w/.test(keyword[keyword.length - 1]) ? "\\b" : "(?!\\w)";
+      return `${start}${body}${end}`;
+    })
+    .filter(Boolean);
+  if (!patterns.length) return html;
+
+  const matcher = new RegExp(`(?:${patterns.join("|")})`, "gi");
+
+  return html
+    .split(/(<[^>]*>)/)
+    .map((segment, index) => {
+      // Odd indices are tags — leave them untouched.
+      if (index % 2 === 1 || !segment) return segment;
+      return segment.replace(
+        matcher,
+        (match) => `<mark style="${KEYWORD_HIGHLIGHT_STYLE}">${match}</mark>`
+      );
+    })
+    .join("");
+};
+
 export const renderCoverLetterHtml = (content: string) => {
   const plain = stripMarkdownBold(content);
   const blocks = plain
