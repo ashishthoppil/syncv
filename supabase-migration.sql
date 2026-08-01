@@ -91,7 +91,10 @@ ALTER TABLE job_tracker
   ADD COLUMN IF NOT EXISTS generated_resume_text TEXT,
   ADD COLUMN IF NOT EXISTS generated_cover_letter_text TEXT,
   ADD COLUMN IF NOT EXISTS generated_resume_updated_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS generated_cover_letter_updated_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS generated_cover_letter_updated_at TIMESTAMPTZ,
+  -- Exact optimized-resume render payload, written ONLY when the user downloads
+  -- the optimized resume. Lets the Job Tracker reproduce the identical file.
+  ADD COLUMN IF NOT EXISTS generated_resume_payload JSONB;
 
 -- Subscriptions table for Razorpay plan access control
 CREATE TABLE IF NOT EXISTS subscriptions (

@@ -159,6 +159,12 @@ const SCORE_COMPONENTS: {
   { key: "sectionCompleteness", label: "Section completeness", weight: 10 },
 ];
 
+// Educational-degree keywords must never appear in the keyword picker — we never
+// add keywords to the education section, so they aren't selectable/integratable.
+const DEGREE_KEYWORD_RE =
+  /\b(bachelor'?s?|master'?s?|doctorate|doctoral|ph\.?\s?d|mca|m\.?\s?c\.?a|mba|m\.?\s?b\.?a|bca|b\.?\s?c\.?a|bba|b\.?\s?b\.?a|b\.?\s?tech|m\.?\s?tech|b\.e\.?|m\.e\.?|b\.?\s?sc|m\.?\s?sc|b\.a\.?|m\.a\.?|b\.?\s?com|m\.?\s?com|b\.?\s?ed|m\.?\s?ed|diploma|associate'?s?\s+degree|under\s?graduate|post\s?graduate|graduation|degrees?)\b/i;
+const isDegreeKeyword = (keyword: string) => DEGREE_KEYWORD_RE.test(keyword);
+
 type FormField = keyof typeof initialFormState;
 type FormErrors = Partial<Record<FormField, string>>;
 
@@ -1070,17 +1076,27 @@ export const ScanSection = ({
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
 
-      // Remember the template the user actually downloaded with, so a later
-      // download from the Job Tracker uses the same one (fire-and-forget).
+      // Persist the EXACT optimized resume the user just downloaded, so the Job
+      // Tracker can reproduce an identical file. This is the only place the
+      // resume payload is stored — the Job Tracker resume download is available
+      // only after this runs (fire-and-forget).
       if (type === "cv" && scanJobId && !guestTrial) {
         fetch("/api/job-tracker", {
           method: "PATCH",
           body: JSON.stringify({
             id: scanJobId,
             resumeTemplateId: selectedTemplate,
+            generatedResumePayload: {
+              resumeData: resumeData || null,
+              resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
+              template: selectedTemplate,
+              overrides: templateOverrides[selectedTemplate] || null,
+              candidateName,
+              designation: previewDesignation,
+            },
           }),
         }).catch((persistError) =>
-          console.error("Failed to persist downloaded template:", persistError)
+          console.error("Failed to persist downloaded resume:", persistError)
         );
       }
     } catch (error) {
@@ -1149,9 +1165,9 @@ export const ScanSection = ({
       const selectedDraft = baseResumeList.find(
         (r) => r.id === selectedBaseResumeId
       )?.draft;
-      const structuredExperience = selectedDraft
-        ? draftToResumeData(selectedDraft).experience || []
-        : [];
+      const selectedResumeData = selectedDraft ? draftToResumeData(selectedDraft) : null;
+      const structuredExperience = selectedResumeData?.experience || [];
+      const structuredProjects = selectedResumeData?.projects || [];
       const response = await fetch("/api/tailor-documents", {
         method: "POST",
         body: JSON.stringify({
@@ -1180,6 +1196,9 @@ export const ScanSection = ({
           // mapping (designation/company/location/duration) so the optimizer
           // never has to re-parse it from ambiguous text.
           structuredExperience,
+          // Structured projects (with links) — links are re-attached from here
+          // since the model output has no link field.
+          structuredProjects,
         }),
       });
       const data = await response.json();
@@ -2132,13 +2151,18 @@ export const ScanSection = ({
             <div className="flex items-center justify-between gap-3 px-6 pt-4">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                 <Check className="h-3.5 w-3.5" />
-                {careerSelectedKeywords.length} of {result.missingKeywords.length} selected
+                {careerSelectedKeywords.length} of{" "}
+                {result.missingKeywords.filter((k) => !isDegreeKeyword(k)).length} selected
               </span>
               <div className="flex items-center gap-3 text-xs">
                 <button
                   type="button"
                   className="font-medium text-slate-600 hover:text-slate-900"
-                  onClick={() => setCareerSelectedKeywords(result.missingKeywords)}
+                  onClick={() =>
+                    setCareerSelectedKeywords(
+                      result.missingKeywords.filter((k) => !isDegreeKeyword(k))
+                    )
+                  }
                 >
                   Select all
                 </button>
@@ -2160,13 +2184,17 @@ export const ScanSection = ({
                   key: "skills",
                   title: null,
                   hint: null,
-                  keywords: result.missingKeywords.filter((k) => !isLanguageKeyword(k)),
+                  keywords: result.missingKeywords.filter(
+                    (k) => !isLanguageKeyword(k) && !isDegreeKeyword(k)
+                  ),
                 },
                 {
                   key: "languages",
                   title: "Languages this role mentions",
                   hint: "Select a language only if you actually speak or write it — it's added to a Languages section, never to Skills.",
-                  keywords: result.missingKeywords.filter((k) => isLanguageKeyword(k)),
+                  keywords: result.missingKeywords.filter(
+                    (k) => isLanguageKeyword(k) && !isDegreeKeyword(k)
+                  ),
                 },
               ]
                 .filter((group) => group.keywords.length)

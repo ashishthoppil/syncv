@@ -115,6 +115,7 @@ export async function PATCH(req) {
       coverLetterTemplateId,
       generatedResumeText,
       generatedCoverLetterText,
+      generatedResumePayload,
     } = body;
 
     if (!id) {
@@ -129,7 +130,8 @@ export async function PATCH(req) {
       resumeTemplateId !== undefined ||
       coverLetterTemplateId !== undefined ||
       generatedResumeText !== undefined ||
-      generatedCoverLetterText !== undefined;
+      generatedCoverLetterText !== undefined ||
+      generatedResumePayload !== undefined;
 
     if (!hasBaseUpdate && !hasGeneratedUpdate) {
       return NextResponse.json({
@@ -167,6 +169,10 @@ export async function PATCH(req) {
     if (generatedCoverLetterText !== undefined) {
       generatedUpdates.generated_cover_letter_text = generatedCoverLetterText;
       generatedUpdates.generated_cover_letter_updated_at = new Date().toISOString();
+    }
+    if (generatedResumePayload !== undefined) {
+      generatedUpdates.generated_resume_payload = generatedResumePayload;
+      generatedUpdates.generated_resume_updated_at = new Date().toISOString();
     }
 
     const supabase = getAdminClient();

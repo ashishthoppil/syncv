@@ -9,9 +9,14 @@ import { supabase } from "@/lib/supabaseClient";
 import {
   extractCandidateName,
   renderResumeHtml,
+  renderResumeFromData,
   renderCoverLetterHtml,
+  type ResumeData,
 } from "@/components/resume-templates/render";
-import type { ResumeTemplateId } from "@/components/resume-templates/types";
+import type {
+  ResumeTemplateId,
+  ResumeTemplateThemeOverrides,
+} from "@/components/resume-templates/types";
 import {
   Briefcase,
   ChevronLeft,
@@ -54,6 +59,14 @@ type Job = {
   cover_letter_template_id?: string | null;
   generated_resume_text?: string | null;
   generated_cover_letter_text?: string | null;
+  generated_resume_payload?: {
+    resumeData?: ResumeData | null;
+    resumeText?: string;
+    template?: ResumeTemplateId;
+    overrides?: ResumeTemplateThemeOverrides | null;
+    candidateName?: string;
+    designation?: string;
+  } | null;
   created_at: string;
   updated_at: string;
 };
@@ -192,10 +205,12 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
 
 
   const downloadGeneratedDocument = async (job: Job, type: "resume" | "cover") => {
-    const resumeText = job.generated_resume_text || "";
     const coverText = job.generated_cover_letter_text || "";
-    if (type === "resume" && !resumeText) {
-      toast.error("No saved resume found for this entry. Download once from Scan first.");
+    const payload = job.generated_resume_payload || null;
+    // The resume is only downloadable once the user has downloaded the optimized
+    // resume for this JD (which is when the exact payload gets stored).
+    if (type === "resume" && !payload) {
+      toast.error("Download the optimized resume from Scan first, then it appears here.");
       return;
     }
     if (type === "cover" && !coverText) {
@@ -203,19 +218,30 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
       return;
     }
 
+    const payloadCandidate =
+      payload?.candidateName || extractCandidateName(payload?.resumeText || "");
+
     setDownloading(`${job.id}-${type}`);
     try {
-      // Use the real template renderers (same engine as the scan preview) so
-      // downloads keep their template styling instead of a bland fallback.
-      const templateId = (job.resume_template_id || "classic-blue") as ResumeTemplateId;
+      // Reproduce the EXACT optimized resume the user downloaded — same renderer
+      // (structured object when available), template, and overrides.
       const html =
         type === "resume"
-          ? renderResumeHtml({
-              resumeText,
-              templateId,
-              candidateName: extractCandidateName(resumeText),
-              designation: job.designation || "",
-            })
+          ? payload?.resumeData
+            ? renderResumeFromData({
+                data: payload.resumeData,
+                templateId: (payload.template || "classic-blue") as ResumeTemplateId,
+                candidateName: payloadCandidate,
+                designation: payload.designation || job.designation || "",
+                overrides: payload.overrides || undefined,
+              })
+            : renderResumeHtml({
+                resumeText: payload?.resumeText || "",
+                templateId: (payload?.template || "classic-blue") as ResumeTemplateId,
+                candidateName: payloadCandidate,
+                designation: payload?.designation || job.designation || "",
+                overrides: payload?.overrides || undefined,
+              })
           : renderCoverLetterHtml(coverText);
       const response = await fetch("/api/generate-pdf", {
         method: "POST",
@@ -230,7 +256,9 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
-      const candidateSlug = toSlugPart(extractCandidateName(resumeText));
+      const candidateSlug = toSlugPart(
+        type === "resume" ? payloadCandidate : extractCandidateName(coverText)
+      );
       const orgSlug = toSlugPart(job.organization || "organization");
       anchor.download =
         type === "resume"
@@ -454,7 +482,14 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={downloading === `${job.id}-resume`}
+                    disabled={
+                      downloading === `${job.id}-resume` || !job.generated_resume_payload
+                    }
+                    title={
+                      job.generated_resume_payload
+                        ? undefined
+                        : "Available after you download the optimized resume for this job"
+                    }
                     className="gap-0 rounded-md rounded-r-none"
                     onClick={() => downloadGeneratedDocument(job, "resume")}
                   >

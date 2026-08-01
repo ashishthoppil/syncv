@@ -1687,6 +1687,10 @@ export async function POST(req) {
       // When present, it is used as the factual baseline instead of re-parsing
       // the resume text — which loses the company/location distinction.
       structuredExperience = [],
+      // The base resume's structured projects (with links). The model schema has
+      // no link field and text-parsing drops links, so links are re-attached
+      // deterministically from this.
+      structuredProjects = [],
     } = await req.json();
 
     if (!resume || !jd) {
@@ -1799,9 +1803,18 @@ export async function POST(req) {
     const factualEducationBaseline = parseEducationFromSection(
       extractSectionsFromText(resume).education || resume.split("\n")
     ).slice(0, 8);
-    const factualProjectsBaseline = parseProjectsFromSection(
-      extractSectionsFromText(resume).projects || []
-    ).slice(0, 8);
+    // Prefer the base resume's structured projects (they carry the link, which
+    // text-parsing drops). Fall back to text-parsing for guest scans.
+    const structuredProjectBaseline = (Array.isArray(structuredProjects) ? structuredProjects : [])
+      .map((p) => ({
+        name: ensureString(p?.name),
+        link: ensureString(p?.link || p?.href || p?.url),
+        bullets: ensureStringArray(p?.responsibilities || p?.bullets),
+      }))
+      .filter((p) => p.name || p.bullets.length);
+    const factualProjectsBaseline = structuredProjectBaseline.length
+      ? structuredProjectBaseline.slice(0, 8)
+      : parseProjectsFromSection(extractSectionsFromText(resume).projects || []).slice(0, 8);
     const hasProjectsSection = factualProjectsBaseline.length > 0;
     const factualLanguagesBaseline = parseLanguagesFromSection(
       extractSectionsFromText(resume).languages || []
@@ -1831,7 +1844,7 @@ export async function POST(req) {
       '  "summary": "string",',
       '  "skills": ["Category: item, item, item", "..."],',
       '  "experience": [{ "designation": "string", "company": "string", "location": "string", "duration": "string", "bullets": ["string", "..."] }],',
-      '  "projects": [{ "name": "string", "bullets": ["string", "..."] }],',
+      '  "projects": [{ "name": "string", "link": "string", "bullets": ["string", "..."] }],',
       '  "education": [{ "qualification": "string", "institution": "string", "location": "string", "duration": "string", "details": ["string"] }],',
       '  "certifications": ["string"],',
       '  "languages": ["string"]',
@@ -1845,7 +1858,7 @@ export async function POST(req) {
       "2. skills: An array of 3-6 strings (NEVER more than 6), each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Systems/EMR, Patient Care, Communication; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. NEVER use a 'Certifications' or 'Licenses' category in skills — certifications have their own dedicated field and must not be duplicated here. List ONLY concrete, named hard skills, tools, and technologies here (e.g. React, GraphQL, Docker, Jest) — each category should hold 3-8 such items. DO NOT create a catch-all bucket named 'Concepts', 'Additional', 'Additional Skills', 'Other', or 'Miscellaneous', and DO NOT stuff a long list of job-description phrases into skills. A keyword belongs in skills ONLY if it is a real, named tool / technology / hard skill the candidate actually uses. Concept, practice, methodology, quality, domain, or ways-of-working keywords (e.g. 'user-centric design', 'high-traffic systems', 'code review', 'documentation', 'system design', 'progressive enhancement', 'cross-functional collaboration', 'consumer-facing products') must NOT be listed as skills — instead weave them into the SUMMARY or the single most relevant EXPERIENCE / PROJECT bullet. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player') and never a phrase like '1 to 3 years experience'; genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
       "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. KEEP EVERY role from the work-history section — never drop, merge, or hollow out a role because it looks unrelated to the target job. When a role seems off-target, do NOT remove it: instead RE-ANGLE its bullets to foreground the responsibilities, transferable skills, tools, and outcomes most relevant to the target role and its keywords, while staying 100% truthful to what the candidate actually did. Every role must keep a substantive set of bullets (3-6), never be reduced to an empty or near-empty entry. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Each bullet starts with a strong action verb. QUANTIFICATION (critical): surface EVERY number, %, $, duration, volume, frequency, team size, or scale already present anywhere in the resume and LEAD the bullet with it. If the resume states a concrete fact that can be expressed as a figure (e.g. 'reduced load time from 5s to 2s' → 'cut load time 60%', 'handled tickets for 3 teams' → 'supported 3 teams'), express it as a metric — but ONLY when the resume literally supports the number. KEYWORD WEAVING: for each missing keyword that genuinely relates to a role's real work, integrate it INTO an existing bullet by rewording that bullet so the keyword reads naturally in context — never tack it on as a tag or a parenthetical list, and never add a new bare bullet that just names a keyword. Spread keywords across the DIFFERENT roles (put each where it fits best) rather than clustering many into one role. If the original resume states a metric, preserve it verbatim. NEVER invent, estimate, or inflate a number, percentage, employer, name, or claim the resume does not support.",
       hasProjectsSection
-        ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name and 1-3 bullets describing scope and impact. Weave any missing keyword that genuinely relates to a project INTO that project's bullets by rewording them naturally — never as an appended tag, and only where the project truly used it. Never drop a project to save space."
+        ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name, its link (copy the project's link VERBATIM from the baseline — never drop or alter it), and 1-3 bullets describing scope and impact. Weave any missing keyword that genuinely relates to a project INTO that project's bullets by rewording them naturally — never as an appended tag, and only where the project truly used it. Never drop a project to save space."
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
       "5. education: Output ONLY the education entries that literally appear in the original resume (match the factual education baseline below) — output exactly that many entries, no more. NEVER add, split, duplicate, or invent a degree, institution, or graduation year (e.g. do not add a Bachelor's the candidate never listed). Each object has qualification, institution, location, duration as separate fields, plus optional detail strings for honors/coursework. Put the city/country in the location field — never merge it into institution or duration. Preserve every degree exactly as written.",
       "6. certifications: Array of strings, each 'Cert name — Issuer (year if known)'. Include ONLY certifications that appear in the original resume — never invent a credential. If the original resume includes a verification/credential URL for a certification or course, append it to that string EXACTLY as written (e.g. 'Front-End Web Development with React — Coursera — https://coursera.org/verify/ABC123'). Never invent, guess, or shorten URLs — include one only if it is present in the original resume.",
@@ -2023,7 +2036,7 @@ export async function POST(req) {
       resumeData.projects = factualProjectsBaseline.map((project) => ({
         name: ensureString(project.name),
         meta: "",
-        link: "",
+        link: ensureString(project.link),
         responsibilities: ensureStringArray(project.bullets),
       }));
     }
@@ -2032,6 +2045,27 @@ export async function POST(req) {
     // (speaking engagements, community roles) despite being told to omit it.
     if (!hasProjectsSection) {
       resumeData.projects = [];
+    }
+
+    // Re-attach project links from the base resume. The model schema has no link
+    // field, so it always drops them — restore each link by matching the project
+    // name (falling back to positional order when counts line up).
+    if (structuredProjectBaseline.length && resumeData.projects.length) {
+      const normName = (value) =>
+        ensureString(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+      const linkByName = new Map(
+        structuredProjectBaseline
+          .filter((p) => p.link)
+          .map((p) => [normName(p.name), p.link])
+      );
+      const sameCount = resumeData.projects.length === structuredProjectBaseline.length;
+      resumeData.projects = resumeData.projects.map((project, index) => {
+        if (ensureString(project.link)) return project;
+        const link =
+          linkByName.get(normName(project.name)) ||
+          (sameCount ? ensureString(structuredProjectBaseline[index]?.link) : "");
+        return link ? { ...project, link } : project;
+      });
     }
 
     // Languages. Two sources are legitimate: (1) languages already in the base
