@@ -845,11 +845,25 @@ const computeTitleSimilarity = (titleA = "", titleB = "") => {
     if (b.has(token)) intersection += 1;
   }
   const union = new Set([...a, ...b]).size;
-  return union ? intersection / union : 0;
+  const jaccard = union ? intersection / union : 0;
+  // Coverage of the TARGET title. Detected "titles" are often whole header
+  // lines ("Talent Acquisition Specialist | Acme | Kochi | Feb 2025 - Mar 2026"),
+  // whose company/location/date tokens would otherwise crush the Jaccard score
+  // even though the role title matches exactly. Coverage answers the question
+  // that actually matters: is the target title present in this resume?
+  const coverage = intersection / a.size;
+  return Math.max(jaccard, coverage);
 };
 
-const analyzeTitleMatch = (resumeText = "", targetRole = "") => {
-  const detectedTitles = extractTitlesFromResume(resumeText);
+const analyzeTitleMatch = (resumeText = "", targetRole = "", candidateTitle = "") => {
+  // The candidate's own verified title (from the structured base resume) is the
+  // most reliable signal — the text projection of the optimized resume has no
+  // standalone headline line, so parsing alone under-detects it.
+  const verifiedTitle = String(candidateTitle || "").trim();
+  const parsedTitles = extractTitlesFromResume(resumeText);
+  const detectedTitles = verifiedTitle
+    ? [verifiedTitle, ...parsedTitles.filter((t) => canonical(t) !== canonical(verifiedTitle))]
+    : parsedTitles;
   const target = String(targetRole || "").trim();
   if (!target) {
     return {
@@ -1086,8 +1100,10 @@ const analyzeExperience = (resumeText = "", jdText = "", providedYears = null) =
   };
 };
 
+// Strong action verbs across professions — not just engineering. A bullet that
+// opens with any of these reads as an accomplishment rather than a duty.
 const ACTION_VERB_PATTERN =
-  /\b(led|managed|built|developed|designed|implemented|created|launched|delivered|architected|optimized|improved|reduced|increased|grew|drove|achieved|automated|streamlined|migrated|deployed|owned|spearheaded|mentored|coordinated|negotiated|saved|generated|boosted|accelerated|cut|scaled|engineered|established|introduced|refactored|integrated|orchestrated|maintained|resolved|prevented|expanded|standardized|simplified|enabled|trained|launched|championed)\b/i;
+  /\b(led|managed|built|developed|designed|implemented|created|launched|delivered|architected|optimized|improved|reduced|increased|grew|drove|achieved|automated|streamlined|migrated|deployed|owned|spearheaded|mentored|coordinated|negotiated|saved|generated|boosted|accelerated|cut|scaled|engineered|established|introduced|refactored|integrated|orchestrated|maintained|resolved|prevented|expanded|standardized|simplified|enabled|trained|championed|handled|sourced|screened|recruited|hired|onboarded|interviewed|assessed|evaluated|conducted|collaborated|partnered|supported|facilitated|organized|planned|executed|oversaw|supervised|directed|administered|analyzed|researched|reviewed|audited|tracked|monitored|measured|reported|documented|presented|communicated|advised|consulted|guided|coached|educated|instructed|onboarding|processed|prepared|compiled|forecasted|budgeted|allocated|procured|sold|marketed|promoted|acquired|retained|engaged|resolved|handled|counseled|assisted|contributed|shipped|tested|validated|verified|configured|installed|upgraded|customized|redesigned|restructured|transformed|modernized|consolidated|unified|centralized|drafted|authored|published|curated|moderated|scheduled|staffed|filled|placed|matched|shortlisted)\b/i;
 
 // A "measurable" achievement: a percentage / currency / "N+" / magnitude
 // number, OR a number followed (allowing up to 3 adjective words in between,
@@ -1307,7 +1323,7 @@ const buildSuggestions = ({
 const scoreResume = (
   resumeText,
   weightedKeywords,
-  { jdText = "", targetRole = "", experienceYears = null } = {}
+  { jdText = "", targetRole = "", experienceYears = null, candidateTitle = "" } = {}
 ) => {
   const resumeIndex = buildResumeIndex(resumeText);
 
@@ -1355,7 +1371,7 @@ const scoreResume = (
       ? clampScore((skillsMatchedCount / skillKeywords.length) * 100)
       : keywordMatchScore;
 
-  const titleAnalysis = analyzeTitleMatch(resumeText, targetRole);
+  const titleAnalysis = analyzeTitleMatch(resumeText, targetRole, candidateTitle);
   const experienceAnalysis = analyzeExperience(resumeText, jdText, experienceYears);
   const achievementAnalysis = analyzeAchievements(resumeText);
   const sectionAnalysis = detectSections(resumeText);
@@ -1416,6 +1432,9 @@ export async function POST(req) {
       // Candidate's total years of experience from the structured base resume;
       // used directly for the experience score instead of parsing the text.
       experienceYears = null,
+      // Candidate's own job title from the structured base resume, used for the
+      // title-match score instead of relying solely on text parsing.
+      candidateTitle = "",
     } = await req.json();
 
     if (!resume || !jd) {
@@ -1523,6 +1542,7 @@ export async function POST(req) {
       jdText: jd,
       targetRole: designation || "",
       experienceYears,
+      candidateTitle,
     });
 
     if (userId && (activePlan || usingFreeTrial) && !skipUsageTracking) {

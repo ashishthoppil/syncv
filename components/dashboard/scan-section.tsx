@@ -590,6 +590,9 @@ export const ScanSection = ({
           experienceYears:
             baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
               .experienceYears || "",
+          candidateTitle:
+            baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
+              .designation || "",
         }),
       });
       const data = await response.json();
@@ -1245,6 +1248,9 @@ export const ScanSection = ({
             experienceYears:
               baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
                 .experienceYears || "",
+            candidateTitle:
+              baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
+                .designation || "",
           }),
         });
         const finalScoreData = await finalScoreResponse.json();
@@ -1377,6 +1383,9 @@ export const ScanSection = ({
           experienceYears:
             baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
               .experienceYears || "",
+          candidateTitle:
+            baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
+              .designation || "",
         }),
       });
       const data = await response.json();
