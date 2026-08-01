@@ -1095,9 +1095,19 @@ export const ScanSection = ({
               designation: previewDesignation,
             },
           }),
-        }).catch((persistError) =>
-          console.error("Failed to persist downloaded resume:", persistError)
-        );
+        })
+          .then((res) => res.json())
+          .then((res) => {
+            if (res?.partial) {
+              toast.warn(
+                res.partialMessage ||
+                  "Downloaded — but couldn't save it to Job Tracker. Run the latest database migration."
+              );
+            }
+          })
+          .catch((persistError) =>
+            console.error("Failed to persist downloaded resume:", persistError)
+          );
       }
     } catch (error) {
       console.error(error);

@@ -202,7 +202,11 @@ export async function PATCH(req) {
 
       if (genRes.error) {
         partial = true;
-        partialMessage = genRes.error.message;
+        // Surface a clear, actionable message when the column is missing so the
+        // user is told to run the migration rather than being left guessing.
+        partialMessage = /generated_resume_payload/.test(genRes.error.message)
+          ? "The 'generated_resume_payload' column is missing. Run the latest supabase-migration.sql to enable Job Tracker resume downloads."
+          : genRes.error.message;
       } else {
         data = genRes.data || data;
       }
