@@ -647,28 +647,241 @@ const findBestMatchForTerm = (term, resumeIndex) => {
   return { matched: false, confidence: 0, mode: "none" };
 };
 
+// Title-token synonyms, grouped by profession. Candidates come from every
+// field, so a recruiter, nurse, or accountant must match their target role as
+// reliably as a software engineer. Keys/values are normalized tokens.
 const TITLE_SYNONYMS = {
-  software: ["developer", "programmer", "engineering", "sde"],
+  // ---- Software & IT engineering ----
+  software: ["developer", "programmer", "engineering", "sde", "swe"],
   engineer: ["developer", "engineering", "engr"],
   developer: ["engineer", "programmer", "dev"],
+  programmer: ["developer", "engineer", "coder"],
   frontend: ["front-end", "ui", "client-side", "web", "fe"],
   backend: ["back-end", "server-side", "api", "be"],
   fullstack: ["full-stack", "full", "stack", "fs"],
-  manager: ["lead", "head", "mgr"],
-  product: ["pm", "po", "owner"],
+  mobile: ["android", "ios", "app"],
+  android: ["mobile", "app"],
+  ios: ["mobile", "app"],
+  devops: ["sre", "site-reliability", "platform", "infrastructure"],
+  sre: ["devops", "reliability", "platform"],
+  cloud: ["aws", "gcp", "azure", "infrastructure"],
+  qa: ["quality-assurance", "tester", "test", "sdet", "automation"],
+  tester: ["qa", "test", "quality", "testing"],
+  security: ["cybersecurity", "infosec", "appsec"],
+  architect: ["lead", "principal"],
+  embedded: ["firmware", "hardware"],
+  database: ["dba", "sql", "data"],
+  network: ["networking", "systems", "infrastructure"],
+  support: ["helpdesk", "service-desk", "technical-support"],
+
+  // ---- Data, analytics & AI ----
   data: ["analytics", "bi", "ml", "ai"],
   scientist: ["researcher", "analyst"],
-  analyst: ["analytics", "consultant"],
-  devops: ["sre", "site-reliability", "platform"],
-  cloud: ["aws", "gcp", "azure", "infrastructure"],
+  analyst: ["analytics", "analysis"],
   ml: ["machine-learning", "ai", "artificial-intelligence"],
   ai: ["ml", "machine-learning"],
-  qa: ["quality-assurance", "tester", "test"],
-  security: ["cybersecurity", "infosec"],
+  bi: ["business-intelligence", "analytics", "data"],
+  statistician: ["analyst", "statistics", "data"],
+
+  // ---- Product, project & program management ----
+  product: ["pm", "po", "owner"],
+  project: ["program", "delivery", "pm"],
+  program: ["project", "programme", "delivery"],
+  scrum: ["agile", "master"],
+  delivery: ["project", "program", "implementation"],
+
+  // ---- Design & creative ----
   ux: ["ui", "design", "experience"],
   ui: ["ux", "design", "interface"],
   designer: ["design", "ui", "ux"],
-  architect: ["lead", "principal"],
+  graphic: ["visual", "creative", "design"],
+  creative: ["design", "art", "graphic"],
+  animator: ["animation", "motion", "vfx"],
+  illustrator: ["illustration", "artist", "graphic"],
+  video: ["motion", "editor", "film"],
+
+  // ---- HR, recruiting & talent ----
+  recruiter: ["recruitment", "recruiting", "talent", "acquisition", "hiring", "staffing", "sourcer", "ta"],
+  recruitment: ["recruiter", "recruiting", "talent", "acquisition", "hiring", "staffing"],
+  recruiting: ["recruiter", "recruitment", "talent", "acquisition", "hiring"],
+  talent: ["recruitment", "recruiting", "recruiter", "acquisition", "hiring", "hr", "people"],
+  acquisition: ["recruitment", "recruiting", "recruiter", "talent", "hiring", "sourcing"],
+  hr: ["human-resources", "human", "resources", "people", "hrbp", "personnel", "talent"],
+  human: ["hr", "resources", "people", "personnel"],
+  resources: ["hr", "human", "personnel"],
+  personnel: ["hr", "human", "people", "staff"],
+  people: ["hr", "human-resources", "human", "talent", "culture"],
+  hrbp: ["hr", "human-resources", "business-partner"],
+  staffing: ["recruitment", "recruiting", "talent", "resourcing"],
+  sourcer: ["sourcing", "recruiter", "talent"],
+  payroll: ["compensation", "benefits", "hr"],
+  compensation: ["benefits", "rewards", "payroll"],
+  onboarding: ["induction", "orientation", "hr"],
+
+  // ---- Finance, accounting & banking ----
+  accountant: ["accounting", "accounts", "finance", "ca", "cpa"],
+  accounting: ["accountant", "accounts", "finance", "bookkeeping"],
+  accounts: ["accounting", "accountant", "finance"],
+  finance: ["financial", "accounting", "fpa", "treasury"],
+  financial: ["finance", "fiscal", "accounting"],
+  auditor: ["audit", "assurance", "compliance"],
+  audit: ["auditor", "assurance", "compliance"],
+  tax: ["taxation", "gst", "vat"],
+  treasury: ["cash", "finance", "funds"],
+  bookkeeper: ["bookkeeping", "accounts", "accounting"],
+  controller: ["comptroller", "finance", "accounting"],
+  investment: ["equity", "portfolio", "banking", "wealth"],
+  banking: ["banker", "bank", "investment"],
+  underwriter: ["underwriting", "risk", "insurance"],
+  actuary: ["actuarial", "risk", "insurance"],
+  billing: ["invoicing", "revenue-cycle", "accounts"],
+
+  // ---- Sales, business development & account management ----
+  sales: ["selling", "revenue", "bd", "account"],
+  bd: ["business-development", "sales", "growth"],
+  account: ["client", "customer", "relationship"],
+  client: ["account", "customer", "relationship"],
+  presales: ["solution", "sales-engineer", "technical-sales"],
+  territory: ["region", "field", "area"],
+
+  // ---- Marketing, content & communications ----
+  marketing: ["marketer", "growth", "brand", "demand-generation"],
+  marketer: ["marketing", "growth", "brand"],
+  brand: ["branding", "marketing", "identity"],
+  growth: ["performance-marketing", "acquisition", "marketing"],
+  seo: ["search", "sem", "organic"],
+  content: ["copy", "editorial", "writing"],
+  copywriter: ["copy", "content", "writer"],
+  writer: ["content", "copywriter", "author", "editorial"],
+  editor: ["editorial", "content", "copy"],
+  social: ["social-media", "community", "smm"],
+  communications: ["comms", "pr", "public-relations"],
+  pr: ["public-relations", "communications", "comms"],
+
+  // ---- Customer support & success ----
+  customer: ["client", "consumer", "user"],
+  success: ["customer-success", "csm", "retention"],
+  helpdesk: ["service-desk", "support", "technical-support"],
+  care: ["support", "service", "customer-service"],
+
+  // ---- Operations, supply chain & logistics ----
+  operations: ["ops", "operational", "operating"],
+  ops: ["operations", "operational"],
+  supply: ["supply-chain", "procurement", "sourcing"],
+  procurement: ["purchasing", "sourcing", "buyer", "supply"],
+  purchasing: ["procurement", "buyer", "sourcing"],
+  logistics: ["shipping", "transportation", "distribution", "warehouse"],
+  warehouse: ["inventory", "logistics", "distribution"],
+  inventory: ["stock", "warehouse", "materials"],
+  planner: ["planning", "scheduler", "demand"],
+
+  // ---- Legal & compliance ----
+  legal: ["law", "counsel", "attorney", "advocate"],
+  counsel: ["legal", "attorney", "lawyer", "advocate"],
+  attorney: ["lawyer", "counsel", "legal", "advocate"],
+  lawyer: ["attorney", "counsel", "legal", "advocate"],
+  paralegal: ["legal-assistant", "legal"],
+  compliance: ["regulatory", "governance", "risk"],
+  regulatory: ["compliance", "governance", "affairs"],
+
+  // ---- Healthcare & life sciences ----
+  nurse: ["nursing", "rn", "staff-nurse", "caregiver"],
+  nursing: ["nurse", "rn", "clinical"],
+  physician: ["doctor", "medical", "clinician"],
+  doctor: ["physician", "medical", "clinician"],
+  clinical: ["clinician", "medical", "healthcare"],
+  medical: ["clinical", "healthcare", "physician"],
+  pharmacist: ["pharmacy", "pharmaceutical"],
+  therapist: ["therapy", "rehabilitation", "counselor"],
+  radiologist: ["radiology", "imaging"],
+  technician: ["technologist", "tech", "operator"],
+  technologist: ["technician", "tech"],
+  healthcare: ["health", "medical", "clinical"],
+  rcm: ["revenue-cycle", "medical-billing", "billing"],
+
+  // ---- Education & training ----
+  teacher: ["teaching", "educator", "instructor", "faculty", "tutor"],
+  educator: ["teacher", "instructor", "teaching", "faculty"],
+  instructor: ["teacher", "trainer", "educator", "facilitator"],
+  professor: ["lecturer", "faculty", "academic"],
+  lecturer: ["professor", "faculty", "academic"],
+  tutor: ["teacher", "instructor", "coach"],
+  trainer: ["training", "instructor", "facilitator", "coach"],
+  training: ["trainer", "learning", "development", "enablement"],
+  learning: ["training", "development", "ld"],
+  curriculum: ["instructional", "academic", "content"],
+
+  // ---- Administration & office support ----
+  administrator: ["admin", "administration", "administrative"],
+  admin: ["administrator", "administrative", "administration"],
+  secretary: ["assistant", "administrative", "clerk"],
+  receptionist: ["front-desk", "front-office", "assistant"],
+  clerk: ["clerical", "assistant", "administrative"],
+  executive: ["officer", "specialist"],
+  officer: ["executive", "specialist"],
+  specialist: ["executive", "officer", "expert"],
+  coordinator: ["administrator", "assistant", "scheduler"],
+
+  // ---- Core engineering (mechanical, civil, electrical, manufacturing) ----
+  mechanical: ["mechanics", "machine", "hvac"],
+  civil: ["structural", "construction", "site"],
+  structural: ["civil", "construction"],
+  electrical: ["electronics", "electrician", "power"],
+  electronics: ["electrical", "hardware", "embedded"],
+  chemical: ["process", "petrochemical"],
+  manufacturing: ["production", "plant", "factory", "shop-floor"],
+  production: ["manufacturing", "plant", "assembly"],
+  maintenance: ["reliability", "servicing", "upkeep"],
+  quality: ["qa", "qc", "assurance", "inspection"],
+  qc: ["quality", "quality-control", "inspection"],
+  inspector: ["inspection", "quality", "auditor"],
+  draftsman: ["drafting", "cad", "designer"],
+  surveyor: ["survey", "surveying", "estimator"],
+  estimator: ["estimation", "costing", "quantity"],
+
+  // ---- Hospitality, travel, retail & food service ----
+  hospitality: ["hotel", "guest", "service"],
+  chef: ["cook", "culinary", "kitchen"],
+  cook: ["chef", "culinary", "kitchen"],
+  waiter: ["server", "steward", "food-service"],
+  housekeeping: ["cleaning", "janitorial", "custodial"],
+  retail: ["store", "shop", "merchandising"],
+  merchandiser: ["merchandising", "retail", "buyer"],
+  cashier: ["teller", "checkout", "front-end"],
+  travel: ["tourism", "tour", "ticketing"],
+
+  // ---- Media, writing & journalism ----
+  journalist: ["reporter", "correspondent", "news", "writer"],
+  reporter: ["journalist", "correspondent", "news"],
+  producer: ["production", "media", "broadcast"],
+  photographer: ["photography", "visual", "camera"],
+
+  // ---- Consulting, strategy & research ----
+  consultant: ["consulting", "advisor", "advisory", "specialist"],
+  consulting: ["consultant", "advisory", "advisor"],
+  advisor: ["consultant", "advisory", "counselor"],
+  strategy: ["strategic", "strategist", "planning"],
+  strategist: ["strategy", "strategic", "planner"],
+  researcher: ["research", "scientist", "analyst"],
+  research: ["researcher", "study", "investigation"],
+
+  // ---- Real estate, construction & facilities ----
+  construction: ["site", "civil", "building"],
+  contractor: ["contracting", "construction", "vendor"],
+  facilities: ["facility", "maintenance", "premises"],
+  realtor: ["real-estate", "property", "broker"],
+  property: ["real-estate", "realty", "estate"],
+  broker: ["brokerage", "agent", "dealer"],
+  agent: ["representative", "broker", "executive"],
+  representative: ["agent", "rep", "executive"],
+
+  // ---- Cross-domain leadership ----
+  manager: ["lead", "head", "mgr", "supervisor"],
+  supervisor: ["manager", "lead", "foreman", "incharge"],
+  director: ["head", "chief", "vp"],
+  vp: ["vice-president", "director", "head"],
+  chief: ["head", "director", "c-level"],
+  founder: ["cofounder", "entrepreneur", "owner"],
 };
 
 const TITLE_KEYWORDS = new RegExp(
@@ -728,8 +941,10 @@ const TITLE_KEYWORDS = new RegExp(
   "gi"
 );
 
+// Words that mark a line as a likely job title. Spans every profession, not
+// just tech, so titles are detected for all candidates.
 const TITLE_LINE_HINT =
-  /\b(engineer|developer|programmer|manager|designer|analyst|architect|consultant|specialist|lead|officer|coordinator|administrator|scientist|researcher|director|head|associate|intern|tester|recruiter|trainer)\b/i;
+  /\b(engineer|developer|programmer|manager|designer|analyst|architect|consultant|specialist|lead|officer|coordinator|administrator|scientist|researcher|director|head|associate|intern|tester|recruiter|trainer|executive|supervisor|assistant|accountant|auditor|controller|banker|broker|underwriter|actuary|bookkeeper|cashier|teller|nurse|physician|doctor|surgeon|pharmacist|therapist|technician|technologist|clinician|paralegal|attorney|lawyer|counsel|advocate|teacher|educator|instructor|professor|lecturer|tutor|principal|writer|editor|journalist|reporter|copywriter|marketer|strategist|planner|buyer|merchandiser|procurement|logistics|storekeeper|chef|cook|steward|waiter|receptionist|secretary|clerk|agent|representative|advisor|counselor|surveyor|estimator|draftsman|inspector|foreman|operator|mechanic|electrician|technolog|realtor|producer|photographer|animator|illustrator|founder|partner|president|chairman|owner|freelancer|apprentice|trainee|volunteer)\b/i;
 
 const TITLE_MODIFIERS = new Set([
   "senior",
@@ -822,36 +1037,49 @@ const extractTitlesFromResume = (resumeText = "") => {
   return titles.slice(0, 10);
 };
 
-const titleToTokenSet = (title = "") => {
-  const tokens = normalizePhrase(title)
+// The title's own words (seniority modifiers stripped), before synonym expansion.
+const titleTokens = (title = "") =>
+  normalizePhrase(title)
     .split(/\s+/)
     .map((token) => normalizeToken(token))
     .filter(Boolean)
     .filter((token) => !TITLE_MODIFIERS.has(token));
+
+const expandTitleTokens = (tokens = []) => {
   const expanded = new Set(tokens);
   for (const token of tokens) {
-    const variants = TITLE_SYNONYMS[token] || [];
-    variants.forEach((item) => expanded.add(normalizeToken(item)));
+    (TITLE_SYNONYMS[token] || []).forEach((item) => expanded.add(normalizeToken(item)));
   }
   return expanded;
 };
 
-const computeTitleSimilarity = (titleA = "", titleB = "") => {
-  const a = titleToTokenSet(titleA);
-  const b = titleToTokenSet(titleB);
-  if (!a.size || !b.size) return 0;
+const computeTitleSimilarity = (targetTitle = "", candidateTitle = "") => {
+  const targetWords = titleTokens(targetTitle);
+  const candidateWords = titleTokens(candidateTitle);
+  if (!targetWords.length || !candidateWords.length) return 0;
+
+  const a = expandTitleTokens(targetWords);
+  const b = expandTitleTokens(candidateWords);
+
   let intersection = 0;
   for (const token of a) {
     if (b.has(token)) intersection += 1;
   }
   const union = new Set([...a, ...b]).size;
   const jaccard = union ? intersection / union : 0;
-  // Coverage of the TARGET title. Detected "titles" are often whole header
-  // lines ("Talent Acquisition Specialist | Acme | Kochi | Feb 2025 - Mar 2026"),
-  // whose company/location/date tokens would otherwise crush the Jaccard score
-  // even though the role title matches exactly. Coverage answers the question
-  // that actually matters: is the target title present in this resume?
-  const coverage = intersection / a.size;
+
+  // Coverage of the target title's ACTUAL words — how many of them are
+  // represented (directly or via a synonym) in the candidate's title. Measured
+  // against the unexpanded target so a synonym-rich role isn't penalised by its
+  // own inflated denominator, and so extra tokens in the candidate (company,
+  // location, dates from a header line) can't crush a genuine match.
+  const covered = targetWords.filter(
+    (token) =>
+      b.has(token) ||
+      (TITLE_SYNONYMS[token] || []).some((item) => b.has(normalizeToken(item)))
+  ).length;
+  const coverage = covered / targetWords.length;
+
   return Math.max(jaccard, coverage);
 };
 
