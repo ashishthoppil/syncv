@@ -43,7 +43,7 @@ const softwareApplicationJsonLd = {
     {
       "@type": "Offer",
       name: "Speed",
-      price: "749",
+      price: "849",
       priceCurrency: "INR",
       url: `${SITE_URL}/scan?section=settings#dashboard-pricing`,
     },
