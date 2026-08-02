@@ -244,10 +244,15 @@ CREATE INDEX IF NOT EXISTS idx_support_tickets_created_at ON support_tickets(cre
 
 ALTER TABLE support_tickets ENABLE ROW LEVEL SECURITY;
 
+-- Dropped first so the whole block stays re-runnable; CREATE POLICY has no
+-- IF NOT EXISTS form.
+DROP POLICY IF EXISTS "Users can view their own tickets" ON support_tickets;
 CREATE POLICY "Users can view their own tickets"
   ON support_tickets FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert their own tickets" ON support_tickets;
 CREATE POLICY "Users can insert their own tickets"
   ON support_tickets FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update their own tickets" ON support_tickets;
 CREATE POLICY "Users can update their own tickets"
   ON support_tickets FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
@@ -274,6 +279,7 @@ CREATE INDEX IF NOT EXISTS idx_support_ticket_notes_created_at
 
 ALTER TABLE support_ticket_notes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view notes on their own tickets" ON support_ticket_notes;
 CREATE POLICY "Users can view notes on their own tickets"
   ON support_ticket_notes FOR SELECT
   USING (
