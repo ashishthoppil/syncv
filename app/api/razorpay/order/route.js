@@ -50,20 +50,33 @@ export async function POST(request) {
       return NextResponse.json({ error: "Subscription already active." }, { status: 409 });
     }
 
+    // Only reuse a pending checkout when it was created for the exact same plan id.
+    // Matching on plan_key alone would resurrect subscriptions created against a
+    // stale (e.g. test-mode) plan id after the configured plan ids change.
     if (
       existingSubscription?.status === "pending" &&
       existingSubscription?.razorpay_subscription_id &&
-      (existingSubscription?.plan_id === selectedPlan.planId ||
-        existingSubscription?.plan_key === selectedPlan.key)
+      existingSubscription?.plan_id === selectedPlan.planId
     ) {
-      const existingRazorpay = await razorpay.subscriptions.fetch(
-        existingSubscription.razorpay_subscription_id,
-      );
+      let existingRazorpay = null;
+      try {
+        existingRazorpay = await razorpay.subscriptions.fetch(
+          existingSubscription.razorpay_subscription_id,
+        );
+      } catch {
+        // Unknown to the current Razorpay account/mode — fall through and create a new one.
+      }
 
-      return NextResponse.json({
-        subscription_id: existingRazorpay.id,
-        url: existingRazorpay.short_url,
-      });
+      if (
+        existingRazorpay?.short_url &&
+        existingRazorpay?.plan_id === selectedPlan.planId &&
+        existingRazorpay?.status === "created"
+      ) {
+        return NextResponse.json({
+          subscription_id: existingRazorpay.id,
+          url: existingRazorpay.short_url,
+        });
+      }
     }
 
     const created = await razorpay.subscriptions.create({

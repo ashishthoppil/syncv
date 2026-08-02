@@ -14,6 +14,7 @@ import { CreateCvSection } from "@/components/dashboard/create-cv-section";
 import { JobTrackerSection } from "@/components/dashboard/job-tracker-section";
 import { SettingsSection } from "@/components/dashboard/settings-section";
 import { BaseResumeSection } from "@/components/dashboard/base-resume-section";
+import { HelpCenterSection } from "@/components/dashboard/help-center-section";
 import { Loader2, LogOut, LayoutDashboard } from "lucide-react";
 import { toast } from "react-toastify";
 import { Logo } from "@/components/navbar/logo";
@@ -26,6 +27,7 @@ const sectionMap = {
   "base-resume": BaseResumeSection,
   profile: BaseResumeSection,
   "job-tracker": JobTrackerSection,
+  "help-center": HelpCenterSection,
   settings: SettingsSection,
 };
 
@@ -35,6 +37,7 @@ const sectionLabels = {
   "base-resume": "Base Resume",
   profile: "Base Resume",
   "job-tracker": "Job Tracker",
+  "help-center": "Help Center",
   settings: "Settings",
 };
 
@@ -225,6 +228,11 @@ const DashboardPageContent = () => {
     }
     if (activeSection === "job-tracker") {
       return <JobTrackerSection subscriptionLocked={subscriptionLocked || !subscription.allowsJobTracker} />;
+    }
+    // Deliberately not subscription-gated — support has to stay reachable when
+    // a plan lapses, which is exactly when people need it.
+    if (activeSection === "help-center") {
+      return <HelpCenterSection user={user} />;
     }
     if (activeSection === "settings") {
       return <SettingsSection onSubscriptionChange={() => refreshSubscription(user?.id)} />;

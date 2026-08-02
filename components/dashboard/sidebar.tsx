@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   UserRound,
   SettingsIcon,
+  LifeBuoy,
 } from "lucide-react";
 
 // "Create CV from Scratch" is intentionally omitted from the sidebar — the base
@@ -15,6 +16,7 @@ export const DASHBOARD_SECTIONS = [
   { id: "scan", label: "Scan Resume", icon: ScanLine },
   { id: "base-resume", label: "Base Resume", icon: UserRound },
   { id: "job-tracker", label: "Job Tracker", icon: BriefcaseBusiness },
+  { id: "help-center", label: "Help Center", icon: LifeBuoy },
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
