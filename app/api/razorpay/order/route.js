@@ -118,16 +118,16 @@ export async function POST(request) {
     // The Razorpay SDK rejects with a plain object ({ statusCode, error: { code, description } }),
     // not an Error, so `instanceof Error` alone would mask every API failure behind a generic message.
     const razorpayDescription = error?.error?.description;
-    const message =
-      razorpayDescription ||
-      (error instanceof Error ? error.message : null) ||
-      "Unable to start subscription.";
+    const message = razorpayDescription || error?.message || "Unable to start subscription.";
 
     console.error("[razorpay/order] subscription creation failed", {
       statusCode: error?.statusCode,
-      code: error?.error?.code,
+      // Razorpay nests its code; Supabase/Postgrest puts it at the top level.
+      code: error?.error?.code || error?.code,
       description: razorpayDescription,
-      message: error instanceof Error ? error.message : undefined,
+      message: error?.message,
+      details: error?.details,
+      hint: error?.hint,
     });
 
     return NextResponse.json({ error: message }, { status: error?.statusCode || 500 });
