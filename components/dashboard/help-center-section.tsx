@@ -179,7 +179,7 @@ export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
 
         setTickets(result.data || []);
         setIsAdmin(Boolean(result.isAdmin));
-      } catch (error) {
+      } catch {
         toast.error("Unable to load your tickets.");
         setTickets([]);
       } finally {
@@ -293,7 +293,7 @@ export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
 
       toast.success(`Ticket ${result.data.ticket_number} raised. We'll be in touch.`);
       await loadTickets(adminScope);
-    } catch (error) {
+    } catch {
       toast.error("Unable to send your request. Please try again.");
     } finally {
       setSubmitting(false);
@@ -325,7 +325,7 @@ export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
         (current || []).map((row) => (row.id === ticket.id ? { ...row, status: "cancelled" } : row))
       );
       toast.success("Ticket cancelled.");
-    } catch (error) {
+    } catch {
       toast.error("Unable to cancel this ticket.");
     } finally {
       setUpdatingId(null);
@@ -354,7 +354,7 @@ export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
         return;
       }
       toast.success(`${ticket.ticket_number} marked ${statusLabel(status).toLowerCase()}.`);
-    } catch (error) {
+    } catch {
       setTickets((current) =>
         (current || []).map((row) => (row.id === ticket.id ? { ...row, status: previous } : row))
       );
@@ -389,7 +389,7 @@ export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
       );
       setNoteDrafts((current) => ({ ...current, [ticket.id]: "" }));
       toast.success("Note added — the user has been notified.");
-    } catch (error) {
+    } catch {
       toast.error("Unable to save the note.");
     } finally {
       setSavingNoteId(null);
