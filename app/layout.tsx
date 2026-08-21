@@ -1,5 +1,6 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/toast-provider";
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
@@ -183,6 +184,7 @@ export default function RootLayout({
         />
         <TooltipProvider>{children}</TooltipProvider>
         <ToastProvider />
+        <Analytics />
       </body>
     </html>
   );

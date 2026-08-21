@@ -249,7 +249,11 @@ export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
       // is load-bearing, not just tidy.
       const path = `${user?.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file);
-      if (error) throw error;
+      if (error) {
+        // Surfaced verbatim: an upload rejected by storage RLS is a
+        // configuration problem, and "try again" would send the user in circles.
+        throw new Error(`Couldn't upload ${file.name}: ${error.message}`);
+      }
       paths.push(path);
     }
     return paths;
@@ -293,8 +297,12 @@ export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
 
       toast.success(`Ticket ${result.data.ticket_number} raised. We'll be in touch.`);
       await loadTickets(adminScope);
-    } catch {
-      toast.error("Unable to send your request. Please try again.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to send your request. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
