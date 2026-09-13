@@ -52,11 +52,11 @@ const Features = () => {
     <>
     <div id="features" className="w-full py-12 xs:py-20 px-6">
       <h2 className="text-3xl xs:text-4xl sm:text-5xl font-bold tracking-tight text-center">
-        Apply Faster. Get Better Results.
-      </h2>
-      <h2 className="text-2xl xs:text-2xl sm:text-2xl font-normal tracking-tight text-center mt-3">
         Tailor. Don&apos;t Fabricate.
       </h2>
+      <p className="text-xl sm:text-2xl font-normal tracking-tight text-center mt-3 text-foreground/80">
+        Every change comes from the resume you already have.
+      </p>
       <div className="w-full max-w-screen-lg mx-auto mt-10 sm:mt-16 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {features.map((feature) => (
           <div

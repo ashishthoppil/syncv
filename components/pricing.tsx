@@ -81,9 +81,9 @@ const Pricing = () => {
       id="pricing"
       className="flex flex-col items-center justify-center py-12 xs:py-20 px-6"
     >
-      <h1 className="text-3xl xs:text-4xl md:text-5xl font-bold text-center tracking-tight">
+      <h2 className="text-3xl xs:text-4xl md:text-5xl font-bold text-center tracking-tight">
         Pricing
-      </h1>
+      </h2>
       {/* <Tabs
         value={selectedBillingPeriod}
         onValueChange={setSelectedBillingPeriod}

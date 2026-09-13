@@ -1,22 +1,17 @@
-import type { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/metadata";
 
-export const metadata: Metadata = {
-  title: "Scan & Optimize Your Resume",
+/**
+ * The product application. noindex, but deliberately NOT blocked in robots.txt:
+ * it is linked from the public navbar and footer, so a crawler has to be able
+ * to fetch it in order to read this directive. See lib/seo/routes.ts.
+ */
+export const metadata = buildMetadata({
+  title: "Scan & Tailor Your Resume",
   description:
-    "Upload your resume, paste a job description, and get an instant ATS score with a tailored CV and cover letter. Track every application in one dashboard.",
-  alternates: { canonical: "/scan" },
-  openGraph: {
-    title: "Scan & Optimize Your Resume | SynCV",
-    description:
-      "Upload your resume and paste a job description to get an instant ATS score and a tailored CV.",
-    url: "/scan",
-    type: "website",
-  },
-  robots: {
-    index: false,
-    follow: true,
-  },
-};
+    "Upload your resume, paste a job description, and review the tailored result.",
+  path: "/scan",
+  noIndex: true,
+});
 
 export default function ScanLayout({ children }: { children: React.ReactNode }) {
   return children;

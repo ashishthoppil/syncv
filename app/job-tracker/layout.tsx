@@ -1,15 +1,12 @@
-import type { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/metadata";
 
-export const metadata: Metadata = {
+/** User-generated application data. noindex, crawlable so the directive is read. */
+export const metadata = buildMetadata({
   title: "Job Application Tracker",
-  description:
-    "Track every job application, resume version, and ATS score in one place with SynCV's job tracker.",
-  alternates: { canonical: "/job-tracker" },
-  robots: {
-    index: false,
-    follow: true,
-  },
-};
+  description: "Your saved applications, scans and tailored resume versions.",
+  path: "/job-tracker",
+  noIndex: true,
+});
 
 export default function JobTrackerLayout({ children }: { children: React.ReactNode }) {
   return children;

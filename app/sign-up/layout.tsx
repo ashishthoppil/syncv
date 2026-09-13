@@ -1,22 +1,17 @@
-import type { Metadata } from "next";
+import { buildMetadata } from "@/lib/seo/metadata";
+import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
 
-export const metadata: Metadata = {
+/**
+ * noindex, for the same reason as /login: it is a form, not a page anyone
+ * should land on from a search result. The marketing pages are what rank, and
+ * they all link here.
+ */
+export const metadata = buildMetadata({
   title: "Create Your Free Account",
-  description:
-    "Sign up free to scan unlimited resumes against job descriptions, fix missing keywords, and download tailored CVs and cover letters with SynCV.",
-  alternates: { canonical: "/sign-up" },
-  openGraph: {
-    title: "Create Your Free Account | SynCV",
-    description:
-      "Sign up free to scan resumes, fix missing keywords, and download tailored CVs and cover letters.",
-    url: "/sign-up",
-    type: "website",
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
-};
+  description: `Create a free SynCV account and get ${FREE_PLAN_SCAN_LIMIT} resume scans, no card required.`,
+  path: "/sign-up",
+  noIndex: true,
+});
 
 export default function SignUpLayout({ children }: { children: React.ReactNode }) {
   return children;

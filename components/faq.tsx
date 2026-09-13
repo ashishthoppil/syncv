@@ -1,78 +1,69 @@
+import { FAQ_POOL, type FaqKey } from "@/lib/content/faqs";
 import {
   BadgeDollarSign,
-  Route,
+  Bot,
+  FileCheck2,
+  Layers,
+  PencilLine,
+  Repeat2,
+  ScanSearch,
   ShieldCheck,
-  Truck,
+  Sparkles,
   Undo2,
-  UserRoundCheck,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const faq = [
-  {
-    icon: Route,
-    question: "Where can I find my resume scans?",
-    answer:
-      "All your resume scans and application history are saved in the Job Tracker section for easy access and reference.",
-  },
-  {
-    icon: Truck,
-    question: "Can I edit the optimized resume before downloading?",
-    answer:
-      "Yes. After optimization, you can edit the resume directly in the preview and re-evaluate the score before downloading.",
-  },
-  {
-    icon: BadgeDollarSign,
-    question: "What payment methods do you accept?",
-    answer:
-      "At the moment, we accept payments through Razorpay only. We will expand to more trusted payment providers soon.",
-  },
-  {
-    icon: ShieldCheck,
-    question: "What if something doesn’t work?",
-    answer:
-      "If you face issues with resume parsing, scoring, or downloads, email us at info@syncv.app and we’ll ensure a fast resolution.",
-  },
-  {
-    icon: UserRoundCheck,
-    question: "How can I contact customer support?",
-    answer:
-      "Email us at info@syncv.app. We usually respond within 24 hours.",
-  },
-  {
-    icon: Undo2,
-    question: "Do you offer refunds?",
-    answer:
-      "We do not offer refunds. However, we're here to assist with any issues or concerns you may have — just reach out to support.",
-  },
+/**
+ * Homepage FAQ.
+ *
+ * These used to be support trivia — where scans are saved, which payment
+ * processor we use. They are now the questions people actually search before
+ * choosing a tool, answered from the shared pool in lib/content/faqs.ts so the
+ * same question never gets two different answers across the site.
+ *
+ * Answers are plain text in the HTML rather than behind an accordion, because
+ * an answer a crawler cannot reach is an answer that only exists for clicks.
+ */
+const HOMEPAGE_FAQS: { key: FaqKey; icon: LucideIcon }[] = [
+  { key: "whatIsAiResumeTailor", icon: Bot },
+  { key: "doesSyncvInvent", icon: ShieldCheck },
+  { key: "multipleJobs", icon: Repeat2 },
+  { key: "tailoringVsRewriting", icon: Layers },
+  { key: "atsHelp", icon: ScanSearch },
+  { key: "canEdit", icon: PencilLine },
+  { key: "differentCareers", icon: Sparkles },
+  { key: "freeScans", icon: FileCheck2 },
+  { key: "payments", icon: BadgeDollarSign },
+  { key: "refunds", icon: Undo2 },
 ];
 
 const FAQ = () => {
   return (
-    <div
-      id="faq"
-      className="min-h-screen flex items-center justify-center px-6 py-12 xs:py-20"
-    >
+    <div id="faq" className="flex items-center justify-center px-6 py-12 xs:py-20">
       <div className="max-w-screen-lg">
         <h2 className="text-3xl xs:text-4xl md:text-5xl !leading-[1.15] font-bold tracking-tight text-center">
           Frequently Asked Questions
         </h2>
-        <p className="mt-3 xs:text-lg text-center text-muted-foreground">
-          Quick answers to common questions about our products and services.
+        <p className="text-xl sm:text-2xl font-normal tracking-tight text-center mt-3 text-foreground/80">
+          What people ask before they trust a tool with their resume.
         </p>
 
-        <div className="mt-12 grid md:grid-cols-2 bg-background rounded-xl overflow-hidden outline outline-[1px] outline-border outline-offset-[-1px]">
-          {faq.map(({ question, answer, icon: Icon }) => (
-            <div key={question} className="border p-6 -mt-px -ml-px">
-              <div className="h-8 w-8 xs:h-10 xs:w-10 flex items-center justify-center rounded-full bg-accent">
-                <Icon className="h-4 w-4 xs:h-6 xs:w-6" />
+        <dl className="mt-12 grid md:grid-cols-2 bg-background rounded-xl overflow-hidden outline outline-[1px] outline-border outline-offset-[-1px]">
+          {HOMEPAGE_FAQS.map(({ key, icon: Icon }) => {
+            const { question, answer } = FAQ_POOL[key];
+            return (
+              <div key={key} className="border p-6 -mt-px -ml-px">
+                <div className="h-8 w-8 xs:h-10 xs:w-10 flex items-center justify-center rounded-full bg-accent">
+                  <Icon className="h-4 w-4 xs:h-6 xs:w-6" />
+                </div>
+                <dt className="mt-3 mb-2 text-lg xs:text-[1.35rem] font-semibold tracking-tight">
+                  <h3>{question}</h3>
+                </dt>
+                <dd className="text-sm xs:text-base text-foreground/80">{answer}</dd>
               </div>
-              <div className="mt-3 mb-2 flex items-start gap-2 text-lg xs:text-[1.35rem] font-semibold tracking-tight">
-                <span>{question}</span>
-              </div>
-              <p className="text-sm xs:text-base">{answer}</p>
-            </div>
-          ))}
-        </div>
+            );
+          })}
+        </dl>
       </div>
     </div>
   );

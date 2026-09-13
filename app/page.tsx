@@ -1,159 +1,93 @@
+import BeforeAfter from "@/components/before-after";
 import CTABanner from "@/components/cta-banner";
+import DemoVideo from "@/components/demo-video";
 import FAQ from "@/components/faq";
 import Features from "@/components/features";
 import Footer from "@/components/footer";
 import Hero from "@/components/hero";
+import HowItWorks from "@/components/how-it-works";
+import MoreTools from "@/components/more-tools";
 import { Navbar } from "@/components/navbar";
 import Pricing from "@/components/pricing";
-// import Testimonials from "@/components/testimonials";
-import type { Metadata } from "next";
+import JsonLd from "@/components/seo/json-ld";
+import WhyTailor from "@/components/why-tailor";
+import { FAQ_POOL } from "@/lib/content/faqs";
+import { buildMetadata } from "@/lib/seo/metadata";
+import {
+  breadcrumbNode,
+  buildGraph,
+  faqNode,
+  softwareApplicationNode,
+  videoObjectNode,
+  webPageNode,
+} from "@/lib/seo/schema";
+import { absoluteUrl } from "@/lib/seo/site";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://syncv.app";
+const PATH = "/";
+const TITLE = "AI Resume Tailor – Tailor Your Resume to Any Job";
+const DESCRIPTION =
+  "Tailor your resume to every job in 2 clicks. SynCV uses AI to highlight your relevant experience without inventing skills, experience, or achievements. Try 3 scans free.";
 
-export const metadata: Metadata = {
-  title: "Resume Optimizer & ATS Score Checker",
-  description:
-    "Beat applicant tracking systems with SynCV. Upload your resume, paste a job description, and instantly get an ATS score, missing keywords, a tailored CV, and a custom cover letter.",
-  alternates: { canonical: "/" },
-  openGraph: {
-    title: "Resume Optimizer & ATS Score Checker | SynCV",
-    description:
-      "Beat applicant tracking systems with SynCV. Get an instant ATS score, fix missing keywords, and download a tailored resume and cover letter.",
-    url: SITE_URL,
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Resume Optimizer & ATS Score Checker | SynCV",
-    description:
-      "Upload your resume, paste a job description, and get a tailored CV with an ATS score in seconds.",
-  },
-};
+export const metadata = buildMetadata({
+  title: TITLE,
+  description: DESCRIPTION,
+  path: PATH,
+  // The tagline is the strongest thing SynCV has to say and it survives being
+  // read out of context, which is what a shared link is.
+  socialTitle:
+    "Your resume should change for every job. Your experience shouldn't. | SynCV",
+});
 
-const softwareApplicationJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  name: "SynCV",
-  applicationCategory: "BusinessApplication",
-  operatingSystem: "Web",
-  url: SITE_URL,
-  description:
-    "AI-powered resume optimizer and ATS score checker. Tailor your CV to any job description and generate a matching cover letter in seconds.",
-  offers: [
-    {
-      "@type": "Offer",
-      name: "Speed",
-      price: "849",
-      priceCurrency: "INR",
-      url: `${SITE_URL}/scan?section=settings#dashboard-pricing`,
-    },
-    {
-      "@type": "Offer",
-      name: "Pro",
-      price: "945",
-      priceCurrency: "INR",
-      url: `${SITE_URL}/scan?section=settings#dashboard-pricing`,
-    },
-  ],
-  featureList: [
-    "ATS resume scoring",
-    "Keyword matching",
-    "Tailored resume generation",
-    "Cover letter generator",
-    "Job application tracker",
-    "Resume template designer",
-  ],
-};
-
-const faqJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  mainEntity: [
-    {
-      "@type": "Question",
-      name: "Where can I find my resume scans?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text:
-          "All your resume scans and application history are saved in the Job Tracker section for easy access and reference.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "Can I edit the optimized resume before downloading?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text:
-          "Yes. After optimization, you can edit the resume directly in the preview and re-evaluate the score before downloading.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "What payment methods do you accept?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text:
-          "At the moment we accept payments through Razorpay. We will expand to more trusted payment providers soon.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "How can I contact customer support?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: "Email us at info@syncv.app. We usually respond within 24 hours.",
-      },
-    },
-    {
-      "@type": "Question",
-      name: "Do you offer refunds?",
-      acceptedAnswer: {
-        "@type": "Answer",
-        text:
-          "We do not offer refunds. However, we're here to assist with any issues or concerns - just reach out to support.",
-      },
-    },
-  ],
-};
-
-const breadcrumbJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  itemListElement: [
-    {
-      "@type": "ListItem",
-      position: 1,
-      name: "Home",
-      item: SITE_URL,
-    },
-  ],
-};
+/**
+ * FAQ markup mirrors exactly the questions components/faq.tsx renders below.
+ * If you change one, change the other — markup describing invisible content is
+ * a structured-data violation.
+ */
+const homepageFaqs = [
+  FAQ_POOL.whatIsAiResumeTailor,
+  FAQ_POOL.doesSyncvInvent,
+  FAQ_POOL.multipleJobs,
+  FAQ_POOL.tailoringVsRewriting,
+  FAQ_POOL.atsHelp,
+  FAQ_POOL.canEdit,
+  FAQ_POOL.differentCareers,
+  FAQ_POOL.freeScans,
+  FAQ_POOL.payments,
+  FAQ_POOL.refunds,
+];
 
 export default function Home() {
+  const url = absoluteUrl(PATH);
+  const trail = [{ name: "Home", path: PATH }];
+
+  const graph = buildGraph([
+    webPageNode({
+      path: PATH,
+      name: TITLE,
+      description: DESCRIPTION,
+      breadcrumbs: trail,
+      about: "software",
+    }),
+    softwareApplicationNode(),
+    videoObjectNode(),
+    breadcrumbNode(url, trail),
+    faqNode(url, homepageFaqs),
+  ]);
+
   return (
     <>
-      <script
-        id="ld-software-application"
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationJsonLd) }}
-      />
-      <script
-        id="ld-faq"
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-      />
-      <script
-        id="ld-breadcrumb"
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
-      />
+      <JsonLd id="ld-home" data={graph} />
       <Navbar isHome={true} />
       <main className="pt-16 xs:pt-20 sm:pt-24">
         <Hero />
+        <DemoVideo />
+        <BeforeAfter />
+        <HowItWorks />
+        <WhyTailor />
         <Features />
+        <MoreTools />
         <Pricing />
         <FAQ />
-        {/* <Testimonials /> */}
         <CTABanner />
         <Footer />
       </main>

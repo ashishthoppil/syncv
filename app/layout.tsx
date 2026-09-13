@@ -1,5 +1,13 @@
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { JsonLd } from "@/components/seo/json-ld";
 import { ToastProvider } from "@/components/toast-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { buildGraph, organizationNode, websiteNode } from "@/lib/seo/schema";
+import {
+  DEFAULT_OG_IMAGE,
+  SITE_NAME,
+  SITE_URL,
+  absoluteUrl,
+} from "@/lib/seo/site";
 import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
@@ -10,11 +18,9 @@ const geistSans = Geist({
   display: "swap",
 });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://syncv.app";
-const SITE_NAME = "SynCV";
-const DEFAULT_TITLE = "SynCV - Resume Optimizer, ATS Checker & Cover Letter Generator";
+const DEFAULT_TITLE = "AI Resume Tailor – Tailor Your Resume to Any Job | SynCV";
 const DEFAULT_DESCRIPTION =
-  "SynCV is an ethical resume optimizer and ATS checker. Score your resume against any job description, fix missing keywords, generate tailored cover letters, and land more interviews.";
+  "SynCV tailors your existing resume to a specific job description in two clicks — highlighting the experience you already have, without inventing skills or achievements.";
 
 export const viewport: Viewport = {
   themeColor: "#ffffff",
@@ -32,31 +38,10 @@ export const metadata: Metadata = {
   },
   description: DEFAULT_DESCRIPTION,
   applicationName: SITE_NAME,
-  generator: "Next.js",
   referrer: "origin-when-cross-origin",
-  keywords: [
-    "SynCV",
-    "Resume optimizer",
-    "ATS resume checker",
-    "ATS score checker",
-    "resume scanner",
-    "resume builder",
-    "resume scoring",
-    "cover letter generator",
-    "Cover letter",
-    "job tracker",
-    "tailored resume",
-    "job application tracker",
-    "keyword optimizer",
-    "applicant tracking system",
-    "resume keywords",
-    "resume parser",
-    "JD matcher",
-    "career tools",
-    "resume improver",
-    "resume analyzer",
-  ],
-  authors: [{ name: "SynCV", url: SITE_URL }],
+  // No `keywords`: Google has ignored the meta keywords tag for two decades and
+  // a 20-term list reads as keyword stuffing to anyone auditing the page.
+  authors: [{ name: SITE_NAME, url: absoluteUrl("/") }],
   creator: SITE_NAME,
   publisher: SITE_NAME,
   category: "Career Tools",
@@ -65,32 +50,22 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  alternates: {
-    canonical: "/",
-  },
+  alternates: { canonical: absoluteUrl("/") },
   openGraph: {
     type: "website",
     siteName: SITE_NAME,
     locale: "en_US",
-    url: SITE_URL,
+    url: absoluteUrl("/"),
     title: DEFAULT_TITLE,
     description: DEFAULT_DESCRIPTION,
-    images: [
-      {
-        url: "/preview.png",
-        width: 1200,
-        height: 630,
-        alt: "SynCV - The Ethical Resume Optimizer and ATS Checker",
-        type: "image/png",
-      },
-    ],
+    images: [{ ...DEFAULT_OG_IMAGE, type: "image/png" }],
   },
   twitter: {
     card: "summary_large_image",
     title: DEFAULT_TITLE,
     description: DEFAULT_DESCRIPTION,
-    images: ["/preview.png"],
-    creator: "@syncv",
+    images: [DEFAULT_OG_IMAGE.url],
+    // No `creator`: SynCV has no X account, and @syncv belongs to someone else.
   },
   icons: [
     { rel: "icon", url: "/favicon.ico" },
@@ -113,7 +88,6 @@ export const metadata: Metadata = {
   robots: {
     index: true,
     follow: true,
-    nocache: false,
     googleBot: {
       index: true,
       follow: true,
@@ -131,34 +105,12 @@ export const metadata: Metadata = {
   },
 };
 
-const organizationJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  name: SITE_NAME,
-  url: SITE_URL,
-  logo: `${SITE_URL}/logo.png`,
-  sameAs: [],
-  contactPoint: [
-    {
-      "@type": "ContactPoint",
-      contactType: "customer support",
-      email: "info@syncv.app",
-      availableLanguage: ["English"],
-    },
-  ],
-};
-
-const websiteJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "WebSite",
-  name: SITE_NAME,
-  url: SITE_URL,
-  potentialAction: {
-    "@type": "SearchAction",
-    target: `${SITE_URL}/?q={search_term_string}`,
-    "query-input": "required name=search_term_string",
-  },
-};
+/**
+ * The site-wide half of the structured data graph: who SynCV is, and what this
+ * website is. Individual pages add their own WebPage / BreadcrumbList / Article
+ * nodes that reference these by @id.
+ */
+const siteGraph = buildGraph([organizationNode(), websiteNode()]);
 
 export default function RootLayout({
   children,
@@ -172,16 +124,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       </head>
       <body className={`${geistSans.className} antialiased`}>
-        <script
-          id="ld-organization"
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
-        />
-        <script
-          id="ld-website"
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
-        />
+        <JsonLd id="ld-site" data={siteGraph} />
         <TooltipProvider>{children}</TooltipProvider>
         <ToastProvider />
         <Analytics />
