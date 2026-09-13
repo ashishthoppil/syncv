@@ -11,12 +11,12 @@ import type { Metadata } from "next";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://syncv.app";
 
 export const metadata: Metadata = {
-  title: "AI Resume Optimizer & ATS Score Checker",
+  title: "Resume Optimizer & ATS Score Checker",
   description:
     "Beat applicant tracking systems with SynCV. Upload your resume, paste a job description, and instantly get an ATS score, missing keywords, a tailored CV, and a custom cover letter.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "AI Resume Optimizer & ATS Score Checker | SynCV",
+    title: "Resume Optimizer & ATS Score Checker | SynCV",
     description:
       "Beat applicant tracking systems with SynCV. Get an instant ATS score, fix missing keywords, and download a tailored resume and cover letter.",
     url: SITE_URL,
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "AI Resume Optimizer & ATS Score Checker | SynCV",
+    title: "Resume Optimizer & ATS Score Checker | SynCV",
     description:
       "Upload your resume, paste a job description, and get a tailored CV with an ATS score in seconds.",
   },
@@ -57,9 +57,9 @@ const softwareApplicationJsonLd = {
   ],
   featureList: [
     "ATS resume scoring",
-    "AI keyword matching",
+    "Keyword matching",
     "Tailored resume generation",
-    "AI cover letter generator",
+    "Cover letter generator",
     "Job application tracker",
     "Resume template designer",
   ],

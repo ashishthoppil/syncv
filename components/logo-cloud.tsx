@@ -12,7 +12,7 @@ function LogoCloud(props: HTMLAttributes<HTMLDivElement>) {
         <Image alt="NTT logo" src={`/company_logo/ntt.png`} height={175} width={140} />
         <Image alt="Oracle logo" src={`/company_logo/oracle.png`} height={175} width={140} />
       </div>
-      <p className="text-center">This list continues to expand.</p>
+      <h1 className="mt-5 font-normal text-xl text-center">Check how it works here 👇</h1>
     </div>
   );
 }

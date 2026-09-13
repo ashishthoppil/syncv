@@ -54,6 +54,9 @@ const Features = () => {
       <h2 className="text-3xl xs:text-4xl sm:text-5xl font-bold tracking-tight text-center">
         Apply Faster. Get Better Results.
       </h2>
+      <h2 className="text-2xl xs:text-2xl sm:text-2xl font-normal tracking-tight text-center mt-3">
+        Tailor. Don't Fabricate.
+      </h2>
       <div className="w-full max-w-screen-lg mx-auto mt-10 sm:mt-16 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {features.map((feature) => (
           <div

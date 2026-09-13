@@ -6,7 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
+import { ALL_PLANS, SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
@@ -115,8 +115,8 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   ];
 
   const dateFormats = ["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD", "DD Mon YYYY"];
-  const isUnavailableFeature = (feature: PlanFeature) =>
-    feature.title === "No job tracker" || feature.title === "No cover letter generation";
+  // Features phrased as "No …" are the ones a plan does not include.
+  const isUnavailableFeature = (feature: PlanFeature) => feature.title.startsWith("No ");
 
   const mapSubscriptionView = (record: SubscriptionRecord | null): SubscriptionView => {
     if (!record) return initialSubscription;
@@ -262,6 +262,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   }, [currentUserId, onSubscriptionChange, paymentPollingPlanName]);
 
   const handleSelectPlan = async (planKey: string) => {
+    // Only paid plans go through checkout; the free plan has no Razorpay plan.
     const plan = SUBSCRIPTION_PLANS.find((item) => item.key === planKey);
     if (!plan) {
       toast.error("Invalid plan selected.");
@@ -556,12 +557,18 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
           </p>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {SUBSCRIPTION_PLANS.map((plan) => {
-            const isCurrent = subscription.planKey === plan.key && subscription.hasActivePlan;
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {ALL_PLANS.map((plan) => {
+            // The free plan is the fallback for anyone without an active paid
+            // subscription, so it is "current" exactly when no plan is active.
+            const isCurrent = plan.isFree
+              ? !subscription.hasActivePlan
+              : subscription.planKey === plan.key && subscription.hasActivePlan;
             let cta = `Choose ${plan.name} plan`;
             if (isCurrent) {
               cta = "Current plan";
+            } else if (plan.isFree) {
+              cta = "Included with every account";
             } else if (subscription.planKey === "speed" && plan.key === "pro") {
               cta = "Upgrade to Pro";
             } else if (subscription.planKey === "pro" && plan.key === "speed") {
@@ -586,8 +593,12 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
                 <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
                 <p className="mt-1 text-sm text-slate-500">{plan.description}</p>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-3xl font-bold text-slate-900">₹{plan.priceInr}</span>
-                  <span className="text-xs font-medium text-slate-500">/ month</span>
+                  <span className="text-3xl font-bold text-slate-900">
+                    {plan.isFree ? "Free" : `₹${plan.priceInr}`}
+                  </span>
+                  <span className="text-xs font-medium text-slate-500">
+                    {plan.isFree ? "to start" : "/ month"}
+                  </span>
                 </div>
                 <ul className="mt-4 space-y-2.5 text-sm">
                   {plan.features.map((feature: PlanFeature) => {
@@ -623,7 +634,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
                 <Button
                   className="mt-5 w-full rounded-md"
                   variant={isCurrent ? "outline" : "default"}
-                  disabled={isCurrent || planActionLoading === plan.key}
+                  disabled={isCurrent || plan.isFree || planActionLoading === plan.key}
                   onClick={() => handleSelectPlan(plan.key)}
                 >
                   {planActionLoading === plan.key ? (

@@ -1730,7 +1730,7 @@ export async function POST(req) {
         } catch (error) {
           aiError = error;
           console.error(
-            `AI keyword extraction failed (attempt ${attempt}/${EXTRACTION_ATTEMPTS}):`,
+            `Keyword extraction failed (attempt ${attempt}/${EXTRACTION_ATTEMPTS}):`,
             error
           );
         }

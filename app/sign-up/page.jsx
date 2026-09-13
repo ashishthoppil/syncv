@@ -105,7 +105,7 @@ export default function SignUp() {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen bg-slate-50 pt-32 pb-10 flex justify-center px-4">
+      <main className="min-h-screen bg-slate-50 pt-32 pb-10 flex items-start justify-center px-4">
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
           <div className="flex flex-col items-center gap-3 text-center">
             <Logo />

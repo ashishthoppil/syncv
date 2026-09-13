@@ -452,7 +452,7 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
                 <FieldLabel icon={BriefcaseBusiness}>Professional headline</FieldLabel>
                 <Input
                   className="rounded-md"
-                  placeholder="e.g. Frontend Engineer @ SyncV"
+                  placeholder="e.g. Frontend Engineer @ SynCV"
                   value={headline}
                   onChange={(event) => setHeadline(event.target.value)}
                 />

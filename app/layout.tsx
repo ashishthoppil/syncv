@@ -12,9 +12,9 @@ const geistSans = Geist({
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://syncv.app";
 const SITE_NAME = "SynCV";
-const DEFAULT_TITLE = "SynCV - AI Resume Optimizer, ATS Checker & Cover Letter Generator";
+const DEFAULT_TITLE = "SynCV - Resume Optimizer, ATS Checker & Cover Letter Generator";
 const DEFAULT_DESCRIPTION =
-  "SynCV is an AI-powered resume optimizer and ATS checker. Score your resume against any job description, fix missing keywords, generate tailored cover letters, and land more interviews.";
+  "SynCV is an ethical resume optimizer and ATS checker. Score your resume against any job description, fix missing keywords, generate tailored cover letters, and land more interviews.";
 
 export const viewport: Viewport = {
   themeColor: "#ffffff",
@@ -36,14 +36,14 @@ export const metadata: Metadata = {
   referrer: "origin-when-cross-origin",
   keywords: [
     "SynCV",
-    "AI resume optimizer",
+    "Resume optimizer",
     "ATS resume checker",
     "ATS score checker",
     "resume scanner",
     "resume builder",
     "resume scoring",
     "cover letter generator",
-    "AI cover letter",
+    "Cover letter",
     "job tracker",
     "tailored resume",
     "job application tracker",
@@ -80,7 +80,7 @@ export const metadata: Metadata = {
         url: "/preview.png",
         width: 1200,
         height: 630,
-        alt: "SynCV - AI Resume Optimizer and ATS Checker",
+        alt: "SynCV - The Ethical Resume Optimizer and ATS Checker",
         type: "image/png",
       },
     ],

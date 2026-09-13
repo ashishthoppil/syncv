@@ -8,9 +8,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { CircleCheck, CircleHelp, CircleX } from "lucide-react";
 import Link from "next/link";
+
+// Features phrased as "No …" are the ones a plan does not include.
+const isUnavailableFeature = (title: string) => title.startsWith("No ");
 
 const tooltipContent = {
   scans: "Each scan gives role-specific feedback to improve your resume quickly.",
@@ -18,6 +22,24 @@ const tooltipContent = {
 };
 
 const plans = [
+  {
+    name: "Free",
+    price: 0,
+    description:
+      "Try every feature with a handful of free scans. No card required.",
+    features: [
+      {
+        title: `${FREE_PLAN_SCAN_LIMIT} resume scans in total`,
+        tooltip: tooltipContent.scans,
+      },
+      { title: "Resume generation", tooltip: tooltipContent.generation },
+      { title: "Cover letter generation", tooltip: tooltipContent.generation },
+      { title: "Job tracking" },
+      { title: "No weekly scan refill" },
+    ],
+    buttonText: "Start for free",
+    href: "/sign-up",
+  },
   {
     name: "Speed",
     price: 849,
@@ -76,7 +98,7 @@ const Pricing = () => {
           </TabsTrigger>
         </TabsList>
       </Tabs> */}
-      <div className="mt-12 max-w-screen-lg mx-auto grid grid-cols-1 lg:grid-cols-2 items-center gap-8">
+      <div className="mt-12 max-w-screen-xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 items-center gap-8">
         {plans.map((plan) => (
           <div
             key={plan.name}
@@ -91,9 +113,9 @@ const Pricing = () => {
             )}
             <h3 className="text-lg font-medium">{plan.name}</h3>
             <p className="mt-2 text-4xl font-bold">
-              ₹{plan.price}
+              {plan.price === 0 ? "Free" : `₹${plan.price}`}
               <span className="ml-1.5 text-sm text-muted-foreground font-normal">
-                /month
+                {plan.price === 0 ? "to start" : "/month"}
               </span>
             </p>
             <p className="mt-4 font-medium text-muted-foreground">
@@ -112,7 +134,7 @@ const Pricing = () => {
             <ul className="space-y-2">
               {plan.features.map((feature) => (
                 <li key={feature.title} className="flex items-start gap-1.5">
-                  {feature.title === "No job tracker" || feature.title === "No cover letter generation" ? 
+                  {isUnavailableFeature(feature.title) ?
                   <CircleX className="h-4 w-4 mt-1 text-red-600" /> :
                   <CircleCheck className="h-4 w-4 mt-1 text-green-600" />}
                   {feature.title}
