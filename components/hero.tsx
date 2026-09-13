@@ -20,7 +20,7 @@ const Hero = () => {
             Your resume should change for every job.
           </h1>
           <h1 className="text-center mt-3 max-w-[20ch] text-2xl font-normal leading-tight tracking-tight sm:text-2xl">
-            Your experience shouldn't.
+            Your experience shouldn&apos;t.
           </h1>
           <p className="text-center mt-6 max-w-[70ch] text-base text-slate-700 sm:text-lg">
             Tailor your resume to any job description in 2 clicks, using the experience and skills you already have.
