@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import {
   DashboardSidebar,
+  DashboardTabBar,
   DASHBOARD_SECTIONS,
 } from "@/components/dashboard/sidebar";
 import { ScanSection } from "@/components/dashboard/scan-section";
@@ -277,6 +278,11 @@ const DashboardPageContent = () => {
     : subscription.hasActivePlan
     ? `${scansRemaining} scan${scansRemaining === 1 ? "" : "s"} left`
     : `${scansRemaining} free scan${scansRemaining === 1 ? "" : "s"} left`;
+  // The app bar is title + balance + sign-out on a 360px row, so the badge
+  // drops to a numeric form on phones and keeps the full sentence from `sm` up.
+  const scansRemainingShortLabel = subscriptionLoading
+    ? "…"
+    : `${scansRemaining} left`;
 
   return (
     <div className="flex min-h-screen bg-slate-50">
@@ -294,59 +300,68 @@ const DashboardPageContent = () => {
         />
       </aside>
 
-      <div className="flex-1 flex flex-col min-h-screen">
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="text-lg font-semibold text-slate-900">
-              {sectionLabels[activeSection] || "Dashboard"}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className="hidden sm:inline-flex whitespace-nowrap border-slate-200 bg-slate-50 px-3 py-1 text-slate-700"
-            >
-              {scansRemainingLabel}
-            </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-2"
-              onClick={() => handleSectionChange("scan")}
-            >
-              <LayoutDashboard className="h-4 w-4" />
-              Dashboard
-            </Button>
-            <Button variant="outline" size="sm" className="gap-2 rounded-md shadow-md" onClick={handleLogout}>
-              <LogOut className="h-4 w-4" />
-              Logout
-            </Button>
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
+        {/* Mobile: a real app bar — title on the left, balance and sign-out as a
+            compact icon on the right. Section switching lives in the tab bar
+            below, so the old "Dashboard" button is desktop-only. */}
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white pt-safe shadow-sm">
+          <div className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="truncate text-base font-semibold text-slate-900 lg:text-lg">
+                {sectionLabels[activeSection] || "Dashboard"}
+              </span>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Badge
+                variant="outline"
+                className="whitespace-nowrap border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 sm:px-3 sm:text-xs"
+              >
+                <span className="sm:hidden">{scansRemainingShortLabel}</span>
+                <span className="hidden sm:inline">{scansRemainingLabel}</span>
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="hidden gap-2 lg:inline-flex"
+                onClick={() => handleSectionChange("scan")}
+              >
+                <LayoutDashboard className="h-4 w-4" />
+                Dashboard
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Log out"
+                className="h-9 w-9 rounded-md shadow-md lg:hidden"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="hidden gap-2 rounded-md shadow-md lg:inline-flex"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Button>
+            </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-4 pb-10 pt-6 lg:px-10">
-          <div className="mb-6 space-y-3 lg:hidden">
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
-              Sections
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {visibleSections.map((section) => (
-                <Button
-                  key={section.id}
-                  variant={activeSection === section.id ? "default" : "outline"}
-                  size="sm"
-                  className="rounded-full"
-                  onClick={() => handleSectionChange(section.id)}
-                >
-                  {section.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4">{renderSection()}</div>
+        {/* Bottom padding = tab bar height + home indicator, so the last control
+            in any section is never trapped underneath the bar. */}
+        <main className="flex-1 overflow-y-auto px-4 pt-6 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:px-10 lg:pb-10">
+          {renderSection()}
         </main>
       </div>
+
+      <DashboardTabBar
+        activeSection={activeSection}
+        onSelect={handleSectionChange}
+        sections={visibleSections}
+      />
     </div>
   );
 };

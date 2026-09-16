@@ -69,8 +69,11 @@ const Navbar = ({ isHome = false }) => {
       : `${scansRemaining} scan${scansRemaining === 1 ? "" : "s"} left`;
   
   return (
-    <nav className={`fixed z-10 top-6 inset-x-4 h-14 xs:h-16 backdrop-blur-sm max-w-screen-xl mx-auto rounded-full ${isHome ? 'bg-background/50 border border-slate-200 shadow-sm' : ''}`}>
-      <div className="h-full flex items-center justify-between mx-auto px-4">
+    // The top offset carries the status-bar inset so the floating bar clears the
+    // notch when SynCV is launched from the home screen (viewportFit: cover).
+    // env() resolves to 0 in a normal browser tab, so nothing moves there.
+    <nav className={`fixed z-20 top-[calc(1.5rem+env(safe-area-inset-top))] inset-x-4 h-14 xs:h-16 backdrop-blur-sm max-w-screen-xl mx-auto rounded-full ${isHome ? 'bg-background/50 border border-slate-200 shadow-sm' : ''}`}>
+      <div className="h-full flex items-center justify-between mx-auto gap-2 px-4">
         <Logo />
 
         {/* Desktop Menu */}
@@ -111,7 +114,12 @@ const Navbar = ({ isHome = false }) => {
           </> : <></>}
           {/* Mobile Menu */}
           <div className="md:hidden">
-            <NavigationSheet isHome={isHome} />
+            <NavigationSheet
+              isHome={isHome}
+              authenticated={authenticated}
+              scansRemainingLabel={!isHome ? scansRemainingLabel : ""}
+              onSignOut={signOut}
+            />
           </div>
         </div>
       </div>

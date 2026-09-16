@@ -14,8 +14,10 @@ export function PageShell({ children }: { children: ReactNode }) {
   return (
     <>
       <Navbar />
-      <main className="pt-24 sm:pt-28">
-        <div className="mx-auto w-full max-w-3xl px-6 pb-10">{children}</div>
+      {/* The inset term matches the one on the navbar's `top`, so the clearance
+          stays correct when the bar is pushed below a notch. */}
+      <main className="pt-[calc(6rem+env(safe-area-inset-top))] sm:pt-[calc(7rem+env(safe-area-inset-top))]">
+        <div className="mx-auto w-full max-w-3xl px-4 pb-10 sm:px-6">{children}</div>
         <Footer />
       </main>
     </>

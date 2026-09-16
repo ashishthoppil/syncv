@@ -67,9 +67,89 @@
   }
   html {
     @apply scroll-smooth scroll-pt-12;
+    /* Stop iOS from inflating text in landscape. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
   body {
     @apply text-foreground;
+    /* App-like touch behaviour: no grey flash on tap, no rubber-band /
+       pull-to-refresh past the ends of the page. */
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+    /* `clip` rather than `hidden` — it kills stray horizontal scroll from wide
+       children without turning <body> into a scroll container, which would
+       break every `sticky` header in the app. */
+    overflow-x: clip;
+  }
+
+  /* Removes the 300ms tap delay on everything interactive while leaving
+     pinch-zoom on the page itself intact. */
+  a,
+  button,
+  label,
+  select,
+  summary,
+  [role="button"],
+  [role="tab"] {
+    touch-action: manipulation;
+  }
+
+  /* iOS zooms the viewport whenever a focused form control renders under 16px,
+     and never zooms back out — the single worst thing a mobile web form can do.
+     Below `md` every control is pinned to 16px; `md:text-sm` and friends live in
+     a min-width:768px query, so desktop sizing is untouched.
+
+     The `[class]` variants are deliberate: a bare `textarea` selector (0,0,1)
+     loses to a `text-sm` utility (0,1,0), so the rule has to reach 0,1,1 to
+     apply to the controls that carry Tailwind text sizes. No form control in
+     the app is styled larger than 16px, so nothing is being shrunk here. */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea,
+    input[class],
+    select[class],
+    textarea[class] {
+      font-size: 16px;
+    }
+  }
+}
+
+@layer utilities {
+  /* Safe-area helpers for the fixed app bar / bottom tab bar. The `max()` keeps
+     a sane minimum on devices that report a 0px inset. */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .px-safe {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Native-feeling momentum scrolling for panes that scroll independently of
+     the page (modals, editor columns, tab strips). */
+  .touch-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Chrome shouldn't let a long unbroken keyword (a URL in a JD, say) push the
+     layout sideways on a 360px screen. */
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 }
 
@@ -102,4 +182,28 @@
 
 .Toastify__progress-bar {
   background: #000;
+}
+
+/* On phones react-toastify pins the container flush to the bottom edge, where
+   it would sit underneath the dashboard's tab bar and the home indicator.
+   Float it just above both, with a little side inset so it reads as a card. */
+@media only screen and (max-width: 480px) {
+  .Toastify__toast-container {
+    width: auto;
+    left: 0.5rem;
+    right: 0.5rem;
+    padding: 0;
+  }
+
+  .Toastify__toast-container--bottom-right,
+  .Toastify__toast-container--bottom-left,
+  .Toastify__toast-container--bottom-center {
+    bottom: calc(4.75rem + env(safe-area-inset-bottom));
+    transform: none;
+  }
+
+  .Toastify__toast {
+    margin-bottom: 0.5rem;
+    border-radius: 0.75rem;
+  }
 }

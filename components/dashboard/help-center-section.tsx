@@ -420,12 +420,12 @@ export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
 
   return (
     <section className="mx-auto max-w-6xl space-y-6">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+      <div className="flex items-start gap-3 sm:items-center">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
           <LifeBuoy className="h-5 w-5" />
         </span>
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Help Center</h1>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Help Center</h1>
           <p className="text-sm text-slate-500">
             Raise a query, report a problem, or tell us what you think.
           </p>

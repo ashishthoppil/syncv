@@ -1,11 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TapTooltip } from "@/components/ui/tooltip";
 import { ALL_PLANS, SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
@@ -427,12 +423,12 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
 
   return (
     <section className="mx-auto max-w-5xl space-y-6">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+      <div className="flex items-start gap-3 sm:items-center">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
           <Settings className="h-5 w-5" />
         </span>
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Settings</h1>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Settings</h1>
           <p className="text-sm text-slate-500">Control your preferences and privacy options.</p>
         </div>
       </div>
@@ -620,12 +616,12 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
                           {feature.title}
                         </span>
                         {feature.tooltip ? (
-                          <Tooltip>
-                            <TooltipTrigger className="mt-0.5 cursor-help">
-                              <CircleHelp className="h-4 w-4 text-slate-400" />
-                            </TooltipTrigger>
-                            <TooltipContent>{feature.tooltip}</TooltipContent>
-                          </Tooltip>
+                          <TapTooltip
+                            content={feature.tooltip}
+                            className="mt-0.5 cursor-help"
+                          >
+                            <CircleHelp className="h-4 w-4 text-slate-400" />
+                          </TapTooltip>
                         ) : null}
                       </li>
                     );

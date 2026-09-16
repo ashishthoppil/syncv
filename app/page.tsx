@@ -78,7 +78,7 @@ export default function Home() {
     <>
       <JsonLd id="ld-home" data={graph} />
       <Navbar isHome={true} />
-      <main className="pt-16 xs:pt-20 sm:pt-24">
+      <main className="pt-[calc(4rem+env(safe-area-inset-top))] xs:pt-[calc(5rem+env(safe-area-inset-top))] sm:pt-[calc(6rem+env(safe-area-inset-top))]">
         <Hero />
         <DemoVideo />
         <BeforeAfter />

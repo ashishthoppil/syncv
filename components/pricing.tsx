@@ -3,11 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TapTooltip } from "@/components/ui/tooltip";
 import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { CircleCheck, CircleHelp, CircleX } from "lucide-react";
@@ -139,12 +135,9 @@ const Pricing = () => {
                   <CircleCheck className="h-4 w-4 mt-1 text-green-600" />}
                   {feature.title}
                   {feature.tooltip && (
-                    <Tooltip>
-                      <TooltipTrigger className="cursor-help">
-                        <CircleHelp className="h-4 w-4 mt-1 text-gray-500" />
-                      </TooltipTrigger>
-                      <TooltipContent>{feature.tooltip}</TooltipContent>
-                    </Tooltip>
+                    <TapTooltip content={feature.tooltip} className="mt-1 cursor-help">
+                      <CircleHelp className="h-4 w-4 text-gray-500" />
+                    </TapTooltip>
                   )}
                 </li>
               ))}

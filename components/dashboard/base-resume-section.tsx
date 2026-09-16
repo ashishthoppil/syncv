@@ -737,8 +737,8 @@ export const BaseResumeSection = ({ user }: { user: SectionUser }) => {
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+        <div className="flex items-start gap-3 sm:items-center">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
             <UserCircle2Icon className="h-5 w-5" />
           </span>
           <div>
@@ -750,7 +750,10 @@ export const BaseResumeSection = ({ user }: { user: SectionUser }) => {
           </div>
         </div>
 
-        <div className="relative">
+        {/* `ml-auto` pins the button to the right edge once the header wraps on
+            a phone. Without it the button starts the wrapped line at the left,
+            and the right-anchored menu below hangs off the side of the screen. */}
+        <div className="relative ml-auto sm:ml-0">
           <Button
             className="rounded-md"
             onClick={() => setAddMenuOpen((open) => !open)}
@@ -770,7 +773,9 @@ export const BaseResumeSection = ({ user }: { user: SectionUser }) => {
                 className="fixed inset-0 z-10"
                 onClick={() => setAddMenuOpen(false)}
               />
-              <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+              {/* max-w is a second belt: even anchored correctly, a fixed 14rem
+                  menu can't be allowed to outgrow a narrow viewport. */}
+              <div className="absolute right-0 z-20 mt-2 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
                 <label className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
                   <UploadCloud className="h-4 w-4 text-slate-500" />
                   <span>

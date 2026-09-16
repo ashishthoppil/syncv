@@ -326,12 +326,12 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
   if (loading) {
     return (
       <section className="space-y-8">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+        <div className="flex items-start gap-3 sm:items-center">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
             <List className="h-5 w-5" />
           </span>
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Job Tracker</h1>
+            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Job Tracker</h1>
             <p className="text-sm text-slate-500">
               Keep tabs on every opportunity you are pursuing.
             </p>
@@ -347,12 +347,12 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
   if (subscriptionLocked) {
     return (
       <section className="space-y-8 max-w-6xl mx-auto">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+        <div className="flex items-start gap-3 sm:items-center">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
             <List className="h-5 w-5" />
           </span>
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Job Tracker</h1>
+            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Job Tracker</h1>
             <p className="text-sm text-slate-500">
               Keep tabs on every opportunity you are pursuing.
             </p>
@@ -370,12 +370,12 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
 
   return (
     <section className="mx-auto max-w-6xl space-y-6">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+      <div className="flex items-start gap-3 sm:items-center">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
           <List className="h-5 w-5" />
         </span>
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Job Tracker</h1>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Job Tracker</h1>
           <p className="text-sm text-slate-500">
             Keep tabs on every opportunity you are pursuing.
           </p>
@@ -410,7 +410,8 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
             onChange={(event) =>
               setNewJob((prev) => ({ ...prev, status: event.target.value }))
             }
-            className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20"
+            aria-label="Interview status"
+            className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 md:h-9"
           >
             {STATUS_OPTIONS.map((status) => (
               <option key={status} value={status}>
@@ -428,8 +429,8 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-5 py-3">
-          <div className="relative max-w-sm">
+        <div className="border-b border-slate-200 px-4 py-3 sm:px-5">
+          <div className="relative w-full sm:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               className="rounded-md pl-9"
@@ -466,107 +467,157 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
               </p>
             </div>
           ) : (
-            paginatedJobs.map((job) => (
-              <div
-                key={job.id}
-                className="grid grid-cols-1 items-center gap-3 px-5 py-4 transition hover:bg-slate-50/70 sm:grid-cols-[2fr,1.5fr,1.5fr,0.8fr,1fr,0.5fr]"
-              >
-                <div className="flex flex-col justify-center">
-                  <p className="text-sm font-semibold text-slate-900">{job.organization}</p>
-                  <p className="text-xs text-slate-400">
-                    {new Date(job.created_at).toLocaleDateString()}
-                  </p>
+            paginatedJobs.map((job) => {
+              // The six cells are built once and composed twice: as a stacked
+              // card on phones and as the original table row from `sm` up.
+              // Sharing the pieces keeps the two layouts from drifting apart.
+              const resumeButton = (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    downloading === `${job.id}-resume` || !job.generated_resume_payload
+                  }
+                  title={
+                    job.generated_resume_payload
+                      ? undefined
+                      : "Available after you download the optimized resume for this job"
+                  }
+                  className="flex-1 gap-0 rounded-md rounded-r-none sm:flex-none"
+                  onClick={() => downloadGeneratedDocument(job, "resume")}
+                >
+                  {downloading === `${job.id}-resume` ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-1 h-4 w-4" />
+                  )}
+                  Resume
+                </Button>
+              );
+              const coverButton = (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={downloading === `${job.id}-cover`}
+                  className="flex-1 gap-0 rounded-md rounded-l-none border-l-0 sm:flex-none"
+                  onClick={() => downloadGeneratedDocument(job, "cover")}
+                >
+                  {downloading === `${job.id}-cover` ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-1 h-4 w-4" />
+                  )}
+                  Cover
+                </Button>
+              );
+              const scoreChip = (
+                // shrink-0: on the phone card this sits next to the company
+                // name, and a long name would otherwise squash the badge.
+                <span
+                  className={cn(
+                    "inline-flex min-w-[2.25rem] shrink-0 items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
+                    scoreClass(job.initial_score)
+                  )}
+                >
+                  {job.initial_score !== null ? job.initial_score : "—"}
+                </span>
+              );
+              const statusSelect = (
+                <select
+                  value={job.interview_status}
+                  onChange={(event) => updateStatus(job.id, event.target.value)}
+                  disabled={updating === job.id}
+                  aria-label={`Status for ${job.designation} at ${job.organization}`}
+                  className={cn(
+                    "h-9 cursor-pointer rounded-full border px-3 text-xs font-semibold shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 disabled:opacity-50 sm:h-8",
+                    statusClass(job.interview_status)
+                  )}
+                >
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status} className="bg-white text-slate-700">
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              );
+              const deleteButton = (
+                <button
+                  type="button"
+                  aria-label="Delete job"
+                  onClick={() => handleDelete(job.id)}
+                  className="-mr-1.5 rounded-md p-2.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 sm:mr-0 sm:p-1.5"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              );
+
+              return (
+                <div key={job.id} className="transition hover:bg-slate-50/70">
+                  {/* Phone: a tappable card. The score reads as an attribute of
+                      the company, so it sits on the title line; the status is
+                      the one thing you change here, so it gets the right edge
+                      of its own row where a thumb lands. */}
+                  <div className="flex flex-col gap-3 px-4 py-4 sm:hidden">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="break-anywhere text-sm font-semibold text-slate-900">
+                            {job.organization}
+                          </p>
+                          {scoreChip}
+                        </div>
+                        <p className="break-anywhere mt-0.5 text-sm text-slate-600">
+                          {job.designation}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {new Date(job.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      {deleteButton}
+                    </div>
+                    <div className="flex justify-end">{statusSelect}</div>
+                    <div className="flex">
+                      {resumeButton}
+                      {coverButton}
+                    </div>
+                  </div>
+
+                  {/* Tablet and up: the original six-column row, unchanged. */}
+                  <div className="hidden items-center gap-3 px-5 py-4 sm:grid sm:grid-cols-[2fr,1.5fr,1.5fr,0.8fr,1fr,0.5fr]">
+                    <div className="flex flex-col justify-center">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {job.organization}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {new Date(job.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <p className="flex items-center text-sm text-slate-600">
+                      {job.designation}
+                    </p>
+                    <div className="flex flex-wrap items-center">
+                      {resumeButton}
+                      {coverButton}
+                    </div>
+                    <div className="flex items-center justify-start gap-2">{scoreChip}</div>
+                    <div className="flex items-center">{statusSelect}</div>
+                    <div className="flex items-center justify-end">{deleteButton}</div>
+                  </div>
                 </div>
-                <p className="flex items-center text-sm text-slate-600">{job.designation}</p>
-                <div className="flex flex-wrap sm:items-center">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={
-                      downloading === `${job.id}-resume` || !job.generated_resume_payload
-                    }
-                    title={
-                      job.generated_resume_payload
-                        ? undefined
-                        : "Available after you download the optimized resume for this job"
-                    }
-                    className="gap-0 rounded-md rounded-r-none"
-                    onClick={() => downloadGeneratedDocument(job, "resume")}
-                  >
-                    {downloading === `${job.id}-resume` ? (
-                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="mr-1 h-4 w-4" />
-                    )}
-                    Resume
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={downloading === `${job.id}-cover`}
-                    className="gap-0 rounded-md rounded-l-none border-l-0"
-                    onClick={() => downloadGeneratedDocument(job, "cover")}
-                  >
-                    {downloading === `${job.id}-cover` ? (
-                      <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="mr-1 h-4 w-4" />
-                    )}
-                    Cover
-                  </Button>
-                </div>
-                <div className="flex items-center justify-start gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:hidden">
-                    Score
-                  </span>
-                  <span
-                    className={cn(
-                      "inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
-                      scoreClass(job.initial_score)
-                    )}
-                  >
-                    {job.initial_score !== null ? job.initial_score : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center">
-                  <select
-                    value={job.interview_status}
-                    onChange={(event) => updateStatus(job.id, event.target.value)}
-                    disabled={updating === job.id}
-                    className={cn(
-                      "h-8 cursor-pointer rounded-full border px-3 text-xs font-semibold shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 disabled:opacity-50",
-                      statusClass(job.interview_status)
-                    )}
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status} value={status} className="bg-white text-slate-700">
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-center justify-end">
-                  <button
-                    type="button"
-                    aria-label="Delete job"
-                    onClick={() => handleDelete(job.id)}
-                    className="rounded-md p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
+        {/* Four items won't fit one phone row, so the count moves to its own
+            line above the controls and the arrows split the width evenly. */}
         {filteredJobs.length > JOBS_PER_PAGE && (
-          <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3">
+          <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
             <p className="text-xs text-slate-500">
               Showing {(currentPage - 1) * JOBS_PER_PAGE + 1}–
               {Math.min(currentPage * JOBS_PER_PAGE, filteredJobs.length)} of{" "}
               {filteredJobs.length} jobs
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between gap-2 sm:justify-end">
               <Button
                 variant="outline"
                 size="sm"

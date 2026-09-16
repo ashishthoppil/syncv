@@ -12,7 +12,9 @@ const NavigationMenu = React.forwardRef<
   <NavigationMenuPrimitive.Root
     ref={ref}
     className={cn(
-      "relative z-10 flex max-w-max flex-1 items-center justify-center",
+      // `max-w-max` shrink-wraps the horizontal menu; the vertical variant is
+      // the mobile sheet's nav list and has to span the sheet's full width.
+      "relative z-10 flex max-w-max flex-1 items-center justify-center data-[orientation=vertical]:w-full data-[orientation=vertical]:max-w-none",
       className
     )}
     {...props}

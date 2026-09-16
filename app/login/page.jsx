@@ -109,8 +109,8 @@ export default function Login() {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen bg-slate-50 pt-32 pb-10 flex items-start justify-center px-4">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
+      <main className="min-h-screen bg-slate-50 pt-[calc(8rem+env(safe-area-inset-top))] pb-[max(2.5rem,env(safe-area-inset-bottom))] flex items-start justify-center px-4">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
           <div className="flex flex-col items-center gap-3 text-center">
             <Logo />
             <div>

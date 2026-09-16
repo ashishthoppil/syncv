@@ -26,8 +26,14 @@ export const viewport: Viewport = {
   themeColor: "#ffffff",
   width: "device-width",
   initialScale: 1,
+  // Deliberately still zoomable (pinch-zoom is an accessibility requirement).
+  // iOS auto-zoom on focused inputs is prevented in globals.css by keeping form
+  // controls at 16px on small screens, not by locking the scale here.
   maximumScale: 5,
   colorScheme: "light",
+  // Lets the app paint under the notch / home indicator so the fixed app bar
+  // and bottom tab bar can pad themselves with env(safe-area-inset-*).
+  viewportFit: "cover",
 };
 
 export const metadata: Metadata = {
@@ -51,6 +57,14 @@ export const metadata: Metadata = {
     telephone: false,
   },
   alternates: { canonical: absoluteUrl("/") },
+  // Most visitors are on mobile, and a good share add SynCV to the home screen.
+  // `capable` drops the Safari chrome so the dashboard's own app bar / tab bar
+  // become the whole UI; the translucent status bar pairs with viewportFit.
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: "default",
+  },
   openGraph: {
     type: "website",
     siteName: SITE_NAME,

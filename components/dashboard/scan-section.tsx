@@ -44,6 +44,7 @@ import {
   ChevronDown,
   Circle,
   Download,
+  Eye,
   FileText,
   Info,
   Languages,
@@ -52,6 +53,7 @@ import {
   Loader2,
   Minus,
   Palette,
+  Pencil,
   Plus,
   RefreshCcw,
   ScanLine,
@@ -185,6 +187,15 @@ type GuestTrialStage = "none" | "analyzed" | "optimized";
 
 const GUEST_STAGE_KEY = "syncv_guest_trial_stage";
 
+// Every dialog in this section shares one mobile treatment: it rises from the
+// bottom edge as a sheet, full-bleed and rounded only at the top, and reverts to
+// a centred card from `sm` up. `dvh` rather than `vh` so the sheet resizes with
+// the iOS URL bar instead of hiding its footer underneath it.
+const DIALOG_BACKDROP =
+  "fixed inset-0 flex items-end justify-center bg-slate-900/60 sm:items-center sm:p-4";
+const DIALOG_PANEL =
+  "w-full max-h-[92dvh] touch-scroll overflow-y-auto rounded-t-2xl bg-white pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-h-[90vh] sm:rounded-2xl sm:pb-0";
+
 export const ScanSection = ({
   guestTrial = false,
   hideTopHeading = false,
@@ -249,6 +260,12 @@ export const ScanSection = ({
   const [previewDesignation, setPreviewDesignation] = useState("");
   const [editorTab, setEditorTab] = useState<"content" | "design">("content");
   const [previewZoom, setPreviewZoom] = useState(1);
+  // Phones can't show the editor and the rendered resume side by side, so below
+  // `lg` the preview modal shows one at a time and this picks which. Ignored at
+  // `lg` and up, where both panes render as before.
+  const [mobilePreviewPane, setMobilePreviewPane] = useState<"edit" | "preview">(
+    "edit"
+  );
   const [analyzingLabelIndex, setAnalyzingLabelIndex] = useState(0);
   const [generatingLabelIndex, setGeneratingLabelIndex] = useState(0);
   const [showCareerWarning, setShowCareerWarning] = useState(false);
@@ -269,6 +286,7 @@ export const ScanSection = ({
     targetFamilyId: string;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const summaryPanelRef = useRef<HTMLDivElement | null>(null);
   const analyzingLabels = [
     "Analyzing your resume...",
     "Inspecting your resume...",
@@ -1238,6 +1256,9 @@ export const ScanSection = ({
       setPreviewCandidateName(extractCandidateName(form.resume));
       setPreviewDesignation(form.designation);
       setPreviewView("resume");
+      // On a phone the preview opens on the rendered document, not the editor —
+      // the first thing anyone wants after optimizing is to see the result.
+      setMobilePreviewPane("preview");
       setPreviewOpen(true);
       if (guestTrial) {
         setGuestTrialStage("optimized");
@@ -1362,6 +1383,32 @@ export const ScanSection = ({
   useEffect(() => {
     setCtaNudgeAcknowledged(false);
   }, [result]);
+
+  // When a scan lands on a narrow screen the summary is stacked a full screen
+  // below the form, so the analysis modal closes and nothing appears to have
+  // happened — the score and the "Create tailored CV" CTA are off-frame. Bring
+  // them into view once the modal is gone.
+  //
+  // The cutoff is the same `xl` breakpoint the two-column grid uses: at `xl` and
+  // up the summary already sits beside the form and is never scrolled past, so
+  // desktop is deliberately left alone. Guests are skipped too — their summary
+  // opens in a centred modal, which needs no scrolling.
+  useEffect(() => {
+    if (guestTrial || !result || isAnalyzing) return;
+    if (!window.matchMedia("(max-width: 1279px)").matches) return;
+
+    // One frame of slack so the analysis modal has actually unmounted and the
+    // summary has its final height before we measure a scroll target.
+    const frameId = window.requestAnimationFrame(() => {
+      summaryPanelRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [result, isAnalyzing, guestTrial]);
 
   useEffect(() => {
     if (!isGeneratingDocs) {
@@ -1529,17 +1576,17 @@ export const ScanSection = ({
       <section className="space-y-8">
         {!hideTopHeading ? (
           <div className="flex flex-col gap-2">
-            <h1 className="flex gap-1 items-center text-3xl font-semibold text-slate-900"><ScanLine /> Scan</h1>
+            <h1 className="flex gap-1 items-center text-2xl font-semibold text-slate-900 sm:text-3xl"><ScanLine /> Scan</h1>
             <p className="text-sm text-slate-500 font-medium">
               Analyze your resume against a target role and improve ATS performance.
             </p>
           </div>
         ) : null}
-        <div className="flex justify-between items-center rounded-lg shadow-xl bg-amber-50 p-6 shadow-sm">
+        <div className="flex flex-col gap-4 rounded-lg bg-amber-50 p-5 shadow-xl sm:flex-row sm:items-center sm:justify-between sm:p-6">
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <AlertCircleIcon className="text-amber-700 h-5 w-5" />
-              <h2 className="text-xl font-semibold text-amber-700">Subscription Required</h2>
+              <AlertCircleIcon className="text-amber-700 h-5 w-5 shrink-0" />
+              <h2 className="text-lg font-semibold text-amber-700 sm:text-xl">Subscription Required</h2>
             </div>
             <p className="mt-2 text-sm font-normal text-amber-700">
               Please subscribe to a plan to optimize your resume.
@@ -1547,7 +1594,7 @@ export const ScanSection = ({
           </div>
           <Button onClick={() => {
             router.push("/scan?section=settings&scrollTo=dashboard-pricing")
-          }} className="flex gap-2 bg-amber-700 hover:bg-amber-600 text-white hover:text-white rounded-lg" variant="outline">
+          }} className="flex w-full shrink-0 gap-2 bg-amber-700 hover:bg-amber-600 text-white hover:text-white rounded-lg sm:w-auto" variant="outline">
             <UserPlus />
             <p>Subscribe</p>
           </Button>
@@ -1557,7 +1604,18 @@ export const ScanSection = ({
   }
 
   const summaryPanel = (
-    <div style={{ height: '34rem' }} className="rounded-lg shadow-xl bg-slate-50 p-4 overflow-y-scroll">
+    // The fixed-height inner scroller only makes sense in the two-column `xl`
+    // layout. On phones it created a scroll area inside the page scroll — you
+    // had to find the right 34rem box to flick. Below `xl` it just grows.
+    //
+    // scroll-mt clears the sticky dashboard app bar (plus the status-bar inset
+    // when installed) so the auto-scroll above doesn't park the "Scan summary"
+    // heading underneath it. It stacks with the 3rem scroll-padding-top that
+    // globals.css sets on <html>.
+    <div
+      ref={summaryPanelRef}
+      className="scroll-mt-[calc(1.5rem+env(safe-area-inset-top))] rounded-lg shadow-xl bg-slate-50 p-4 xl:h-[34rem] xl:overflow-y-scroll"
+    >
       <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold text-slate-900">Scan summary</h2>
         <p className="text-sm text-slate-500 font-medium">
@@ -1812,7 +1870,7 @@ export const ScanSection = ({
       {!hideTopHeading && (
         <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h1 className="flex gap-1 items-center text-3xl font-semibold text-slate-900">
+          <h1 className="flex gap-1 items-center text-2xl font-semibold text-slate-900 sm:text-3xl">
             <TrendingUp /> Optimize your resume
           </h1>
           <p className="text-sm text-slate-500 font-medium">
@@ -1832,7 +1890,7 @@ export const ScanSection = ({
           guestTrial ? "grid-cols-1" : "xl:grid-cols-[1.5fr,1fr]"
         )}
       >
-        <div className="rounded-lg shadow-xl bg-white p-6 shadow-sm space-y-6">
+        <div className="rounded-lg shadow-xl bg-white p-4 shadow-sm space-y-6 sm:p-6">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-600">
@@ -1925,7 +1983,10 @@ export const ScanSection = ({
                 }}
               >
                 <UploadCloud className="h-8 w-8 text-slate-400" />
-                <p className="text-sm">
+                {/* There is no drag-and-drop on a touch device, so phones get a
+                    plain "tap to upload" instruction and a real button; the
+                    drag wording returns on pointer layouts. */}
+                <p className="hidden text-sm sm:block">
                   Drag and drop a PDF/DOC/DOCX or{" "}
                   <button
                     type="button"
@@ -1935,6 +1996,16 @@ export const ScanSection = ({
                     browse files
                   </button>
                 </p>
+                <p className="text-sm sm:hidden">Upload your resume as PDF, DOC or DOCX</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full rounded-md sm:hidden"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <UploadCloud className="mr-2 h-4 w-4" />
+                  Choose file
+                </Button>
                 <p className="text-xs text-slate-400">
                   {isUploading
                     ? "Parsing resume..."
@@ -2125,15 +2196,15 @@ export const ScanSection = ({
       </div>
 
       {guestTrial && guestSummaryOpen && result && !previewOpen && (
-        <div className="fixed inset-0 z-[66] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl">
+        <div className={cn(DIALOG_BACKDROP, "z-[66]")}>
+          <div className={cn(DIALOG_PANEL, "relative max-w-3xl p-4")}>
             <button
               type="button"
               aria-label="Close summary"
-              className="absolute right-5 top-5 rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              className="absolute right-3 top-3 rounded-full p-2.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 sm:right-5 sm:top-5 sm:rounded-md sm:p-2"
               onClick={() => setGuestSummaryOpen(false)}
             >
-              <X className="h-4 w-4" />
+              <X className="h-5 w-5 sm:h-4 sm:w-4" />
             </button>
             {summaryPanel}
           </div>
@@ -2141,10 +2212,10 @@ export const ScanSection = ({
       )}
 
       {showCareerWarning && fitInsight && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+        <div className={cn(DIALOG_BACKDROP, "z-[80]")}>
+          <div className={cn(DIALOG_PANEL, "max-w-lg p-6")}>
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-500" />
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
                   Potential Role Mismatch
@@ -2161,9 +2232,12 @@ export const ScanSection = ({
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            {/* Thumb-reachable on a phone: two equal full-width buttons, with
+                the affirmative first in the visual order it reads best. */}
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <Button
                 variant="outline"
+                className="w-full sm:w-auto"
                 onClick={() => {
                   setShowCareerWarning(false);
                   toast.info("No changes were made. Try scanning against a closer role.");
@@ -2172,6 +2246,7 @@ export const ScanSection = ({
                 No
               </Button>
               <Button
+                className="w-full sm:w-auto"
                 onClick={() => {
                   setShowCareerWarning(false);
                   createTailoredDocuments(true);
@@ -2185,16 +2260,20 @@ export const ScanSection = ({
       )}
 
       {showCareerKeywordPicker && result && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className={cn(DIALOG_BACKDROP, "z-[80]")}>
+          {/* This one keeps its own flex/overflow structure (the chip list is the
+              only scrolling part, between a pinned header and footer), so it
+              takes the sheet geometry from DIALOG_BACKDROP rather than the
+              scroll-everything DIALOG_PANEL. */}
+          <div className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
             {/* Header */}
-            <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 pb-4 pt-5">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 pb-4 pt-5 sm:gap-4 sm:px-6">
               <div className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <span className="mt-0.5 hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 sm:flex">
                   <ShieldCheck className="h-5 w-5" />
                 </span>
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900">
+                  <h3 className="text-base font-semibold text-slate-900 sm:text-lg">
                     Which of these can you back up?
                   </h3>
                   <p className="mt-1 text-sm text-slate-600">
@@ -2205,15 +2284,16 @@ export const ScanSection = ({
               </div>
               <button
                 type="button"
-                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="Close"
+                className="-mr-1.5 -mt-1.5 shrink-0 rounded-full p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 sm:m-0 sm:rounded-md sm:p-1"
                 onClick={() => setShowCareerKeywordPicker(false)}
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5 sm:h-4 sm:w-4" />
               </button>
             </div>
 
             {/* Toolbar */}
-            <div className="flex items-center justify-between gap-3 px-6 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 sm:px-6">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                 <Check className="h-3.5 w-3.5" />
                 {careerSelectedKeywords.length} of{" "}
@@ -2243,7 +2323,7 @@ export const ScanSection = ({
             </div>
 
             {/* Keyword chips, grouped so language requirements are called out */}
-            <div className="mt-3 flex-1 space-y-4 overflow-y-auto px-6 pb-2">
+            <div className="touch-scroll mt-3 flex-1 space-y-4 overflow-y-auto px-4 pb-2 sm:px-6">
               {[
                 {
                   key: "skills",
@@ -2312,16 +2392,18 @@ export const ScanSection = ({
             </div>
 
             {/* Footer */}
-            <div className="mt-2 border-t border-slate-100 px-6 py-4">
+            <div className="mt-2 border-t border-slate-100 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6 sm:pb-4">
               <p className="mb-3 flex items-start gap-1.5 text-xs text-slate-500">
                 <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 Only selected keywords are added, and only where they truthfully fit your
                 experience. You can optimize with none selected for a structure-only pass.
               </p>
-              <div className="flex justify-end gap-3">
+              {/* column-reverse: the primary action sits at the bottom of the
+                  sheet, closest to the thumb, without changing tab order. */}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
                 <Button
                   variant="outline"
-                  className="rounded-md"
+                  className="w-full rounded-md sm:w-auto"
                   onClick={() => {
                     setShowCareerKeywordPicker(false);
                     createTailoredDocuments(keywordPickerCareerChange, []);
@@ -2330,7 +2412,7 @@ export const ScanSection = ({
                   Optimize without keywords
                 </Button>
                 <Button
-                  className="rounded-md"
+                  className="w-full rounded-md sm:w-auto"
                   onClick={() => {
                     setShowCareerKeywordPicker(false);
                     createTailoredDocuments(
@@ -2351,8 +2433,8 @@ export const ScanSection = ({
       )}
 
       {isAnalyzing && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-2xl">
+        <div className={cn(DIALOG_BACKDROP, "z-[70]")}>
+          <div className={cn(DIALOG_PANEL, "max-w-md p-6")}>
             <h3 className="text-lg font-semibold text-slate-900">
               Analyzing your resume...
             </h3>
@@ -2392,8 +2474,8 @@ export const ScanSection = ({
       )}
 
       {isGeneratingDocs && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <div className={cn(DIALOG_BACKDROP, "z-[70]")}>
+          <div className={cn(DIALOG_PANEL, "max-w-md p-6")}>
             <h3 className="text-lg font-semibold text-slate-900">
               Optimizing your resume...
             </h3>
@@ -2433,12 +2515,15 @@ export const ScanSection = ({
       )}
 
       {previewOpen && tailoredDocs && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+        // The preview is the app's main workspace, so on a phone it takes the
+        // whole screen — edge to edge, no backdrop gutter, no rounded corners —
+        // the way a pushed screen would in a native app.
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 sm:p-4">
+          <div className="flex h-full max-h-none w-full max-w-6xl flex-col overflow-hidden bg-white pt-safe shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:pt-0">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h3 className="text-lg font-semibold text-slate-900">
+                  <h3 className="text-base font-semibold text-slate-900 sm:text-lg">
                     {shouldAllowCoverLetter
                       ? "Tailored CV & Cover Letter"
                       : "Tailored CV preview"}
@@ -2487,7 +2572,7 @@ export const ScanSection = ({
                       </button>
 
                       {scoreBreakdownOpen && finalScoreBreakdown ? (
-                        <div className="absolute left-0 top-full z-30 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-xl">
+                        <div className="absolute left-0 top-full z-30 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 text-left shadow-xl">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                               Score breakdown
@@ -2547,13 +2632,13 @@ export const ScanSection = ({
                     </div>
                   ) : null}
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 hidden text-xs text-slate-500 sm:block">
                   Edit any field — the preview updates live.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {shouldAllowCoverLetter ? (
-                  <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+                  <div className="hidden gap-1 rounded-lg bg-slate-100 p-1 sm:flex">
                     <button
                       type="button"
                       onClick={() => setPreviewView("resume")}
@@ -2583,17 +2668,88 @@ export const ScanSection = ({
                 <button
                   type="button"
                   aria-label="Close preview"
-                  className="rounded-md p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                  className="-mr-1.5 rounded-full p-2.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 sm:mr-0 sm:rounded-md sm:p-2"
                   onClick={() => setPreviewOpen(false)}
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-5 w-5 sm:h-4 sm:w-4" />
                 </button>
               </div>
             </div>
 
+            {/* Phone-only switcher. Two rows of segments rather than one: the
+                document choice (Resume / Cover letter) and, for the resume,
+                which half of the split view is on screen. Both segmented
+                controls are hidden from `sm` up, where the header tabs and the
+                side-by-side layout do the same jobs. */}
+            <div className="flex shrink-0 flex-col gap-2 border-b border-slate-200 px-4 py-2.5 sm:hidden">
+              {shouldAllowCoverLetter ? (
+                <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewView("resume")}
+                    className={cn(
+                      "flex-1 rounded-md px-3 py-2 text-sm transition",
+                      previewView === "resume"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600"
+                    )}
+                  >
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewView("cover")}
+                    className={cn(
+                      "flex-1 rounded-md px-3 py-2 text-sm transition",
+                      previewView === "cover"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600"
+                    )}
+                  >
+                    Cover letter
+                  </button>
+                </div>
+              ) : null}
+              {previewView === "resume" || !shouldAllowCoverLetter ? (
+                <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setMobilePreviewPane("edit")}
+                    className={cn(
+                      "inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm transition",
+                      mobilePreviewPane === "edit"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600"
+                    )}
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobilePreviewPane("preview")}
+                    className={cn(
+                      "inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm transition",
+                      mobilePreviewPane === "preview"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600"
+                    )}
+                  >
+                    <Eye className="h-3.5 w-3.5" /> Preview
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
             {previewView === "resume" || !shouldAllowCoverLetter ? (
               <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2">
-                <div className="flex min-h-0 flex-col border-b border-slate-200 lg:border-b-0 lg:border-r">
+                <div
+                  className={cn(
+                    "flex min-h-0 flex-col border-b border-slate-200 lg:border-b-0 lg:border-r",
+                    // Below `lg` only one pane is on screen at a time; `lg:flex`
+                    // restores the split view untouched.
+                    mobilePreviewPane === "preview" && "hidden lg:flex"
+                  )}
+                >
                   <div className="flex shrink-0 gap-1 px-4 pt-3">
                     <button
                       type="button"
@@ -2804,14 +2960,19 @@ export const ScanSection = ({
                     )}
                   </div>
                 </div>
-                <div className="flex min-h-0 flex-col bg-slate-100">
-                  <div className="flex shrink-0 items-center justify-between px-4 py-2.5">
-                    <div className="flex items-center gap-2.5">
+                <div
+                  className={cn(
+                    "flex min-h-0 flex-col bg-slate-100",
+                    mobilePreviewPane === "edit" && "hidden lg:flex"
+                  )}
+                >
+                  <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                         Preview
                       </span>
                       {tailoredDocs.incorporatedKeywords?.length ? (
-                        <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <span className="hidden items-center gap-1.5 text-[11px] text-slate-500 sm:inline-flex">
                           <span
                             aria-hidden
                             className="inline-block h-2.5 w-4 rounded-sm"
@@ -2821,16 +2982,16 @@ export const ScanSection = ({
                         </span>
                       ) : null}
                     </div>
-                    <div className="flex items-center gap-1.5 text-slate-500">
+                    <div className="flex shrink-0 items-center gap-1.5 text-slate-500">
                       <button
                         type="button"
                         aria-label="Zoom out"
-                        className="rounded-md border border-slate-300 bg-white p-1 hover:bg-slate-50"
+                        className="rounded-md border border-slate-300 bg-white p-2 hover:bg-slate-50 sm:p-1"
                         onClick={() =>
                           setPreviewZoom((z) => Math.max(0.6, Math.round((z - 0.1) * 10) / 10))
                         }
                       >
-                        <Minus className="h-3.5 w-3.5" />
+                        <Minus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </button>
                       <span className="w-9 text-center text-xs tabular-nums">
                         {Math.round(previewZoom * 100)}%
@@ -2838,16 +2999,16 @@ export const ScanSection = ({
                       <button
                         type="button"
                         aria-label="Zoom in"
-                        className="rounded-md border border-slate-300 bg-white p-1 hover:bg-slate-50"
+                        className="rounded-md border border-slate-300 bg-white p-2 hover:bg-slate-50 sm:p-1"
                         onClick={() =>
                           setPreviewZoom((z) => Math.min(1.5, Math.round((z + 0.1) * 10) / 10))
                         }
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </button>
                     </div>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-auto px-5 pb-6">
+                  <div className="touch-scroll min-h-0 flex-1 overflow-auto px-3 pb-6 sm:px-5">
                     <div
                       className="mx-auto w-full max-w-[820px] overflow-hidden rounded-md bg-white shadow-md ring-1 ring-slate-200"
                       style={{ zoom: previewZoom }}
@@ -2887,16 +3048,19 @@ export const ScanSection = ({
                 </div>
               </div>
             ) : (
-              <div className="min-h-0 flex-1 overflow-auto bg-slate-100 p-6">
+              <div className="touch-scroll min-h-0 flex-1 overflow-auto bg-slate-100 p-3 sm:p-6">
                 <div
-                  className="mx-auto max-w-3xl rounded-md bg-white p-8 shadow-md ring-1 ring-slate-200"
+                  className="mx-auto max-w-3xl rounded-md bg-white p-5 shadow-md ring-1 ring-slate-200 sm:p-8"
                   dangerouslySetInnerHTML={{
                     __html: renderCoverLetterHtml(tailoredDocs.coverLetter),
                   }}
                 />
               </div>
             )}
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3">
+            {/* Download is the point of this screen, so on a phone the footer
+                becomes a pinned action bar: buttons full width, the keyword
+                notes above them, and padding for the home indicator. */}
+            <div className="flex shrink-0 flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:pb-3">
               <div className="min-w-0 flex-1 space-y-0.5">
                 {tailoredDocs.incorporatedKeywords?.length ? (
                   <p
@@ -2922,7 +3086,7 @@ export const ScanSection = ({
                   <Button
                     type="button"
                     variant="outline"
-                    className="rounded-md"
+                    className="flex-1 rounded-md sm:flex-none"
                     onClick={reevaluateEditedResumeScore}
                     disabled={isComputingFinalScore}
                   >
@@ -2935,7 +3099,7 @@ export const ScanSection = ({
                   </Button>
                 ) : null}
                 <Button
-                  className="rounded-md"
+                  className="flex-1 rounded-md sm:flex-none"
                   disabled={
                     guestTrial ||
                     downloadingType === "cv" ||
