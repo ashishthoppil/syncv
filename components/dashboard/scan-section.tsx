@@ -176,6 +176,7 @@ type ScanSectionProps = {
   subscriptionLocked?: boolean;
   planKey?: string | null;
   allowsCoverLetter?: boolean;
+  allowsJobTracker?: boolean;
   /** Called after a scan consumes quota, so the host can refresh the balance. */
   onUsageChange?: () => void;
 };
@@ -191,6 +192,7 @@ export const ScanSection = ({
   subscriptionLocked = false,
   planKey = null,
   allowsCoverLetter = true,
+  allowsJobTracker = true,
   onUsageChange,
 }: ScanSectionProps = {}) => {
   const router = useRouter();
@@ -202,6 +204,10 @@ export const ScanSection = ({
   const [isGeneratingDocs, setIsGeneratingDocs] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [tailoredDocs, setTailoredDocs] = useState<TailoredDocs | null>(null);
+  // The optimize CTA pulses until the user acknowledges it. Hovering or
+  // focusing counts as "found it" — past that point the animation would just
+  // be nagging someone who is already looking at the button.
+  const [ctaNudgeAcknowledged, setCtaNudgeAcknowledged] = useState(false);
   const [downloadingType, setDownloadingType] = useState<"cv" | "cover" | null>(
     null
   );
@@ -609,7 +615,10 @@ export const ScanSection = ({
           return;
         }
 
-        if (!isSpeedPlan) {
+        // Gate on the server-derived entitlement, not on `planKey`, which falls
+        // back to the latest *inactive* subscription — a lapsed Speed user is a
+        // free user and must still get their scans saved.
+        if (allowsJobTracker) {
           // Save to job tracker
           try {
             const saveResponse = await fetch("/api/job-tracker", {
@@ -1348,6 +1357,12 @@ export const ScanSection = ({
     return () => window.clearInterval(intervalId);
   }, [isGeneratingDocs, generatingLabels.length]);
 
+  // Every fresh scan earns a fresh nudge, so re-scanning after a tweak draws
+  // the eye back to the CTA.
+  useEffect(() => {
+    setCtaNudgeAcknowledged(false);
+  }, [result]);
+
   useEffect(() => {
     if (!isGeneratingDocs) {
       setOptimizationStepIndex(0);
@@ -1494,6 +1509,17 @@ export const ScanSection = ({
   const scoreRingCircumference = 2 * Math.PI * 52;
   const scorePercent = Math.max(0, Math.min(100, initialScanScore ?? 0));
 
+  // Nudge only while the CTA is actually actionable: after a scan, before any
+  // documents exist, and never while a generation or scan is already running
+  // (the button is disabled and showing its own spinner in those states).
+  const showCtaNudge =
+    Boolean(result) &&
+    !ctaNudgeAcknowledged &&
+    !tailoredDocs &&
+    !isGeneratingDocs &&
+    !isAnalyzing &&
+    !isUploading;
+
   // Only take over the screen with the subscribe prompt when the user has no
   // in-progress work. If a scan result or the optimized preview is open (e.g.
   // the trial just got consumed by this very scan), keep it visible so the flow
@@ -1597,20 +1623,39 @@ export const ScanSection = ({
 
       {result && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <Button
-            className="w-full rounded-md"
-            onClick={() => createTailoredDocuments()}
-            disabled={isGeneratingDocs || isAnalyzing || isUploading}
-          >
-            {isGeneratingDocs ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <WandSparkles className="mr-2 h-4 w-4" />
-            )}
-            {isGeneratingDocs
-              ? generatingLabels[generatingLabelIndex]
-              : "Create tailored CV & Cover letter"}
-          </Button>
+          <div className="relative">
+            {/* Two rings half a cycle apart, so a second ping is already on its
+                way out as the next one leaves the button — a radar sweep
+                rather than a single repeating blip. */}
+            {showCtaNudge ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-md animate-cta-ping motion-reduce:hidden"
+                />
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-md animate-cta-ping [animation-delay:-0.9s] motion-reduce:hidden"
+                />
+              </>
+            ) : null}
+            <Button
+              className="relative w-full rounded-md"
+              onClick={() => createTailoredDocuments()}
+              onMouseEnter={() => setCtaNudgeAcknowledged(true)}
+              onFocus={() => setCtaNudgeAcknowledged(true)}
+              disabled={isGeneratingDocs || isAnalyzing || isUploading}
+            >
+              {isGeneratingDocs ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <WandSparkles className="mr-2 h-4 w-4" />
+              )}
+              {isGeneratingDocs
+                ? generatingLabels[generatingLabelIndex]
+                : "Create tailored CV & Cover letter"}
+            </Button>
+          </div>
           <p className="mt-2 text-center text-xs text-slate-500">
             Generate optimized documents from this score.
           </p>

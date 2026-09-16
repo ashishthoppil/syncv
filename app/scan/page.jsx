@@ -216,6 +216,7 @@ const DashboardPageContent = () => {
           subscriptionLocked={subscriptionLocked}
           planKey={subscription.planKey}
           allowsCoverLetter={subscription.allowsCoverLetter}
+          allowsJobTracker={subscription.allowsJobTracker}
           onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
         />
       );
@@ -242,6 +243,7 @@ const DashboardPageContent = () => {
         subscriptionLocked={subscriptionLocked}
         planKey={subscription.planKey}
         allowsCoverLetter={subscription.allowsCoverLetter}
+        allowsJobTracker={subscription.allowsJobTracker}
         onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
       />
     );

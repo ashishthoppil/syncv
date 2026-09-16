@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendWelcomeEmail } from "@/lib/server/email";
+import { sendNewUserAdminEmail, sendWelcomeEmail } from "@/lib/server/email";
 
 export async function POST(request) {
   try {
@@ -37,6 +37,34 @@ export async function POST(request) {
     if (appMetadata.welcome_email_sent_at) {
       return NextResponse.json({ skipped: true });
     }
+
+    // Past this point the user is registering for the first time — the guard
+    // above is what keeps this from re-firing, since /auth/callback hits this
+    // route on every OAuth sign-in, not just the first one.
+    //
+    // Notifying the support inbox is our business, not the user's, so it runs
+    // in after() — the response (and therefore the redirect to /onboarding)
+    // goes out without waiting on Resend, and a failure here can never break a
+    // registration.
+    after(async () => {
+      try {
+        await sendNewUserAdminEmail({
+          email,
+          userId,
+          provider: appMetadata.provider,
+          registeredAt: user?.created_at,
+        });
+      } catch (adminEmailError) {
+        console.warn("New-user admin notification failed.", {
+          userId,
+          email,
+          error:
+            adminEmailError instanceof Error
+              ? adminEmailError.message
+              : "Failed to send new-user admin notification.",
+        });
+      }
+    });
 
     const appUrl =
       process.env.NEXT_PUBLIC_SITE_URL || process.env.APP_URL || new URL(request.url).origin;

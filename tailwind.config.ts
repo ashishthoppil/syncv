@@ -63,6 +63,9 @@ export default {
       animation: {
         marquee: "marquee var(--duration) linear infinite",
         "marquee-vertical": "marquee-vertical var(--duration) linear infinite",
+        // Attention ping for the "Create tailored CV" CTA. Same easing curve
+        // Tailwind's own animate-ping uses, so it decelerates the same way.
+        "cta-ping": "cta-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite",
       },
       keyframes: {
         marquee: {
@@ -80,6 +83,15 @@ export default {
           to: {
             transform: "translateY(calc(-100% - var(--gap)))",
           },
+        },
+        // Ring radiating out from the button edge. Uses box-shadow spread
+        // rather than transform: scale — the CTA is a wide rectangle, and
+        // scaling a ring around it stretches the sides far more than the ends.
+        // Spread grows uniformly in px, so the ring keeps the button's shape.
+        "cta-ping": {
+          "0%": { boxShadow: "0 0 0 0 rgba(15, 23, 42, 0.5)" },
+          "70%": { boxShadow: "0 0 0 14px rgba(15, 23, 42, 0)" },
+          "100%": { boxShadow: "0 0 0 0 rgba(15, 23, 42, 0)" },
         },
       },
     },
