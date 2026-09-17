@@ -844,8 +844,13 @@ export const BaseResumeSection = ({ user }: { user: SectionUser }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {records.map((rec) => (
-                  <tr key={rec.id} className="group hover:bg-slate-50/60">
+                {records.map((rec, rowIndex) => (
+                  <tr
+                    key={rec.id}
+                    // The first row is where the first-run tour starts.
+                    data-tour={rowIndex === 0 ? "first-base-resume" : undefined}
+                    className="group hover:bg-slate-50/60"
+                  >
                     <td className="px-4 py-3">
                       <button
                         type="button"

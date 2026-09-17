@@ -66,6 +66,8 @@ export default {
         // Attention ping for the "Create tailored CV" CTA. Same easing curve
         // Tailwind's own animate-ping uses, so it decelerates the same way.
         "cta-ping": "cta-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite",
+        // Breathing halo around the first-run tour's spotlight.
+        "tour-pulse": "tour-pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite",
       },
       keyframes: {
         marquee: {
@@ -92,6 +94,13 @@ export default {
           "0%": { boxShadow: "0 0 0 0 rgba(15, 23, 42, 0.5)" },
           "70%": { boxShadow: "0 0 0 14px rgba(15, 23, 42, 0)" },
           "100%": { boxShadow: "0 0 0 0 rgba(15, 23, 42, 0)" },
+        },
+        // Same spread trick as cta-ping, in white — the tour ring sits on top
+        // of a darkened page, where a slate halo would be invisible.
+        "tour-pulse": {
+          "0%": { boxShadow: "0 0 0 0 rgba(255, 255, 255, 0.55)" },
+          "70%": { boxShadow: "0 0 0 10px rgba(255, 255, 255, 0)" },
+          "100%": { boxShadow: "0 0 0 0 rgba(255, 255, 255, 0)" },
         },
       },
     },

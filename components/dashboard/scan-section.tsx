@@ -31,6 +31,7 @@ import {
   type ResumeData,
 } from "@/components/resume-templates/render";
 import { ResumeEditor } from "@/components/dashboard/resume-editor";
+import { useProductTour } from "@/components/onboarding/product-tour";
 import {
   ResumeTemplateId,
   ResumeTemplateThemeOverrides,
@@ -287,6 +288,11 @@ export const ScanSection = ({
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const summaryPanelRef = useRef<HTMLDivElement | null>(null);
+  // The first-run tour walks through this section. It needs to know when a scan
+  // and an optimization finish, and the preview steps need the pane they point
+  // at to actually be the one on screen. Outside the dashboard (the guest scan
+  // on marketing pages) there is no provider and both of these are inert.
+  const { activeStepId: tourStepId, signal: tourSignal } = useProductTour();
   const analyzingLabels = [
     "Analyzing your resume...",
     "Inspecting your resume...",
@@ -623,6 +629,7 @@ export const ScanSection = ({
       const data = await response.json();
       if (data.success) {
         setResult(data.message);
+        tourSignal("scan:analyzed");
         if (!guestTrial) onUsageChange?.();
 
         if (guestTrial) {
@@ -1157,6 +1164,10 @@ export const ScanSection = ({
       return;
     }
 
+    // Role-mismatch warning and the keyword picker both open below the tour
+    // overlay, so get it off the screen for the rest of this flow.
+    tourSignal("scan:optimizing");
+
     if (guestTrial && guestTrialStage === "optimized") {
       redirectGuestToSignUp();
       return;
@@ -1260,6 +1271,7 @@ export const ScanSection = ({
       // the first thing anyone wants after optimizing is to see the result.
       setMobilePreviewPane("preview");
       setPreviewOpen(true);
+      tourSignal("scan:optimized");
       if (guestTrial) {
         setGuestTrialStage("optimized");
       }
@@ -1313,6 +1325,10 @@ export const ScanSection = ({
       toast.error("Unexpected error while generating tailored documents.");
     } finally {
       setIsGeneratingDocs(false);
+      // If generation failed there is no preview to point at, so bring the
+      // paused tour step back. On the success path a preview step has already
+      // taken over and this does nothing.
+      tourSignal("scan:idle");
     }
   };
 
@@ -1510,6 +1526,26 @@ export const ScanSection = ({
     }
   }, [previewOpen, profilePhotoUrl, loadProfilePhoto]);
 
+  // Put the preview in the state each tour step is describing. The design panel
+  // and the rendered document both live behind a tab, so without this the tour
+  // would spotlight a target that is one click away from being on screen — and
+  // on a phone, where only one pane shows at a time, not on screen at all.
+  useEffect(() => {
+    if (!tourStepId) return;
+    if (tourStepId === "preview-document") {
+      setPreviewView("resume");
+      setMobilePreviewPane("preview");
+    } else if (tourStepId === "preview-editor") {
+      setPreviewView("resume");
+      setMobilePreviewPane("edit");
+      setEditorTab("content");
+    } else if (tourStepId === "preview-design") {
+      setPreviewView("resume");
+      setMobilePreviewPane("edit");
+      setEditorTab("design");
+    }
+  }, [tourStepId]);
+
   const isFormComplete = (Object.values(form) as string[]).every((value) =>
     value.trim()
   );
@@ -1614,6 +1650,7 @@ export const ScanSection = ({
     // globals.css sets on <html>.
     <div
       ref={summaryPanelRef}
+      data-tour="scan-summary"
       className="scroll-mt-[calc(1.5rem+env(safe-area-inset-top))] rounded-lg shadow-xl bg-slate-50 p-4 xl:h-[34rem] xl:overflow-y-scroll"
     >
       <div className="flex flex-col gap-1">
@@ -1890,7 +1927,10 @@ export const ScanSection = ({
           guestTrial ? "grid-cols-1" : "xl:grid-cols-[1.5fr,1fr]"
         )}
       >
-        <div className="rounded-lg shadow-xl bg-white p-4 shadow-sm space-y-6 sm:p-6">
+        <div
+          data-tour="scan-form"
+          className="rounded-lg shadow-xl bg-white p-4 shadow-sm space-y-6 sm:p-6"
+        >
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-600">
@@ -2240,6 +2280,7 @@ export const ScanSection = ({
                 className="w-full sm:w-auto"
                 onClick={() => {
                   setShowCareerWarning(false);
+                  tourSignal("scan:idle");
                   toast.info("No changes were made. Try scanning against a closer role.");
                 }}
               >
@@ -2286,7 +2327,10 @@ export const ScanSection = ({
                 type="button"
                 aria-label="Close"
                 className="-mr-1.5 -mt-1.5 shrink-0 rounded-full p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 sm:m-0 sm:rounded-md sm:p-1"
-                onClick={() => setShowCareerKeywordPicker(false)}
+                onClick={() => {
+                  setShowCareerKeywordPicker(false);
+                  tourSignal("scan:idle");
+                }}
               >
                 <X className="h-5 w-5 sm:h-4 sm:w-4" />
               </button>
@@ -2638,7 +2682,10 @@ export const ScanSection = ({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {shouldAllowCoverLetter ? (
-                  <div className="hidden gap-1 rounded-lg bg-slate-100 p-1 sm:flex">
+                  <div
+                    data-tour="preview-cover-tab"
+                    className="hidden gap-1 rounded-lg bg-slate-100 p-1 sm:flex"
+                  >
                     <button
                       type="button"
                       onClick={() => setPreviewView("resume")}
@@ -2669,7 +2716,11 @@ export const ScanSection = ({
                   type="button"
                   aria-label="Close preview"
                   className="-mr-1.5 rounded-full p-2.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 sm:mr-0 sm:rounded-md sm:p-2"
-                  onClick={() => setPreviewOpen(false)}
+                  onClick={() => {
+                    setPreviewOpen(false);
+                    // Everything the tour has left to show lives in this modal.
+                    tourSignal("scan:preview-closed");
+                  }}
                 >
                   <X className="h-5 w-5 sm:h-4 sm:w-4" />
                 </button>
@@ -2683,7 +2734,7 @@ export const ScanSection = ({
                 side-by-side layout do the same jobs. */}
             <div className="flex shrink-0 flex-col gap-2 border-b border-slate-200 px-4 py-2.5 sm:hidden">
               {shouldAllowCoverLetter ? (
-                <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+                <div data-tour="preview-cover-tab" className="flex gap-1 rounded-lg bg-slate-100 p-1">
                   <button
                     type="button"
                     onClick={() => setPreviewView("resume")}
@@ -2776,7 +2827,10 @@ export const ScanSection = ({
                       <Palette className="h-4 w-4" /> Design
                     </button>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-auto border-t border-slate-200 bg-slate-50 p-4">
+                  <div
+                    data-tour="preview-editor"
+                    className="min-h-0 flex-1 overflow-auto border-t border-slate-200 bg-slate-50 p-4"
+                  >
                     {editorTab === "content" ? (
                       resumeData ? (
                         <ResumeEditor
@@ -2813,7 +2867,7 @@ export const ScanSection = ({
                         />
                       )
                     ) : (
-                      <div className="space-y-4">
+                      <div data-tour="preview-design" className="space-y-4">
                         <div>
                           <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                             Template
@@ -2961,6 +3015,7 @@ export const ScanSection = ({
                   </div>
                 </div>
                 <div
+                  data-tour="preview-document"
                   className={cn(
                     "flex min-h-0 flex-col bg-slate-100",
                     mobilePreviewPane === "edit" && "hidden lg:flex"
@@ -3099,6 +3154,7 @@ export const ScanSection = ({
                   </Button>
                 ) : null}
                 <Button
+                  data-tour="preview-download"
                   className="flex-1 rounded-md sm:flex-none"
                   disabled={
                     guestTrial ||

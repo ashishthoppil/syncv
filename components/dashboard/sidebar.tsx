@@ -41,6 +41,7 @@ export const DashboardSidebar = ({
           <button
             key={section.id}
             type="button"
+            data-tour={`nav-${section.id}`}
             onClick={() => onSelect(section.id)}
             className={cn(
               "flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-colors",
@@ -89,6 +90,7 @@ export const DashboardTabBar = ({
             <button
               key={section.id}
               type="button"
+              data-tour={`nav-${section.id}`}
               onClick={() => onSelect(section.id)}
               aria-current={isActive ? "page" : undefined}
               className={cn(

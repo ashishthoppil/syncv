@@ -19,6 +19,10 @@ import { HelpCenterSection } from "@/components/dashboard/help-center-section";
 import { Loader2, LogOut, LayoutDashboard } from "lucide-react";
 import { toast } from "react-toastify";
 import { Logo } from "@/components/navbar/logo";
+import {
+  ProductTourProvider,
+  TourSectionSignal,
+} from "@/components/onboarding/product-tour";
 
 // "create-cv" and legacy "profile" are kept in the map so their routes still
 // resolve, but only the entries in DASHBOARD_SECTIONS appear in the sidebar.
@@ -284,7 +288,7 @@ const DashboardPageContent = () => {
     ? "…"
     : `${scansRemaining} left`;
 
-  return (
+  const dashboard = (
     <div className="flex min-h-screen bg-slate-50">
       <aside className="hidden lg:flex lg:w-64 flex-col border-r border-slate-200 bg-white/90 px-4 py-6 backdrop-blur sticky top-0 h-screen">
         <div className="flex items-center gap-2 px-2">
@@ -363,6 +367,15 @@ const DashboardPageContent = () => {
         sections={visibleSections}
       />
     </div>
+  );
+
+  return (
+    <ProductTourProvider userId={user?.id}>
+      {/* The first-run tour's opening steps are anchored to sections, so it has
+          to know which one the user is looking at. */}
+      <TourSectionSignal section={activeSection} />
+      {dashboard}
+    </ProductTourProvider>
   );
 };
 

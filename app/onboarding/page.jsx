@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, FileUp, UserRoundPen, Sparkles, UploadCloud } from "lucide-react";
 import { toast } from "react-toastify";
 import { BaseResumeWizard } from "@/components/onboarding/base-resume-wizard";
+import { startProductTour } from "@/components/onboarding/product-tour";
 import {
   emptyBaseResumeDraft,
   extractedToDraft,
@@ -99,7 +100,12 @@ export default function OnboardingPage() {
             user={user}
             initialDraft={draft}
             mode={mode}
-            onComplete={() => router.push("/scan?section=base-resume")}
+            onComplete={() => {
+              // Saving the first base resume is the one moment we know someone
+              // is brand new — arm the dashboard tour before handing over.
+              startProductTour(user?.id);
+              router.push("/scan?section=base-resume");
+            }}
           />
         </div>
       </main>
