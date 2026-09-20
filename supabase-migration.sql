@@ -94,7 +94,10 @@ ALTER TABLE job_tracker
   ADD COLUMN IF NOT EXISTS generated_cover_letter_updated_at TIMESTAMPTZ,
   -- Exact optimized-resume render payload, written ONLY when the user downloads
   -- the optimized resume. Lets the Job Tracker reproduce the identical file.
-  ADD COLUMN IF NOT EXISTS generated_resume_payload JSONB;
+  ADD COLUMN IF NOT EXISTS generated_resume_payload JSONB,
+  -- Score of the tailored resume. NULL until the scan's resume is optimized;
+  -- `initial_score` keeps the original scan score so the pair can be compared.
+  ADD COLUMN IF NOT EXISTS optimized_score INTEGER;
 
 -- Subscriptions table for Razorpay plan access control
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -204,6 +207,12 @@ CREATE TRIGGER update_base_resumes_updated_at
   BEFORE UPDATE ON base_resumes
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- Whether the resume was built on a phone or on a desktop. Written once at
+-- creation and never updated; NULL for rows that predate this column.
+ALTER TABLE base_resumes
+  ADD COLUMN IF NOT EXISTS created_device TEXT
+    CHECK (created_device IN ('mobile', 'desktop'));
 
 -- One-time migration: move each user's existing single base resume into a
 -- "Default Base CV" row. Safe to re-run (skips users who already have rows).

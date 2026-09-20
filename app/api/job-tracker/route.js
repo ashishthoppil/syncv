@@ -111,6 +111,7 @@ export async function PATCH(req) {
       id,
       interviewStatus,
       initialScore,
+      optimizedScore,
       resumeTemplateId,
       coverLetterTemplateId,
       generatedResumeText,
@@ -125,7 +126,8 @@ export async function PATCH(req) {
       });
     }
 
-    const hasBaseUpdate = interviewStatus || initialScore !== undefined;
+    const hasBaseUpdate =
+      interviewStatus || initialScore !== undefined || optimizedScore !== undefined;
     const hasGeneratedUpdate =
       resumeTemplateId !== undefined ||
       coverLetterTemplateId !== undefined ||
@@ -149,6 +151,15 @@ export async function PATCH(req) {
     }
     if (initialScore !== undefined && initialScore !== null && !Number.isNaN(Number(initialScore))) {
       baseUpdates.initial_score = Number(initialScore);
+    }
+    // The score after tailoring, kept alongside the scan's original score
+    // rather than replacing it — the pair is the whole story of a scan.
+    if (
+      optimizedScore !== undefined &&
+      optimizedScore !== null &&
+      !Number.isNaN(Number(optimizedScore))
+    ) {
+      baseUpdates.optimized_score = Number(optimizedScore);
     }
 
     const generatedUpdates = {
@@ -182,12 +193,21 @@ export async function PATCH(req) {
     let partialMessage = "";
 
     if (hasBaseUpdate) {
-      const baseRes = await supabase
-        .from("job_tracker")
-        .update(baseUpdates)
-        .eq("id", id)
-        .select()
-        .single();
+      const updateBase = (values) =>
+        supabase.from("job_tracker").update(values).eq("id", id).select().single();
+
+      let baseRes = await updateBase(baseUpdates);
+      // Same story as the generated columns below: on a database that hasn't
+      // had the `optimized_score` migration run, still apply the rest of the
+      // update instead of failing it outright.
+      if (baseRes.error && /optimized_score/.test(baseRes.error.message)) {
+        partial = true;
+        partialMessage =
+          "The 'optimized_score' column is missing. Run the latest supabase-migration.sql to store optimized scores.";
+        const fallback = { ...baseUpdates };
+        delete fallback.optimized_score;
+        baseRes = await updateBase(fallback);
+      }
       data = baseRes.data;
       error = baseRes.error;
     }

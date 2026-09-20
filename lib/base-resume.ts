@@ -34,6 +34,21 @@ export type BaseResumeRecord = {
 
 type BaseResumeUser = { id?: string; email?: string } | null;
 
+// Which kind of device a base resume was built on, stored once at creation so
+// we can tell how many people onboard from a phone. Device emulation in desktop
+// dev tools spoofs both the user agent and the touch points, so it reports
+// "mobile" — which is what you want when testing the mobile flow.
+const creationDevice = (): "mobile" | "desktop" => {
+  if (typeof navigator === "undefined") return "desktop";
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry|Opera Mini|IEMobile/i.test(ua)) {
+    return "mobile";
+  }
+  // iPadOS 13+ claims to be a Mac; the touch points give it away.
+  if (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) return "mobile";
+  return "desktop";
+};
+
 type BaseResumeRow = {
   id: string;
   name: string | null;
@@ -155,17 +170,27 @@ export const createBaseResume = async (
     template: input.template,
     overrides: input.overrides,
   };
-  const { data, error } = await supabase
-    .from("base_resumes")
-    .insert({
-      user_id: user.id,
-      name: input.name || "Untitled resume",
-      resume: stored,
-      resume_text: serializeResumeText(input.draft),
-      is_default: isDefault,
-    })
-    .select("id, name, is_default, resume, resume_text, updated_at")
-    .single();
+  const row = {
+    user_id: user.id,
+    name: input.name || "Untitled resume",
+    resume: stored,
+    resume_text: serializeResumeText(input.draft),
+    is_default: isDefault,
+  };
+  const insert = (values: Record<string, unknown>) =>
+    supabase
+      .from("base_resumes")
+      .insert(values)
+      .select("id, name, is_default, resume, resume_text, updated_at")
+      .single();
+
+  let { data, error } = await insert({ ...row, created_device: creationDevice() });
+  // Saving the resume matters more than knowing which device it came from: on a
+  // database that hasn't had the `created_device` migration run yet, drop the
+  // column rather than failing the save.
+  if (error && /created_device/.test(error.message)) {
+    ({ data, error } = await insert(row));
+  }
   if (error) throw error;
 
   if (isDefault) await syncProfileContact(user, input.draft);
