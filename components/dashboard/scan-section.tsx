@@ -1013,8 +1013,10 @@ export const ScanSection = ({
     optimizedScore: number | null;
   }) => {
     if (!scanJobId) return;
+    // Written to its own column: the scan's original score is what the tracker
+    // compares against, so it has to survive the optimization.
     const scorePayload =
-      typeof optimizedScore === "number" ? { initialScore: optimizedScore } : {};
+      typeof optimizedScore === "number" ? { optimizedScore } : {};
     try {
       const response = await fetch("/api/job-tracker", {
         method: "PATCH",
@@ -1033,7 +1035,8 @@ export const ScanSection = ({
       }
       if (result.partial) {
         toast.warn(
-          "Score updated, but generated document storage is partially unavailable. Run latest DB migration."
+          result.partialMessage ||
+            "Score updated, but generated document storage is partially unavailable. Run latest DB migration."
         );
       }
     } catch (error) {
@@ -1472,6 +1475,19 @@ export const ScanSection = ({
         setFinalScore(data.message.initialScore);
         setFinalScoreBreakdown(data.message.scoreBreakdown || null);
         setHasResumePreviewEdits(false);
+        // The tracker shows this same number, so keep it in step with the
+        // rescored edit (fire-and-forget — the score on screen is the point).
+        if (scanJobId && !guestTrial) {
+          fetch("/api/job-tracker", {
+            method: "PATCH",
+            body: JSON.stringify({
+              id: scanJobId,
+              optimizedScore: data.message.initialScore,
+            }),
+          }).catch((persistError) =>
+            console.error("Failed to persist re-evaluated score:", persistError)
+          );
+        }
         toast.success("Score updated for your edits.");
       } else {
         toast.error(data.message || "Unable to re-evaluate resume.");

@@ -18,7 +18,11 @@ import { cn } from "@/lib/utils";
  * The first-run product tour: a spotlight over one control at a time, with a
  * popup explaining what it's for. It runs exactly once, immediately after
  * someone registers and saves their first base resume, and walks the whole
- * happy path — base resume → scan → score → tailored CV.
+ * happy path — scan → score → tailored CV → base resume.
+ *
+ * The base resume comes last on purpose: it only means something once the user
+ * has watched a scan tailor it to a job, so the tour opens on the Scan section
+ * (where registration now lands) and points at Base Resume on the way out.
  *
  * Steps are pinned to the DOM by `data-tour` attributes rather than by class
  * names or positions, so restyling a section can't silently break the tour.
@@ -43,15 +47,15 @@ export type TourSignal =
   | "scan:preview-closed";
 
 export type TourStepId =
-  | "base-resume"
-  | "nav-scan"
   | "scan-form"
   | "scan-summary"
   | "preview-document"
   | "preview-editor"
   | "preview-design"
   | "preview-download"
-  | "preview-cover";
+  | "preview-cover"
+  | "nav-base-resume"
+  | "base-resume";
 
 type TourStep = {
   id: TourStepId;
@@ -67,8 +71,6 @@ type TourStep = {
    *  thing being pointed at, and the following step's `awaits` moves us on. */
   advance: "next" | "action";
   actionHint?: string;
-  /** Ends the tour outright — whatever the remaining steps point at is gone. */
-  endsOn?: TourSignal;
   /** Lives on a screen that a page reload throws away (a scan result, the
    *  preview modal), so resuming rewinds to the last step that still exists. */
   transient?: boolean;
@@ -78,35 +80,14 @@ type TourStep = {
   padding?: number;
 };
 
-const PREVIEW_STEP = {
-  transient: true,
-  endsOn: "scan:preview-closed",
-} as const;
-
 const TOUR_STEPS: TourStep[] = [
-  {
-    id: "base-resume",
-    target: '[data-tour="first-base-resume"]',
-    awaits: "section:base-resume",
-    advance: "next",
-    title: "This is your base resume",
-    body: "This is the base resume you created. You can manage multiple resumes here to scan against different job descriptions — e.g. Full Stack Developer Resume, Frontend Developer Resume.",
-  },
-  {
-    id: "nav-scan",
-    target: '[data-tour="nav-scan"]',
-    advance: "action",
-    actionHint: "Click Scan Resume to continue",
-    title: "Scan against a job",
-    body: "Click here to scan your base resume against a job of your liking.",
-  },
   {
     id: "scan-form",
     target: '[data-tour="scan-form"]',
     awaits: "section:scan",
     advance: "next",
     title: "Set up your scan",
-    body: "Paste the job description, then fill in the company and the role you're applying for. Pick which base resume to scan against — if you only have one, it's already selected. Once everything is filled in, click Analyze resume.",
+    body: "Your base resume is saved — this is where you put it to work. Paste the job description, then fill in the company and the role you're applying for. Pick which base resume to scan against — if you only have one, it's already selected. Once everything is filled in, click Analyze resume.",
   },
   {
     id: "scan-summary",
@@ -125,7 +106,7 @@ const TOUR_STEPS: TourStep[] = [
     advance: "next",
     title: "Your tailored resume",
     body: "This is your resume rewritten for this job description. Highlighted text marks the keywords we added — they're highlighted here only, never in the file you download.",
-    ...PREVIEW_STEP,
+    transient: true,
   },
   {
     id: "preview-editor",
@@ -133,7 +114,7 @@ const TOUR_STEPS: TourStep[] = [
     advance: "next",
     title: "Edit any field",
     body: "Nothing here is locked. Reword a bullet, add or remove items, fix your title — the preview updates as you type. After editing, use Re-evaluate to rescore the new version.",
-    ...PREVIEW_STEP,
+    transient: true,
   },
   {
     id: "preview-design",
@@ -142,7 +123,7 @@ const TOUR_STEPS: TourStep[] = [
     optional: true,
     title: "Pick a template",
     body: "Switch templates here, and fine-tune the accent colour, fonts and spacing to taste. Your content stays exactly as you wrote it.",
-    ...PREVIEW_STEP,
+    transient: true,
   },
   {
     id: "preview-download",
@@ -150,7 +131,7 @@ const TOUR_STEPS: TourStep[] = [
     advance: "next",
     title: "Download your CV",
     body: "Happy with it? Download the tailored resume as a PDF, ready to send with your application.",
-    ...PREVIEW_STEP,
+    transient: true,
   },
   {
     id: "preview-cover",
@@ -158,8 +139,31 @@ const TOUR_STEPS: TourStep[] = [
     advance: "next",
     optional: true,
     title: "And your cover letter",
-    body: "Switch to the Cover letter tab for the letter we drafted for this same job. Edit and download it exactly like the resume.",
-    ...PREVIEW_STEP,
+    body: "Switch to the Cover letter tab for the letter we drafted for this same job. Edit and download it exactly like the resume. Close the preview when you're done — there's one last thing to show you.",
+    transient: true,
+  },
+  // Closing the preview — from any of the steps above, not just the last one —
+  // lands here. Base Resume is the one section the tour hasn't shown yet, and
+  // it finally means something now that the user has watched a scan tailor it.
+  {
+    id: "nav-base-resume",
+    target: '[data-tour="nav-base-resume"]',
+    awaits: "scan:preview-closed",
+    advance: "action",
+    // Hidden once someone is out of scans, at which point there is nothing to
+    // point at and no section to walk them into.
+    optional: true,
+    actionHint: "Click Base Resume to continue",
+    title: "Where that resume came from",
+    body: "Every tailored CV starts from a base resume. Open Base Resume to see yours — the Manage link next to the resume picker on the scan form gets you here too.",
+  },
+  {
+    id: "base-resume",
+    target: '[data-tour="first-base-resume"]',
+    awaits: "section:base-resume",
+    advance: "next",
+    title: "This is your base resume",
+    body: "This is the base resume you created. You can manage multiple resumes here to scan against different job descriptions — e.g. Full Stack Developer Resume, Frontend Developer Resume.",
   },
 ];
 
@@ -210,6 +214,13 @@ const resumableIndex = (index: number) => {
   while (i > 0 && TOUR_STEPS[i].transient) i -= 1;
   return i;
 };
+
+// Whether a resumed step still has to wait for its signal. A section signal is
+// re-emitted as soon as the dashboard mounts, so those steps arm themselves —
+// but "the preview was closed" can never fire again, and a freshly loaded page
+// has no preview open anyway, so that step is already satisfied.
+const stillAwaitsOnLoad = (step: TourStep) =>
+  Boolean(step.awaits) && step.awaits !== "scan:preview-closed";
 
 // ---------------------------------------------------------------------------
 // Context
@@ -296,7 +307,7 @@ export const ProductTourProvider = ({
     const index = forced ? 0 : resumableIndex(stored?.step ?? 0);
     // An armed step waits for its signal; the dashboard re-emits the current
     // section on mount, so the first step arms itself moments later.
-    goTo(index, !TOUR_STEPS[index].awaits, { running: true });
+    goTo(index, !stillAwaitsOnLoad(TOUR_STEPS[index]), { running: true });
   }, [userId, goTo]);
 
   useEffect(() => {
@@ -338,10 +349,6 @@ export const ProductTourProvider = ({
         return;
       }
 
-      if (step.endsOn === incoming) {
-        finish();
-        return;
-      }
       // Leaving the section a transient step belongs to strands it: the scan
       // result and the preview it points at only exist in memory, and switching
       // section unmounts them. Drop back to the last step that can still be
@@ -367,7 +374,7 @@ export const ProductTourProvider = ({
       );
       if (ahead >= 0) goTo(ahead, true);
     },
-    [finish, goTo, update]
+    [goTo, update]
   );
 
   const step = state.running ? TOUR_STEPS[state.index] : null;

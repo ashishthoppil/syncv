@@ -103,8 +103,10 @@ export default function OnboardingPage() {
             onComplete={() => {
               // Saving the first base resume is the one moment we know someone
               // is brand new — arm the dashboard tour before handing over.
+              // They land on Scan: the resume they just built is only worth
+              // anything once it has been run against a job description.
               startProductTour(user?.id);
-              router.push("/scan?section=base-resume");
+              router.push("/scan");
             }}
           />
         </div>

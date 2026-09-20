@@ -53,6 +53,9 @@ type Job = {
   designation: string;
   interview_status: string;
   initial_score: number | null;
+  /** Null until the scan's resume is tailored — see the Scan section. Absent
+   *  entirely on a database that predates the column. */
+  optimized_score?: number | null;
   matched_keywords: string[];
   missing_keywords: string[];
   resume_template_id?: string | null;
@@ -443,7 +446,7 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
             />
           </div>
         </div>
-        <div className="grid grid-cols-[2fr,1.5fr,1.5fr,0.8fr,1fr,0.5fr] items-center border-b border-slate-200 bg-slate-50 px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 max-sm:hidden">
+        <div className="grid grid-cols-[2fr,1.5fr,1.5fr,1.3fr,1fr,0.5fr] items-center border-b border-slate-200 bg-slate-50 px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 max-sm:hidden">
           <span>Organization</span>
           <span>Role</span>
           <span>Documents</span>
@@ -510,16 +513,46 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                   Cover
                 </Button>
               );
+              // Before tailoring there is only the scan score. After it, both
+              // are shown as "was → now", so the lift the optimization bought
+              // is readable at a glance instead of overwriting the original.
+              const optimized = job.optimized_score ?? null;
               const scoreChip = (
                 // shrink-0: on the phone card this sits next to the company
                 // name, and a long name would otherwise squash the badge.
                 <span
-                  className={cn(
-                    "inline-flex min-w-[2.25rem] shrink-0 items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
-                    scoreClass(job.initial_score)
-                  )}
+                  className="inline-flex shrink-0 items-center gap-1"
+                  title={
+                    optimized !== null
+                      ? `Scan score ${job.initial_score ?? "—"} → optimized ${optimized}`
+                      : "Scan score"
+                  }
                 >
-                  {job.initial_score !== null ? job.initial_score : "—"}
+                  <span
+                    className={cn(
+                      "inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
+                      optimized !== null
+                        ? "bg-slate-100 text-slate-400"
+                        : scoreClass(job.initial_score)
+                    )}
+                  >
+                    {job.initial_score !== null ? job.initial_score : "—"}
+                  </span>
+                  {optimized !== null ? (
+                    <>
+                      <span aria-hidden className="text-xs text-slate-400">
+                        →
+                      </span>
+                      <span
+                        className={cn(
+                          "inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
+                          scoreClass(optimized)
+                        )}
+                      >
+                        {optimized}
+                      </span>
+                    </>
+                  ) : null}
                 </span>
               );
               const statusSelect = (
@@ -583,7 +616,7 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                   </div>
 
                   {/* Tablet and up: the original six-column row, unchanged. */}
-                  <div className="hidden items-center gap-3 px-5 py-4 sm:grid sm:grid-cols-[2fr,1.5fr,1.5fr,0.8fr,1fr,0.5fr]">
+                  <div className="hidden items-center gap-3 px-5 py-4 sm:grid sm:grid-cols-[2fr,1.5fr,1.5fr,1.3fr,1fr,0.5fr]">
                     <div className="flex flex-col justify-center">
                       <p className="text-sm font-semibold text-slate-900">
                         {job.organization}
