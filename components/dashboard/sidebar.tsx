@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import {
   ScanLine,
   BriefcaseBusiness,
+  Globe2,
   UserRound,
   SettingsIcon,
   LifeBuoy,
@@ -13,12 +14,13 @@ import {
 // resume replaces it as the single source of truth. The component and its
 // ?section=create-cv route are kept in case it needs to return.
 //
-// `shortLabel` is what the mobile tab bar shows: five tabs share a 360px row,
-// so each caption has to survive at ~64px wide without wrapping or truncating.
+// `shortLabel` is what the mobile tab bar shows: six tabs share a 360px row,
+// so each caption has to survive at ~56px wide without wrapping or truncating.
 export const DASHBOARD_SECTIONS = [
   { id: "scan", label: "Scan Resume", shortLabel: "Scan", icon: ScanLine },
   { id: "base-resume", label: "Base Resume", shortLabel: "Resume", icon: UserRound },
-  { id: "job-tracker", label: "Job Tracker", shortLabel: "Jobs", icon: BriefcaseBusiness },
+  { id: "job-tracker", label: "Job Tracker", shortLabel: "Tracker", icon: BriefcaseBusiness },
+  { id: "remote-jobs", label: "Remote Jobs", shortLabel: "Jobs", icon: Globe2 },
   { id: "help-center", label: "Help Center", shortLabel: "Help", icon: LifeBuoy },
   { id: "settings", label: "Settings", shortLabel: "Settings", icon: SettingsIcon },
 ];

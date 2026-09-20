@@ -297,3 +297,23 @@ CREATE POLICY "Users can view notes on their own tickets"
       WHERE t.id = support_ticket_notes.ticket_id AND t.user_id = auth.uid()
     )
   );
+
+-- ---------------------------------------------------------------------------
+-- Remote Jobs: where a scan was started from
+-- ---------------------------------------------------------------------------
+-- Records whether an analysis began in the Remote Jobs list or from a manually
+-- pasted job description. scan_usage is the right home for this because it gets
+-- a row for EVERY scan (paid plans and free trial alike), whereas job_tracker
+-- is only written for plans that include the tracker.
+--
+-- Existing rows backfill to 'manual', which is accurate: they all predate the
+-- Remote Jobs feature.
+--
+-- Deliberately NO CHECK constraint. app/api/analyze only logs a failed
+-- scan_usage insert and carries on, so a row rejected by a constraint would
+-- silently skip quota counting and effectively grant free scans. The value is
+-- restricted to a known set in lib/scan-sources.ts instead.
+ALTER TABLE scan_usage
+  ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
+
+CREATE INDEX IF NOT EXISTS idx_scan_usage_source ON scan_usage(source);
