@@ -16,6 +16,8 @@ import { JobTrackerSection } from "@/components/dashboard/job-tracker-section";
 import { SettingsSection } from "@/components/dashboard/settings-section";
 import { BaseResumeSection } from "@/components/dashboard/base-resume-section";
 import { HelpCenterSection } from "@/components/dashboard/help-center-section";
+import { RemoteJobsSection } from "@/components/dashboard/remote-jobs-section";
+import { SCAN_SOURCE_REMOTE_JOBS } from "@/lib/scan-sources";
 import { Loader2, LogOut, LayoutDashboard } from "lucide-react";
 import { toast } from "react-toastify";
 import { Logo } from "@/components/navbar/logo";
@@ -32,6 +34,7 @@ const sectionMap = {
   "base-resume": BaseResumeSection,
   profile: BaseResumeSection,
   "job-tracker": JobTrackerSection,
+  "remote-jobs": RemoteJobsSection,
   "help-center": HelpCenterSection,
   settings: SettingsSection,
 };
@@ -42,6 +45,7 @@ const sectionLabels = {
   "base-resume": "Base Resume",
   profile: "Base Resume",
   "job-tracker": "Job Tracker",
+  "remote-jobs": "Remote Jobs",
   "help-center": "Help Center",
   settings: "Settings",
 };
@@ -72,6 +76,9 @@ const DashboardPageContent = () => {
     canScan: false,
   });
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+  // Set when a job is picked in Remote Jobs; the scan form seeds itself from it
+  // on mount so the user never has to paste the JD by hand.
+  const [scanPrefill, setScanPrefill] = useState(null);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -166,6 +173,14 @@ const DashboardPageContent = () => {
   const baseResumeLocked = !subscriptionLoading && !subscription.canScan;
   const isBaseResumeSection = (id) => id === "base-resume" || id === "profile";
 
+  // The full Remote Jobs list is a paid capability: an active Speed or Pro
+  // plan. Free-trial users are not paid users here — they get the preview.
+  // Held false while loading so the list can't flash open then lock.
+  const hasRemoteJobsAccess =
+    !subscriptionLoading &&
+    subscription.hasActivePlan &&
+    ["speed", "pro"].includes(String(subscription.planKey || ""));
+
   useEffect(() => {
     const sectionFromQuery = searchParams?.get("section");
     const jobTrackerBlocked =
@@ -210,6 +225,14 @@ const DashboardPageContent = () => {
     router.replace(`/scan${query}`);
   };
 
+  // Remote Jobs hands the selected posting to the existing scanner: it fills the
+  // same three fields the user would otherwise type, then switches section. The
+  // source rides along so the analysis is recorded as having started here.
+  const handleScanRemoteJob = (prefill) => {
+    setScanPrefill({ ...prefill, source: SCAN_SOURCE_REMOTE_JOBS });
+    handleSectionChange("scan");
+  };
+
   const renderSection = () => {
     // Free-trial users can scan until their allowance is exhausted; paid users
     // until their plan lapses. Only lock once neither path grants access.
@@ -223,6 +246,8 @@ const DashboardPageContent = () => {
           allowsCoverLetter={subscription.allowsCoverLetter}
           allowsJobTracker={subscription.allowsJobTracker}
           onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
+          prefill={scanPrefill}
+          onPrefillConsumed={() => setScanPrefill(null)}
         />
       );
     }
@@ -234,6 +259,18 @@ const DashboardPageContent = () => {
     }
     if (activeSection === "job-tracker") {
       return <JobTrackerSection subscriptionLocked={subscriptionLocked || !subscription.allowsJobTracker} />;
+    }
+    // The section stays reachable for everyone — discovering a job is what
+    // leads a user into the scanner. The list itself is what's gated: without
+    // an active Speed or Pro plan it stops after the first few results.
+    if (activeSection === "remote-jobs") {
+      return (
+        <RemoteJobsSection
+          userId={user?.id}
+          hasFullAccess={hasRemoteJobsAccess}
+          onScanJob={handleScanRemoteJob}
+        />
+      );
     }
     // Deliberately not subscription-gated — support has to stay reachable when
     // a plan lapses, which is exactly when people need it.

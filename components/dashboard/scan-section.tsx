@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { isLanguageKeyword } from "@/lib/languages";
+import {
+  SCAN_SOURCE_MANUAL,
+  type ScanSource,
+} from "@/lib/scan-sources";
 import { draftToResumeData } from "@/components/dashboard/resume-form";
 import { ResumeTemplatePicker } from "@/components/dashboard/template-picker";
 import {
@@ -182,6 +186,20 @@ type ScanSectionProps = {
   allowsJobTracker?: boolean;
   /** Called after a scan consumes quota, so the host can refresh the balance. */
   onUsageChange?: () => void;
+  /**
+   * Seeds the form when the user arrives from Remote Jobs, so they don't have
+   * to copy a job description across. Absent everywhere else, which leaves the
+   * form exactly as it was.
+   */
+  prefill?: {
+    organization?: string;
+    designation?: string;
+    jd?: string;
+    /** Recorded on the scan so we can tell where the analysis originated. */
+    source?: ScanSource;
+  } | null;
+  /** Lets the host drop the prefill once it has been applied. */
+  onPrefillConsumed?: () => void;
 };
 
 type GuestTrialStage = "none" | "analyzed" | "optimized";
@@ -206,6 +224,8 @@ export const ScanSection = ({
   allowsCoverLetter = true,
   allowsJobTracker = true,
   onUsageChange,
+  prefill = null,
+  onPrefillConsumed,
 }: ScanSectionProps = {}) => {
   const router = useRouter();
   const [form, setForm] = useState(initialFormState);
@@ -224,6 +244,9 @@ export const ScanSection = ({
     null
   );
   const [scanJobId, setScanJobId] = useState<string | null>(null);
+  // Where the job description came from. Stays with the form until it is reset,
+  // so the origin is still known by the time the scan is actually run.
+  const [scanSource, setScanSource] = useState<ScanSource>(SCAN_SOURCE_MANUAL);
   const [selectedTemplate, setSelectedTemplate] =
     useState<ResumeTemplateId>("classic-blue");
   const [templateOverrides, setTemplateOverrides] = useState<
@@ -618,6 +641,9 @@ export const ScanSection = ({
           organization: form.organization,
           designation: form.designation,
           userId: sessionUserId,
+          // Only this call records scan usage; the post-optimize re-scores pass
+          // skipUsageTracking, so they have no origin to record.
+          source: scanSource,
           experienceYears:
             baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
               .experienceYears || "",
@@ -693,6 +719,7 @@ export const ScanSection = ({
     }
     setForm(initialFormState);
     setFormErrors({});
+    setScanSource(SCAN_SOURCE_MANUAL);
     setResult(null);
     setTailoredDocs(null);
     setPreviewOpen(false);
@@ -1336,6 +1363,23 @@ export const ScanSection = ({
     if (guestTrial) return;
     loadProfileContact();
   }, [loadProfileContact, guestTrial]);
+
+  // Arriving from Remote Jobs: fill the organization, role and JD the user
+  // would otherwise have had to copy across, then release the prefill so a
+  // later visit to this section starts clean. `resume` is left alone — the base
+  // resume loader owns it, and both use functional updates so neither wins.
+  useEffect(() => {
+    if (!prefill) return;
+    setForm((prev) => ({
+      ...prev,
+      organization: prefill.organization ?? prev.organization,
+      designation: prefill.designation ?? prev.designation,
+      jd: prefill.jd ?? prev.jd,
+    }));
+    setFormErrors({});
+    if (prefill.source) setScanSource(prefill.source);
+    onPrefillConsumed?.();
+  }, [prefill, onPrefillConsumed]);
 
   useEffect(() => {
     if (!guestTrial || typeof window === "undefined") return;

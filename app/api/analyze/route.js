@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import {
+  normalizeScanSource,
+  SCAN_SOURCE_MANUAL,
+} from "@/lib/scan-sources";
+import {
   countWeeklyScans,
   countFreeTrialScans,
   FREE_TRIAL_PLAN_KEY,
@@ -1657,6 +1661,10 @@ export async function POST(req) {
       designation,
       userId = "",
       skipUsageTracking = false,
+      // Where the scan was started from — "remote-jobs" when the JD came from
+      // the Remote Jobs list, "manual" when it was pasted in. Anything else is
+      // clamped to "manual" by normalizeScanSource.
+      source = SCAN_SOURCE_MANUAL,
       // Candidate's total years of experience from the structured base resume;
       // used directly for the experience score instead of parsing the text.
       experienceYears = null,
@@ -1775,10 +1783,26 @@ export async function POST(req) {
 
     if (userId && (activePlan || usingFreeTrial) && !skipUsageTracking) {
       const supabase = getSupabaseAdminClient();
-      const { error: usageError } = await supabase.from("scan_usage").insert({
+      const usageRow = {
         user_id: userId,
         plan_key: activePlan ? activePlan.key : FREE_TRIAL_PLAN_KEY,
-      });
+      };
+
+      let { error: usageError } = await supabase
+        .from("scan_usage")
+        .insert({ ...usageRow, source: normalizeScanSource(source) });
+
+      // The `source` column arrives with a migration. Until that has been run,
+      // writing it fails — and because this insert is best-effort, the failure
+      // would silently stop counting scans against the user's quota. Retry
+      // without the column so quota enforcement never depends on the migration.
+      if (usageError && /source/.test(usageError.message || "")) {
+        console.warn(
+          "scan_usage.source is missing — run the latest supabase-migration.sql to record scan origin."
+        );
+        ({ error: usageError } = await supabase.from("scan_usage").insert(usageRow));
+      }
+
       if (usageError) {
         console.error("Failed to store scan usage:", usageError);
       } else {
