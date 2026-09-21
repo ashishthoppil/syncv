@@ -2372,32 +2372,40 @@ export const ScanSection = ({
               scroll-everything DIALOG_PANEL. */}
           <div className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
             {/* Header */}
-            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 pb-4 pt-5 sm:gap-4 sm:px-6">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 sm:flex">
-                  <ShieldCheck className="h-5 w-5" />
-                </span>
-                <div>
+            <div className="border-b border-slate-100 px-4 pb-4 pt-5 sm:px-6">
+              <div className="flex items-start justify-between gap-3 sm:gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 sm:flex">
+                    <ShieldCheck className="h-5 w-5" />
+                  </span>
                   <h3 className="text-base font-semibold text-slate-900 sm:text-lg">
                     Which of these can you back up?
                   </h3>
-                  <p className="mt-1 text-sm text-slate-600">
-                    We never invent experience. Select only the keywords you genuinely have —
-                    we&apos;ll weave those into your resume where they fit. The rest stay out.
-                  </p>
                 </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="-mr-1.5 -mt-1.5 shrink-0 rounded-full p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 sm:m-0 sm:rounded-md sm:p-1"
+                  onClick={() => {
+                    setShowCareerKeywordPicker(false);
+                    tourSignal("scan:idle");
+                  }}
+                >
+                  <X className="h-5 w-5 sm:h-4 sm:w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                aria-label="Close"
-                className="-mr-1.5 -mt-1.5 shrink-0 rounded-full p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 sm:m-0 sm:rounded-md sm:p-1"
-                onClick={() => {
-                  setShowCareerKeywordPicker(false);
-                  tourSignal("scan:idle");
-                }}
-              >
-                <X className="h-5 w-5 sm:h-4 sm:w-4" />
-              </button>
+              {/* The one line in this dialog that must not be skimmed: every
+                  chip arrives selected, so this is what stands between the user
+                  and a resume claiming a skill they don't have. Styled as a
+                  caution rather than supporting copy for exactly that reason. */}
+              <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 sm:ml-12">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <p className="text-sm leading-relaxed text-amber-900">
+                  <strong className="font-semibold">We never invent experience.</strong>{" "}
+                  Select only the keywords you genuinely have — we&apos;ll weave those
+                  into your resume where they fit. The rest stay out.
+                </p>
+              </div>
             </div>
 
             {/* Toolbar */}
