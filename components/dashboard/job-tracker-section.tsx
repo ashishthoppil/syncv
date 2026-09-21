@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
 import { cn } from "@/lib/utils";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
@@ -361,12 +362,16 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
             </p>
           </div>
         </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-amber-900">Subscription required</h2>
-          <p className="mt-2 text-sm text-amber-800">
-            Please subscribe to a plan to optimize your resume.
-          </p>
-        </div>
+        <SubscriptionGate
+          event="job_tracker_locked_upgrade_clicked"
+          title="You're out of scans"
+          body="Job Tracker keeps every role you've scanned in one place, with the score it earned and the documents you generated for it."
+          highlights={[
+            "Every scan saved automatically, with its score",
+            "Track each application from applied to offer",
+            "Re-download the exact CV and cover letter you sent",
+          ]}
+        />
       </section>
     );
   }

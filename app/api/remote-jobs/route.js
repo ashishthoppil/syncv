@@ -1,8 +1,27 @@
 import { NextResponse } from "next/server";
 import { getJobById, searchAllProviders } from "@/lib/remote-jobs/providers";
 import { DEFAULT_SEARCH_PARAMS, MAX_SEARCH_OFFSET } from "@/lib/remote-jobs/types";
+import {
+  countFreeTrialScans,
+  FREE_TRIAL_SCAN_LIMIT,
+  getPlanForUser,
+  getSupabaseAdminClient,
+} from "@/lib/server/subscriptions";
 
 const MAX_LIMIT = 50;
+
+/**
+ * Browsing needs a scan to spend: an active plan, or free-trial scans left.
+ * The same condition the dashboard uses to draw the lock — enforced here too,
+ * because a screen that merely hides the search still answers `curl`.
+ */
+const canBrowseJobs = async (userId) => {
+  const supabase = getSupabaseAdminClient();
+  const plan = await getPlanForUser(supabase, userId);
+  if (plan) return true;
+  const used = await countFreeTrialScans(supabase, userId);
+  return used < FREE_TRIAL_SCAN_LIMIT;
+};
 
 /**
  * Remote Jobs search. Reads from public job-board APIs only — nothing here
@@ -22,6 +41,15 @@ export async function GET(req) {
       return NextResponse.json({
         success: false,
         message: "Please log in to browse remote jobs.",
+      });
+    }
+
+    if (!(await canBrowseJobs(userId))) {
+      return NextResponse.json({
+        success: false,
+        locked: true,
+        message:
+          "Your free scans are used up. Subscribe to a plan to browse remote jobs.",
       });
     }
 

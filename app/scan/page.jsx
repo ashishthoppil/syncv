@@ -260,14 +260,17 @@ const DashboardPageContent = () => {
     if (activeSection === "job-tracker") {
       return <JobTrackerSection subscriptionLocked={subscriptionLocked || !subscription.allowsJobTracker} />;
     }
-    // The section stays reachable for everyone — discovering a job is what
-    // leads a user into the scanner. The list itself is what's gated: without
-    // an active Speed or Pro plan it stops after the first few results.
+    // Reachable while a user still has a scan to spend — discovering a job is
+    // what leads them into the scanner, so the trial keeps browsing. Two gates,
+    // not one: without an active Speed or Pro plan the list stops after the
+    // first few results, and once the free trial is spent it stops entirely,
+    // since a job you can't scan is a dead end.
     if (activeSection === "remote-jobs") {
       return (
         <RemoteJobsSection
           userId={user?.id}
           hasFullAccess={hasRemoteJobsAccess}
+          locked={subscriptionLocked}
           onScanJob={handleScanRemoteJob}
         />
       );

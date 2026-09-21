@@ -35,6 +35,7 @@ import {
   type ResumeData,
 } from "@/components/resume-templates/render";
 import { ResumeEditor } from "@/components/dashboard/resume-editor";
+import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
 import { useProductTour } from "@/components/onboarding/product-tour";
 import {
   ResumeTemplateId,
@@ -66,7 +67,6 @@ import {
   Star,
   TrendingUp,
   UploadCloud,
-  UserPlus,
   WandSparkles,
   X,
   XCircleIcon,
@@ -1682,23 +1682,16 @@ export const ScanSection = ({
             </p>
           </div>
         ) : null}
-        <div className="flex flex-col gap-4 rounded-lg bg-amber-50 p-5 shadow-xl sm:flex-row sm:items-center sm:justify-between sm:p-6">
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <AlertCircleIcon className="text-amber-700 h-5 w-5 shrink-0" />
-              <h2 className="text-lg font-semibold text-amber-700 sm:text-xl">Subscription Required</h2>
-            </div>
-            <p className="mt-2 text-sm font-normal text-amber-700">
-              Please subscribe to a plan to optimize your resume.
-            </p>
-          </div>
-          <Button onClick={() => {
-            router.push("/scan?section=settings&scrollTo=dashboard-pricing")
-          }} className="flex w-full shrink-0 gap-2 bg-amber-700 hover:bg-amber-600 text-white hover:text-white rounded-lg sm:w-auto" variant="outline">
-            <UserPlus />
-            <p>Subscribe</p>
-          </Button>
-        </div>
+        <SubscriptionGate
+          event="scan_locked_upgrade_clicked"
+          title="You're out of scans"
+          body="Scanning is paused until you pick a plan. Everything you've already built — your base resumes, scores and generated documents — stays exactly where it is."
+          highlights={[
+            "Scan any job description against your base resume",
+            "Tailored CV and cover letter for every application",
+            "Remote Jobs and Job Tracker included",
+          ]}
+        />
       </section>
     );
   }

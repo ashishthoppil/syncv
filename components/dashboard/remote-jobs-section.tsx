@@ -6,6 +6,7 @@ import { track } from "@vercel/analytics";
 import { toast } from "react-toastify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
 import { cn } from "@/lib/utils";
 import {
   EMPLOYMENT_TYPES,
@@ -63,6 +64,12 @@ type RemoteJobsSectionProps = {
    * prop locks the list rather than giving it away — the gate fails closed.
    */
   hasFullAccess?: boolean;
+  /**
+   * No plan and no free scans left. Browsing stops entirely: a job you can't
+   * scan is a dead end, and the search is the product, not a teaser. Defaults
+   * to false so an unknown state still renders — the host knows first.
+   */
+  locked?: boolean;
   /**
    * Hands the selected job to the existing scanner. The host maps it onto the
    * scan form's fields and switches section — nothing about the scan flow
@@ -157,6 +164,7 @@ const CompanyLogo = ({ job, size }: { job: RemoteJob; size: "sm" | "lg" }) => {
 export const RemoteJobsSection = ({
   userId,
   hasFullAccess = false,
+  locked = false,
   onScanJob,
 }: RemoteJobsSectionProps) => {
   const router = useRouter();
@@ -250,6 +258,9 @@ export const RemoteJobsSection = ({
         setError("Please log in to browse remote jobs.");
         return;
       }
+      // The gate below is what the user sees; this just saves the round trip,
+      // since the route turns the same search away.
+      if (locked) return;
       const append = offset > 0;
       if (append) {
         setLoadingMore(true);
@@ -333,7 +344,7 @@ export const RemoteJobsSection = ({
         }
       }
     },
-    [userId, hasFullAccess]
+    [userId, hasFullAccess, locked]
   );
 
   const handleSearch = (event?: React.FormEvent) => {
@@ -398,7 +409,7 @@ export const RemoteJobsSection = ({
   // (refresh, shared link, back/forward) and isn't in the result list at all,
   // or because the list record came back without its description.
   useEffect(() => {
-    if (!activeJobId || !userId) return;
+    if (!activeJobId || !userId || locked) return;
     if (listJob?.detailLoaded) return;
     if (linkedJob?.id === activeJobId) return;
 
@@ -429,7 +440,7 @@ export const RemoteJobsSection = ({
     return () => {
       cancelled = true;
     };
-  }, [activeJobId, userId, listJob, linkedJob]);
+  }, [activeJobId, userId, locked, listJob, linkedJob]);
 
   // Opening a detail view mid-scroll would otherwise land the user halfway down
   // the description. scrollIntoView rather than window.scrollTo because the
@@ -469,6 +480,26 @@ export const RemoteJobsSection = ({
     track("remote_job_apply_clicked", { jobId: job.id, source: job.source });
     window.open(job.applicationUrl, "_blank", "noopener,noreferrer");
   };
+
+  // Ahead of the detail view on purpose: `?job=<id>` is a shareable URL, and a
+  // locked user following one would otherwise walk straight past the gate.
+  if (locked) {
+    return (
+      <section className="space-y-6">
+        <SectionHeading />
+        <SubscriptionGate
+          event="remote_jobs_locked_upgrade_clicked"
+          title="You're out of scans"
+          body="Remote Jobs finds the roles, and a scan tells you where you stand against each one. Pick a plan to carry on with both."
+          highlights={[
+            "Browse every remote job we pull in, not just the first few",
+            "Send any posting straight to a scan, prefilled",
+            "Tailored CV and cover letter for each application",
+          ]}
+        />
+      </section>
+    );
+  }
 
   if (activeJobId) {
     return (
