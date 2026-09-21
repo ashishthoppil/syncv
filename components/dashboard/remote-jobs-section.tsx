@@ -518,7 +518,11 @@ export const RemoteJobsSection = ({
     <section className="mx-auto max-w-5xl space-y-6">
       <SectionHeading />
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      {/* The first-run tour ends here. */}
+      <div
+        data-tour="remote-jobs-search"
+        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+      >
         <form onSubmit={handleSearch} className="space-y-3">
           <label
             htmlFor="remote-jobs-search"

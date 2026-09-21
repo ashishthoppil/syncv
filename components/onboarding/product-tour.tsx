@@ -18,11 +18,13 @@ import { cn } from "@/lib/utils";
  * The first-run product tour: a spotlight over one control at a time, with a
  * popup explaining what it's for. It runs exactly once, immediately after
  * someone registers and saves their first base resume, and walks the whole
- * happy path — scan → score → tailored CV → base resume.
+ * happy path — scan → score → tailored CV → base resume → remote jobs.
  *
- * The base resume comes last on purpose: it only means something once the user
+ * The base resume comes late on purpose: it only means something once the user
  * has watched a scan tailor it to a job, so the tour opens on the Scan section
- * (where registration now lands) and points at Base Resume on the way out.
+ * (where registration now lands) and points at Base Resume on the way out. It
+ * signs off on Remote Jobs, which feeds straight back into the scan it opened
+ * with — the loop the product is built around.
  *
  * Steps are pinned to the DOM by `data-tour` attributes rather than by class
  * names or positions, so restyling a section can't silently break the tour.
@@ -34,6 +36,7 @@ import { cn } from "@/lib/utils";
 
 export type TourSignal =
   | "section:base-resume"
+  | "section:remote-jobs"
   | "section:scan"
   | "scan:analyzed"
   /** Optimization has started, and it puts its own dialogs (role mismatch, the
@@ -55,7 +58,9 @@ export type TourStepId =
   | "preview-download"
   | "preview-cover"
   | "nav-base-resume"
-  | "base-resume";
+  | "base-resume"
+  | "nav-remote-jobs"
+  | "remote-jobs";
 
 type TourStep = {
   id: TourStepId;
@@ -139,7 +144,7 @@ const TOUR_STEPS: TourStep[] = [
     advance: "next",
     optional: true,
     title: "And your cover letter",
-    body: "Switch to the Cover letter tab for the letter we drafted for this same job. Edit and download it exactly like the resume. Close the preview when you're done — there's one last thing to show you.",
+    body: "Switch to the Cover letter tab for the letter we drafted for this same job. Edit and download it exactly like the resume. Close the preview when you're done — there's a bit more to show you.",
     transient: true,
   },
   // Closing the preview — from any of the steps above, not just the last one —
@@ -164,6 +169,24 @@ const TOUR_STEPS: TourStep[] = [
     advance: "next",
     title: "This is your base resume",
     body: "This is the base resume you created. You can manage multiple resumes here to scan against different job descriptions — e.g. Full Stack Developer Resume, Frontend Developer Resume.",
+  },
+  // Closes the loop: the tour opened by asking for a job description, and this
+  // is where the next one comes from without leaving the app.
+  {
+    id: "nav-remote-jobs",
+    target: '[data-tour="nav-remote-jobs"]',
+    advance: "action",
+    actionHint: "Click Remote Jobs to continue",
+    title: "One last thing",
+    body: "You don't have to go hunting for job descriptions to paste in. Click Remote Jobs to see roles we pull in for you.",
+  },
+  {
+    id: "remote-jobs",
+    target: '[data-tour="remote-jobs-search"]',
+    awaits: "section:remote-jobs",
+    advance: "next",
+    title: "Find your next role",
+    body: "Search remote roles by title and narrow them with the filters. Open one you like and hit Scan My Resume — it drops that job's description, company and role straight into the scan you just learned, ready to analyze.",
   },
 ];
 

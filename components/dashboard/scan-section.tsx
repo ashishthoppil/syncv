@@ -1223,8 +1223,12 @@ export const ScanSection = ({
 
     // Pre-optimization keyword selection: the user picks which missing keywords
     // they can genuinely back up. Only those are woven in — nothing is invented.
+    // Everything selectable starts checked (same set as "Select all"), so the
+    // user deselects what they can't back up rather than rebuilding the list.
     if (selectedCareerKeywords === undefined && result.missingKeywords.length) {
-      setCareerSelectedKeywords([]);
+      setCareerSelectedKeywords(
+        result.missingKeywords.filter((k) => !isDegreeKeyword(k))
+      );
       setKeywordPickerCareerChange(careerChangeApproved);
       setShowCareerKeywordPicker(true);
       return;

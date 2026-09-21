@@ -2,6 +2,7 @@ import { recallJob, rememberJobs } from "@/lib/remote-jobs/detail-cache";
 import {
   matchesKeyword,
   matchesMetadataFilters,
+  upstreamKeyword,
 } from "@/lib/remote-jobs/filters";
 import {
   decodeEntities,
@@ -27,6 +28,15 @@ const API_BASE = "https://jobicy.com/api/v2/remote-jobs";
 const SOURCE_ID = "jobicy";
 const SOURCE_NAME = "Jobicy";
 const CACHE_SECONDS = 3600;
+
+/**
+ * Jobicy answers a `tag` outside these bounds with
+ * `success:false, error: "The length of the 'tag' value should be between 3 and
+ * 50 characters"` — which `fetchFeed` raises, losing the entire source for the
+ * search. Every two-letter query did this: hr, qa, ai, ux, ml, go.
+ */
+const TAG_MIN_LENGTH = 3;
+const TAG_MAX_LENGTH = 50;
 
 type JobicyJob = {
   id: number | string;
@@ -152,6 +162,20 @@ const searchJobs = async (
   params: RemoteJobSearchParams
 ): Promise<RemoteJob[]> => {
   const geos = GEO_SLUGS[params.remoteLocation] || [""];
+  // Only the distinctive words go upstream. `tag` is Jobicy's own full-text
+  // search, capped and ranked by them, so asking it for "React Developer"
+  // returned a different 200 jobs than "React" — not a subset. Asking for
+  // "react" either way makes the pool stable; `matchesKeyword` below and the
+  // relevance tiers do the narrowing.
+  //
+  // A query Jobicy would reject falls back to an equivalent it accepts ("qa" →
+  // "quality assurance"), and failing that to no tag at all: the recent feed,
+  // filtered locally, the way the ATS providers work. Anything beats throwing
+  // away the source.
+  const tag = upstreamKeyword(params.query, {
+    minLength: TAG_MIN_LENGTH,
+    maxLength: TAG_MAX_LENGTH,
+  });
   // One request per eligible region. Each is cached for an hour, so the common
   // case costs nothing beyond the first search of the hour.
   const pages = await Promise.all(
@@ -159,7 +183,7 @@ const searchJobs = async (
       fetchFeed({
         count: "200",
         ...(geo ? { geo } : {}),
-        ...(params.query.trim() ? { tag: params.query.trim() } : {}),
+        ...(tag ? { tag } : {}),
       })
     )
   );
