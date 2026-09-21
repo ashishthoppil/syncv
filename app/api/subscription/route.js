@@ -41,6 +41,10 @@ export async function GET(request) {
         ...normalized,
         planKey: plan?.key || normalized.planKey || null,
         planName: plan?.name || normalized.planName || null,
+        // `normalized` only describes the subscription row, and the admin
+        // account has a plan without one. The plan is what the UI gates read —
+        // Remote Jobs access and the scans-left badge both key off this.
+        hasActivePlan: Boolean(plan) || normalized.hasActivePlan,
         weeklyScanLimit,
         scansUsedThisWeek,
         scansRemainingThisWeek,
