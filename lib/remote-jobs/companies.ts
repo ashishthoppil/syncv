@@ -34,8 +34,34 @@ export const GREENHOUSE_BOARDS = [
   "vercel",
 ] as const;
 
-/** https://api.lever.co/v0/postings/<token>?mode=json */
-export const LEVER_BOARDS = ["spotify", "tala"] as const;
+/**
+ * https://api.lever.co/v0/postings/<token>?mode=json
+ *
+ * Found by probing 238 candidate slugs on 2026-09-22: only 14 resolved, and
+ * these 12 are the ones carrying remote roles (375 between them). Lever slugs
+ * cannot be guessed reliably — most companies people assume use Lever answer
+ * 404 — so verify a token against the URL above before adding it.
+ *
+ * Trimmed by cost as well as coverage. Lever is slow, so a board earns its
+ * place by remote roles per second: aircall (5 roles, 3.6s), alloy (2, 2.3s),
+ * restaurant365 (4, 1.5s) and zeta (2, 1.0s) were dropped — together they cost
+ * 8.4s of the 13s total and contributed 13 of 375 roles.
+ *
+ * Binance is the opposite: 263 remote roles in 1.4s, the single best board in
+ * the whole registry. Its 2.9MB payload is over Next's 2MB fetch-cache limit so
+ * it re-fetches each search, which is why FETCH_CONCURRENCY and the per-board
+ * timeout in boards.ts exist.
+ */
+export const LEVER_BOARDS = [
+  "binance",
+  "deputy",
+  "metabase",
+  "olo",
+  "outreach",
+  "spotify",
+  "tala",
+  "wealthfront",
+] as const;
 
 /** https://api.ashbyhq.com/posting-api/job-board/<token> */
 export const ASHBY_BOARDS = [

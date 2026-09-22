@@ -197,10 +197,38 @@ type ScanSectionProps = {
     jd?: string;
     /** Recorded on the scan so we can tell where the analysis originated. */
     source?: ScanSource;
+    /**
+     * The posting this scan is for, when it came from Remote Jobs. Kept so the
+     * user can get back to it to apply — optimizing a resume and then losing
+     * the job it was for is a dead end.
+     */
+    remoteJob?: RemoteJobOrigin;
   } | null;
   /** Lets the host drop the prefill once it has been applied. */
   onPrefillConsumed?: () => void;
 };
+
+/** Just enough of a Remote Jobs posting to navigate back to it. */
+type RemoteJobOrigin = {
+  id: string;
+  title: string;
+  companyName: string;
+  applicationUrl: string;
+};
+
+type TailoredDocType = "cv" | "cover";
+
+const DOC_LABELS: Record<TailoredDocType, string> = {
+  cv: "tailored CV",
+  cover: "cover letter",
+};
+
+/**
+ * What the user is trying to do when we interrupt to ask about downloads.
+ * "close" dismisses the preview; "apply" leaves for the job posting. Both
+ * discard the generated documents, which is why either is worth a confirm.
+ */
+type PendingExit = "close" | "apply";
 
 type GuestTrialStage = "none" | "analyzed" | "optimized";
 
@@ -213,7 +241,25 @@ const GUEST_STAGE_KEY = "syncv_guest_trial_stage";
 const DIALOG_BACKDROP =
   "fixed inset-0 flex items-end justify-center bg-slate-900/60 sm:items-center sm:p-4";
 const DIALOG_PANEL =
-  "w-full max-h-[92dvh] touch-scroll overflow-y-auto rounded-t-2xl bg-white pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:max-h-[90vh] sm:rounded-2xl sm:pb-0";
+  "w-full max-h-[92dvh] touch-scroll overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl";
+
+/**
+ * Dialog padding, including the bottom.
+ *
+ * This deliberately does NOT live on DIALOG_PANEL. A `pb-*` there loses to the
+ * `p-*` each dialog sets (tailwind-merge resolves the conflict in favour of the
+ * later class), so the panel previously carried an `sm:pb-0` to get out of the
+ * way — but `sm:pb-0` is its own breakpoint group, which `p-6` cannot override.
+ * The result was zero bottom padding on every one of these dialogs at `sm` and
+ * up, with the last row of buttons sitting flush against the panel edge.
+ *
+ * Owning the whole box here means one class wins outright, and the bottom
+ * inset clears a phone's home indicator without shrinking the desktop gap.
+ */
+const DIALOG_BODY =
+  "p-6 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+1rem))]";
+const DIALOG_BODY_TIGHT =
+  "p-4 pb-[max(1rem,calc(env(safe-area-inset-bottom)+0.75rem))]";
 
 export const ScanSection = ({
   guestTrial = false,
@@ -247,6 +293,14 @@ export const ScanSection = ({
   // Where the job description came from. Stays with the form until it is reset,
   // so the origin is still known by the time the scan is actually run.
   const [scanSource, setScanSource] = useState<ScanSource>(SCAN_SOURCE_MANUAL);
+  // The Remote Jobs posting this scan is for, if any — the route back.
+  const [remoteJob, setRemoteJob] = useState<RemoteJobOrigin | null>(null);
+  // Which generated documents the user has actually pulled down. The preview
+  // cannot be reopened once closed, so this is what the exit prompt checks.
+  const [downloadedDocs, setDownloadedDocs] = useState<
+    Record<TailoredDocType, boolean>
+  >({ cv: false, cover: false });
+  const [pendingExit, setPendingExit] = useState<PendingExit | null>(null);
   const [selectedTemplate, setSelectedTemplate] =
     useState<ResumeTemplateId>("classic-blue");
   const [templateOverrides, setTemplateOverrides] = useState<
@@ -720,6 +774,9 @@ export const ScanSection = ({
     setForm(initialFormState);
     setFormErrors({});
     setScanSource(SCAN_SOURCE_MANUAL);
+    setRemoteJob(null);
+    setDownloadedDocs({ cv: false, cover: false });
+    setPendingExit(null);
     setResult(null);
     setTailoredDocs(null);
     setPreviewOpen(false);
@@ -1143,6 +1200,9 @@ export const ScanSection = ({
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
+      // The browser owns the save dialog from here, so this records that the
+      // download was started — the closest signal we can observe.
+      setDownloadedDocs((prev) => ({ ...prev, [type]: true }));
 
       // Persist the EXACT optimized resume the user just downloaded, so the Job
       // Tracker can reproduce an identical file. This is the only place the
@@ -1183,6 +1243,47 @@ export const ScanSection = ({
     } finally {
       setDownloadingType(null);
     }
+  };
+
+  /**
+   * Documents this plan produces, and which of them are still un-downloaded.
+   * Speed has no cover letter, and a guest cannot download at all — prompting
+   * either of them to "download first" would be a dead end.
+   */
+  const requiredDownloads: TailoredDocType[] = guestTrial
+    ? []
+    : shouldAllowCoverLetter
+      ? ["cv", "cover"]
+      : ["cv"];
+  const pendingDownloads = requiredDownloads.filter((doc) => !downloadedDocs[doc]);
+
+  const goToRemoteJob = () => {
+    if (!remoteJob) return;
+    setPendingExit(null);
+    setPreviewOpen(false);
+    tourSignal("scan:preview-closed");
+    router.push(`/scan?section=remote-jobs&job=${encodeURIComponent(remoteJob.id)}`);
+  };
+
+  const closePreview = () => {
+    setPendingExit(null);
+    setPreviewOpen(false);
+    // Everything the tour has left to show lives in this modal.
+    tourSignal("scan:preview-closed");
+  };
+
+  /**
+   * Both exits from the preview throw the generated documents away — it has no
+   * reopen path — so each one checks the download ledger first. Nothing is
+   * outstanding, nothing is asked: the confirm is a safety net, not a toll.
+   */
+  const requestExit = (intent: PendingExit) => {
+    if (pendingDownloads.length === 0) {
+      if (intent === "apply") goToRemoteJob();
+      else closePreview();
+      return;
+    }
+    setPendingExit(intent);
   };
 
   const createTailoredDocuments = async (
@@ -1295,6 +1396,8 @@ export const ScanSection = ({
       }
 
       setTailoredDocs(data.message);
+      // New documents: whatever was downloaded before no longer counts.
+      setDownloadedDocs({ cv: false, cover: false });
       setResumeData(data.message.optimizedResume || null);
       setEditableResumeText(data.message.optimizedResumeText || "");
       setHasResumePreviewEdits(false);
@@ -1385,6 +1488,7 @@ export const ScanSection = ({
     }));
     setFormErrors({});
     if (prefill.source) setScanSource(prefill.source);
+    if (prefill.remoteJob) setRemoteJob(prefill.remoteJob);
     onPrefillConsumed?.();
   }, [prefill, onPrefillConsumed]);
 
@@ -1716,6 +1820,36 @@ export const ScanSection = ({
           We compare your resume against every keyword found in the JD.
         </p>
       </div>
+
+      {/* Repeated here, not just in the preview: once that modal is closed it
+          cannot be reopened, and without this the user is stranded on a scan
+          with no route back to the job it was for. */}
+      {remoteJob ? (
+        <div className="mt-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Scanning against
+            </p>
+            <p className="truncate text-sm font-semibold text-slate-900">
+              {remoteJob.title}
+            </p>
+            {remoteJob.companyName ? (
+              <p className="truncate text-sm text-slate-500">
+                {remoteJob.companyName}
+              </p>
+            ) : null}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="shrink-0 rounded-md"
+            onClick={() => requestExit("apply")}
+          >
+            <ArrowRight className="mr-2 h-4 w-4" />
+            Go to the job to apply
+          </Button>
+        </div>
+      ) : null}
       <div className="mt-4 rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
           Resume score
@@ -2294,7 +2428,7 @@ export const ScanSection = ({
 
       {guestTrial && guestSummaryOpen && result && !previewOpen && (
         <div className={cn(DIALOG_BACKDROP, "z-[66]")}>
-          <div className={cn(DIALOG_PANEL, "relative max-w-3xl p-4")}>
+          <div className={cn(DIALOG_PANEL, "relative max-w-3xl", DIALOG_BODY_TIGHT)}>
             <button
               type="button"
               aria-label="Close summary"
@@ -2310,7 +2444,7 @@ export const ScanSection = ({
 
       {showCareerWarning && fitInsight && (
         <div className={cn(DIALOG_BACKDROP, "z-[80]")}>
-          <div className={cn(DIALOG_PANEL, "max-w-lg p-6")}>
+          <div className={cn(DIALOG_PANEL, "max-w-lg", DIALOG_BODY)}>
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div>
@@ -2543,7 +2677,7 @@ export const ScanSection = ({
 
       {isAnalyzing && (
         <div className={cn(DIALOG_BACKDROP, "z-[70]")}>
-          <div className={cn(DIALOG_PANEL, "max-w-md p-6")}>
+          <div className={cn(DIALOG_PANEL, "max-w-md", DIALOG_BODY)}>
             <h3 className="text-lg font-semibold text-slate-900">
               Analyzing your resume...
             </h3>
@@ -2584,7 +2718,7 @@ export const ScanSection = ({
 
       {isGeneratingDocs && (
         <div className={cn(DIALOG_BACKDROP, "z-[70]")}>
-          <div className={cn(DIALOG_PANEL, "max-w-md p-6")}>
+          <div className={cn(DIALOG_PANEL, "max-w-md", DIALOG_BODY)}>
             <h3 className="text-lg font-semibold text-slate-900">
               Optimizing your resume...
             </h3>
@@ -2781,11 +2915,7 @@ export const ScanSection = ({
                   type="button"
                   aria-label="Close preview"
                   className="-mr-1.5 rounded-full p-2.5 text-slate-500 hover:bg-slate-100 hover:text-slate-700 sm:mr-0 sm:rounded-md sm:p-2"
-                  onClick={() => {
-                    setPreviewOpen(false);
-                    // Everything the tour has left to show lives in this modal.
-                    tourSignal("scan:preview-closed");
-                  }}
+                  onClick={() => requestExit("close")}
                 >
                   <X className="h-5 w-5 sm:h-4 sm:w-4" />
                 </button>
@@ -3180,7 +3310,7 @@ export const ScanSection = ({
             {/* Download is the point of this screen, so on a phone the footer
                 becomes a pinned action bar: buttons full width, the keyword
                 notes above them, and padding for the home indicator. */}
-            <div className="flex shrink-0 flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:pb-3">
+            <div className="flex shrink-0 flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3 pb-[max(1rem,calc(env(safe-area-inset-bottom)+0.5rem))] sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5 sm:py-4">
               <div className="min-w-0 flex-1 space-y-0.5">
                 {tailoredDocs.incorporatedKeywords?.length ? (
                   <p
@@ -3245,7 +3375,77 @@ export const ScanSection = ({
                       ? "Download cover letter"
                       : "Download CV"}
                 </Button>
+                {remoteJob ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 rounded-md sm:flex-none"
+                    onClick={() => requestExit("apply")}
+                  >
+                    <ArrowRight className="mr-2 h-4 w-4" />
+                    {/* The full label does not survive a 360px row beside
+                        Download, so phones get the verb on its own. */}
+                    <span className="sm:hidden">Apply</span>
+                    <span className="hidden sm:inline">Go to the job to apply</span>
+                  </Button>
+                ) : null}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Leaving the preview — by closing it or by heading to the job — throws
+          the generated documents away, and there is no way back into it. This
+          is the last chance to save them, so it sits above the preview itself. */}
+      {pendingExit && (
+        <div className={cn(DIALOG_BACKDROP, "z-[90]")}>
+          <div className={cn(DIALOG_PANEL, "max-w-lg", DIALOG_BODY)}>
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {pendingExit === "apply"
+                    ? "Ready to apply?"
+                    : "Close without downloading?"}
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  {pendingDownloads.length === requiredDownloads.length
+                    ? `You haven't downloaded your ${requiredDownloads
+                        .map((doc) => DOC_LABELS[doc])
+                        .join(" or ")} yet.`
+                    : `You still haven't downloaded your ${pendingDownloads
+                        .map((doc) => DOC_LABELS[doc])
+                        .join(" or ")}.`}
+                </p>
+                <p className="mt-2 text-sm text-slate-600">
+                  {pendingExit === "apply"
+                    ? "You'll need them to apply, and this preview can't be reopened once you leave it."
+                    : "This preview can't be reopened, and the documents are not saved anywhere else."}
+                </p>
+              </div>
+            </div>
+
+            {/* Same geometry as the other confirms in this section: two equal
+                full-width buttons on a phone, the affirmative reading last. */}
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button
+                className="w-full sm:w-auto"
+                onClick={() => setPendingExit(null)}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                No, let me download first
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => {
+                  if (pendingExit === "apply") goToRemoteJob();
+                  else closePreview();
+                }}
+              >
+                Go ahead
+              </Button>
             </div>
           </div>
         </div>

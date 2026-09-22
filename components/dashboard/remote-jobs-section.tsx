@@ -79,6 +79,17 @@ type RemoteJobsSectionProps = {
     organization: string;
     designation: string;
     jd: string;
+    /**
+     * Enough of the posting to find the way back to it after the scan. Without
+     * this the user optimizes a resume and then has no route to the job they
+     * did it for.
+     */
+    remoteJob: {
+      id: string;
+      title: string;
+      companyName: string;
+      applicationUrl: string;
+    };
   }) => void;
 };
 
@@ -469,6 +480,12 @@ export const RemoteJobsSection = ({
       organization: job.companyName,
       designation: job.title,
       jd: job.description,
+      remoteJob: {
+        id: job.id,
+        title: job.title,
+        companyName: job.companyName,
+        applicationUrl: job.applicationUrl,
+      },
     });
   };
 

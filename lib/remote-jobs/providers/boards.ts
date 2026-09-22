@@ -23,6 +23,32 @@ const BOARD_CACHE_SECONDS = 3600;
 /** Simultaneous board fetches. Low enough that a few 10MB boards can't land at once. */
 const FETCH_CONCURRENCY = 6;
 
+/**
+ * Ceiling on how long one board may hold up a search.
+ *
+ * Measured 2026-09-22: Lever's API is an order of magnitude slower than
+ * Greenhouse or Ashby — single boards took 2-3.5s, and running all twelve in
+ * parallel still took 8.4s, so it appears to throttle per caller. Without a
+ * bound, one degraded source decides the latency of the whole feature.
+ *
+ * Implemented as a race rather than an AbortSignal on purpose: aborting would
+ * also discard the in-flight response, and passing a signal risks bypassing
+ * Next's fetch cache. Letting the slow request run on means it still warms the
+ * cache for the next search, which is exactly what a slow board needs.
+ */
+const BOARD_TIMEOUT_MS = 8000;
+
+const withTimeout = <T>(work: Promise<T>, label: string): Promise<T> =>
+  Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      setTimeout(
+        () => reject(new Error(`${label} timed out after ${BOARD_TIMEOUT_MS}ms`)),
+        BOARD_TIMEOUT_MS
+      );
+    }),
+  ]);
+
 /** Splits `company~externalId` — company slugs and ids never contain "~". */
 const ID_SEPARATOR = "~";
 
@@ -95,7 +121,9 @@ export const searchBoards = async ({
   loadBoard,
   params,
 }: BoardSearchOptions): Promise<RemoteJob[]> => {
-  const settled = await pooled(companies, FETCH_CONCURRENCY, loadBoard);
+  const settled = await pooled(companies, FETCH_CONCURRENCY, (company) =>
+    withTimeout(loadBoard(company), `${providerId}/${company}`)
+  );
 
   const matched: RemoteJob[] = [];
   settled.forEach((outcome, index) => {
