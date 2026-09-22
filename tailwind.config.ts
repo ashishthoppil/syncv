@@ -11,6 +11,22 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Homepage palette: the app's black and white plus one accent, used
+        // surgically — the headline highlight, check marks, eyebrow dots,
+        // hover and link accents — never as a large fill.
+        //
+        // `DEFAULT` is for light backgrounds (~7:1 on white, so it is safe on
+        // text); `light` is the same hue for dark ones, where the deep shade
+        // drops to ~2.8:1 against near-black and goes muddy.
+        brand: {
+          DEFAULT: "#6D28D9",
+          light: "#A78BFA",
+        },
+        ink: {
+          DEFAULT: "#0A0A0A",
+          soft: "#555555",
+        },
+        hairline: "#E8E8E8",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: {
@@ -68,6 +84,11 @@ export default {
         "cta-ping": "cta-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite",
         // Breathing halo around the first-run tour's spotlight.
         "tour-pulse": "tour-pulse 2s cubic-bezier(0, 0, 0.2, 1) infinite",
+        // Homepage entrance (hero, on load) and scroll reveals (<Reveal>).
+        // `backwards` holds the start frame through any animation-delay, then
+        // lets go completely once it ends — no lingering transform, so the
+        // element's own hover transitions keep working afterwards.
+        "reveal-up": "reveal-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) backwards",
       },
       keyframes: {
         marquee: {
@@ -101,6 +122,9 @@ export default {
           "0%": { boxShadow: "0 0 0 0 rgba(255, 255, 255, 0.55)" },
           "70%": { boxShadow: "0 0 0 10px rgba(255, 255, 255, 0)" },
           "100%": { boxShadow: "0 0 0 0 rgba(255, 255, 255, 0)" },
+        },
+        "reveal-up": {
+          from: { opacity: "0", transform: "translateY(1.5rem)" },
         },
       },
     },

@@ -1,3 +1,5 @@
+import { SectionHeading } from "@/components/marketing/section-heading";
+import { Reveal } from "@/components/ui/reveal";
 import { FAQ_POOL, type FaqKey } from "@/lib/content/faqs";
 import {
   BadgeDollarSign,
@@ -39,33 +41,39 @@ const HOMEPAGE_FAQS: { key: FaqKey; icon: LucideIcon }[] = [
 
 const FAQ = () => {
   return (
-    <div id="faq" className="flex items-center justify-center px-6 py-12 xs:py-20">
-      <div className="max-w-screen-lg">
-        <h2 className="text-3xl xs:text-4xl md:text-5xl !leading-[1.15] font-bold tracking-tight text-center">
-          Frequently Asked Questions
-        </h2>
-        <p className="text-xl sm:text-2xl font-normal tracking-tight text-center mt-3 text-foreground/80">
-          What people ask before they trust a tool with their resume.
-        </p>
+    <section
+      id="faq"
+      className="w-full border-y border-hairline bg-neutral-50 px-6 py-16 sm:py-24"
+    >
+      <div className="mx-auto max-w-screen-lg">
+        <SectionHeading
+          eyebrow="FAQ"
+          title="Frequently Asked Questions"
+          description="What people ask before they trust a tool with their resume."
+        />
 
-        <dl className="mt-12 grid md:grid-cols-2 bg-background rounded-xl overflow-hidden outline outline-[1px] outline-border outline-offset-[-1px]">
-          {HOMEPAGE_FAQS.map(({ key, icon: Icon }) => {
+        <dl className="mt-12 grid gap-4 sm:mt-16 md:grid-cols-2">
+          {HOMEPAGE_FAQS.map(({ key, icon: Icon }, index) => {
             const { question, answer } = FAQ_POOL[key];
             return (
-              <div key={key} className="border p-6 -mt-px -ml-px">
-                <div className="h-8 w-8 xs:h-10 xs:w-10 flex items-center justify-center rounded-full bg-accent">
-                  <Icon className="h-4 w-4 xs:h-6 xs:w-6" />
-                </div>
-                <dt className="mt-3 mb-2 text-lg xs:text-[1.35rem] font-semibold tracking-tight">
+              <Reveal
+                key={key}
+                delay={(index % 2) * 100}
+                className="rounded-2xl border border-hairline bg-white p-6 shadow-sm"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-50 text-ink ring-1 ring-inset ring-hairline">
+                  <Icon aria-hidden="true" className="h-5 w-5" />
+                </span>
+                <dt className="mt-4 text-lg font-semibold tracking-tight text-ink">
                   <h3>{question}</h3>
                 </dt>
-                <dd className="text-sm xs:text-base text-foreground/80">{answer}</dd>
-              </div>
+                <dd className="mt-2 text-[15px] leading-relaxed text-ink-soft">{answer}</dd>
+              </Reveal>
             );
           })}
         </dl>
       </div>
-    </div>
+    </section>
   );
 };
 

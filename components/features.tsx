@@ -1,46 +1,47 @@
+import { SectionHeading } from "@/components/marketing/section-heading";
+import { Reveal } from "@/components/ui/reveal";
 import {
-  Blocks,
-  Bot,
-  ChartPie,
-  Film,
-  MessageCircle,
-  Settings2,
+  FileSearch,
+  FileText,
+  Gauge,
+  SquareKanban,
+  WandSparkles,
+  Zap,
 } from "lucide-react";
-import React from "react";
 
 const features = [
   {
-    icon: Settings2,
+    icon: Zap,
     title: "Fast Resume Scans",
     description:
       "Upload your resume and get clear, actionable feedback in minutes so you can apply quickly with confidence.",
   },
   {
-    icon: Blocks,
+    icon: WandSparkles,
     title: "Rapid Resume Improvements",
     description:
       "Improve bullets, summaries, and skills alignment in a few clicks and save hours of manual editing.",
   },
   {
-    icon: Bot,
+    icon: FileText,
     title: "One-Click Resume & Cover Letter Builder",
     description:
       "Paste a job description and generate a targeted resume and cover letter instantly, ready to download and send.",
   },
   {
-    icon: Film,
+    icon: Gauge,
     title: "Smart Match Breakdown",
     description:
       "See match score, keyword coverage, and section-level insights at a glance to fix weak spots faster.",
   },
   {
-    icon: ChartPie,
+    icon: SquareKanban,
     title: "Seamless Job Tracking",
     description:
       "Track all your applications in one place and stay on top of interviews, follow-ups, and next steps.",
   },
   {
-    icon: MessageCircle,
+    icon: FileSearch,
     title: "Quick Job Description Analysis",
     description:
       "Break down any job description in seconds and focus your resume on what each role actually needs.",
@@ -49,32 +50,35 @@ const features = [
 
 const Features = () => {
   return (
-    <>
-    <div id="features" className="w-full py-12 xs:py-20 px-6">
-      <h2 className="text-3xl xs:text-4xl sm:text-5xl font-bold tracking-tight text-center">
-        Tailor. Don&apos;t Fabricate.
-      </h2>
-      <p className="text-xl sm:text-2xl font-normal tracking-tight text-center mt-3 text-foreground/80">
-        Every change comes from the resume you already have.
-      </p>
-      <div className="w-full max-w-screen-lg mx-auto mt-10 sm:mt-16 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {features.map((feature) => (
-          <div
+    <section
+      id="features"
+      className="w-full border-y border-hairline bg-neutral-50 px-6 py-16 sm:py-24"
+    >
+      <SectionHeading
+        eyebrow="Features"
+        title="Tailor. Don't Fabricate."
+        description="Every change comes from the resume you already have."
+      />
+      <div className="mx-auto mt-12 grid w-full max-w-screen-lg gap-6 sm:mt-16 sm:grid-cols-2 lg:grid-cols-3">
+        {features.map((feature, index) => (
+          <Reveal
             key={feature.title}
-            className="flex flex-col bg-background border rounded-xl py-6 px-5"
+            delay={(index % 3) * 100}
+            className="group flex flex-col rounded-2xl border border-hairline bg-white p-6 shadow-sm transition-[border-color,box-shadow] duration-300 hover:border-neutral-300 hover:shadow-md"
           >
-            <div className="mb-3 h-10 w-10 flex items-center justify-center bg-muted rounded-full">
-              <feature.icon className="h-6 w-6" />
-            </div>
-            <span className="text-lg font-semibold">{feature.title}</span>
-            <p className="mt-1 text-foreground/80 text-[15px]">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-50 text-ink ring-1 ring-inset ring-hairline transition-colors duration-300 group-hover:bg-ink group-hover:text-brand-light group-hover:ring-ink">
+              <feature.icon aria-hidden="true" className="h-5 w-5" />
+            </span>
+            <h3 className="mt-5 text-lg font-semibold tracking-tight text-ink">
+              {feature.title}
+            </h3>
+            <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
               {feature.description}
             </p>
-          </div>
+          </Reveal>
         ))}
       </div>
-    </div>
-    </>
+    </section>
   );
 };
 

@@ -1,4 +1,7 @@
+import { SectionHeading } from "@/components/marketing/section-heading";
+import { Reveal } from "@/components/ui/reveal";
 import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
+import { ClipboardPaste, FileDown, Upload } from "lucide-react";
 import Link from "next/link";
 
 /**
@@ -11,16 +14,19 @@ import Link from "next/link";
  */
 const steps = [
   {
+    icon: Upload,
     title: "Upload your resume once",
     detail:
       "PDF or Word. SynCV parses it into structured sections — experience, skills, education — and keeps it as your base resume. You never upload it again, and it stays unchanged no matter how many jobs you apply to.",
   },
   {
+    icon: ClipboardPaste,
     title: "Paste the job description",
     detail:
       "The full posting. SynCV pulls out the requirements it repeats, the tools it names and the vocabulary the team uses, then compares them against what your resume already says.",
   },
   {
+    icon: FileDown,
     title: "Review, edit and export",
     detail:
       "You get a resume aimed at that posting, with a breakdown of which requirements it addresses and which it doesn't. Change any line before you download it — nothing is sent anywhere on your behalf.",
@@ -29,39 +35,55 @@ const steps = [
 
 const HowItWorks = () => {
   return (
-    <section id="how-it-works" className="w-full px-6 py-12 xs:py-20">
+    <section
+      id="how-it-works"
+      className="w-full border-y border-hairline bg-neutral-50 px-6 py-16 sm:py-24"
+    >
       <div className="mx-auto max-w-screen-lg">
-        <h2 className="text-3xl xs:text-4xl sm:text-5xl font-bold tracking-tight text-center">
-          How SynCV Works
-        </h2>
-        <p className="mx-auto mt-4 max-w-2xl text-center text-lg leading-relaxed text-foreground/80">
-          One upload, then two clicks per application.
-        </p>
+        <SectionHeading
+          eyebrow="How it works"
+          title="How SynCV Works"
+          description="One upload, then two clicks per application."
+        />
 
-        <ol className="mt-12 grid gap-6 md:grid-cols-3">
+        <ol className="mt-12 grid gap-6 sm:mt-16 md:grid-cols-3">
           {steps.map((step, index) => (
-            <li key={step.title} className="rounded-xl border bg-background p-6">
-              <span
-                aria-hidden="true"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background"
-              >
-                {index + 1}
-              </span>
-              <h3 className="mt-4 text-lg font-semibold tracking-tight">{step.title}</h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-foreground/80">
-                {step.detail}
-              </p>
-            </li>
+            <Reveal
+              as="li"
+              key={step.title}
+              delay={index * 100}
+              className="rounded-2xl border border-hairline bg-white p-6 shadow-sm"
+            >
+              <div className="flex items-center justify-between">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-50 text-ink ring-1 ring-inset ring-hairline">
+                  <step.icon aria-hidden="true" className="h-5 w-5" />
+                </span>
+                {/* The <ol> already numbers the steps for assistive tech. */}
+                <span
+                  aria-hidden="true"
+                  className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-400"
+                >
+                  Step {index + 1}
+                </span>
+              </div>
+              <h3 className="mt-5 text-lg font-semibold tracking-tight text-ink">
+                {step.title}
+              </h3>
+              <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">{step.detail}</p>
+            </Reveal>
           ))}
         </ol>
 
-        <p className="mt-8 text-center text-[15px] text-foreground/80">
+        <Reveal as="p" className="mt-10 text-center text-[15px] text-ink-soft">
           {FREE_PLAN_SCAN_LIMIT} free scans, no card required. More detail on{" "}
-          <Link href="/resume-tailor" className="font-medium underline underline-offset-4">
+          <Link
+            href="/resume-tailor"
+            className="font-medium text-ink underline decoration-brand/50 decoration-2 underline-offset-4 transition-colors hover:decoration-brand"
+          >
             how resume tailoring works
           </Link>
           .
-        </p>
+        </Reveal>
       </div>
     </section>
   );

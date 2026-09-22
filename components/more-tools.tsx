@@ -1,5 +1,8 @@
+import { SectionHeading } from "@/components/marketing/section-heading";
+import { Reveal } from "@/components/ui/reveal";
 import { SOLUTION_LIST } from "@/lib/content/solutions";
 import { ROLE_GUIDES } from "@/lib/content/roles";
+import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 /**
@@ -14,50 +17,58 @@ import Link from "next/link";
  */
 const MoreTools = () => {
   return (
-    <section id="tools" className="w-full px-6 py-12 xs:py-20">
+    <section id="tools" className="w-full px-6 py-16 sm:py-24">
       <div className="mx-auto max-w-screen-lg">
-        <h2 className="text-3xl xs:text-4xl sm:text-5xl font-bold tracking-tight text-center">
-          More Tools for Your Job Search
-        </h2>
-        <p className="mx-auto mt-4 max-w-2xl text-center text-lg leading-relaxed text-foreground/80">
-          Tailoring is the core of it. These are the parts around it.
-        </p>
+        <SectionHeading
+          eyebrow="More tools"
+          title="More Tools for Your Job Search"
+          description="Tailoring is the core of it. These are the parts around it."
+        />
 
-        <ul className="mt-12 grid gap-4 sm:grid-cols-2">
-          {SOLUTION_LIST.map((solution) => (
-            <li key={solution.path}>
+        <ul className="mt-12 grid gap-4 sm:mt-16 sm:grid-cols-2">
+          {SOLUTION_LIST.map((solution, index) => (
+            <Reveal as="li" key={solution.path} delay={(index % 2) * 100}>
               <Link
                 href={solution.path}
-                className="block h-full rounded-xl border bg-background p-6 transition-colors hover:border-foreground/30"
+                className="group block h-full rounded-2xl border border-hairline bg-white p-6 shadow-sm transition-[border-color,box-shadow] duration-300 hover:border-neutral-300 hover:shadow-md"
               >
-                <h3 className="text-lg font-semibold tracking-tight">{solution.h1}</h3>
-                <p className="mt-2 text-[15px] leading-relaxed text-foreground/80">
+                <div className="flex items-start justify-between gap-4">
+                  <h3 className="text-lg font-semibold tracking-tight text-ink">
+                    {solution.h1}
+                  </h3>
+                  <ArrowUpRight
+                    aria-hidden="true"
+                    className="mt-0.5 h-5 w-5 shrink-0 text-neutral-400 transition-[color,transform] duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand"
+                  />
+                </div>
+                <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
                   {solution.description}
                 </p>
               </Link>
-            </li>
+            </Reveal>
           ))}
         </ul>
 
-        <div className="mt-10 rounded-xl border bg-muted/40 p-6">
-          <h3 className="text-lg font-semibold tracking-tight">Tailoring advice by role</h3>
-          <p className="mt-2 text-[15px] leading-relaxed text-foreground/80">
+        <Reveal className="mt-8 rounded-2xl border border-hairline bg-neutral-50 p-6 sm:p-8">
+          <h3 className="text-lg font-semibold tracking-tight text-ink">
+            Tailoring advice by role
+          </h3>
+          <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">
             What reviewers in a specific discipline look for first, and what to lead with.
           </p>
-          <p className="mt-4 text-[15px]">
-            {ROLE_GUIDES.map((role, index) => (
-              <span key={role.slug}>
-                {index > 0 ? " · " : ""}
+          <ul className="mt-5 flex flex-wrap gap-2">
+            {ROLE_GUIDES.map((role) => (
+              <li key={role.slug}>
                 <Link
                   href={`/resume-for/${role.slug}`}
-                  className="font-medium underline underline-offset-4"
+                  className="inline-flex items-center rounded-full border border-hairline bg-white px-4 py-2 text-sm font-medium text-ink shadow-sm transition-colors hover:border-brand hover:text-ink"
                 >
                   {role.role} resumes
                 </Link>
-              </span>
+              </li>
             ))}
-          </p>
-        </div>
+          </ul>
+        </Reveal>
       </div>
     </section>
   );

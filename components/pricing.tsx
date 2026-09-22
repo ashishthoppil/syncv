@@ -1,7 +1,9 @@
 "use client";
 
+import { SectionHeading } from "@/components/marketing/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Reveal } from "@/components/ui/reveal";
 import { Separator } from "@/components/ui/separator";
 import { TapTooltip } from "@/components/ui/tooltip";
 import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
@@ -75,13 +77,16 @@ const plans = [
 
 const Pricing = () => {
   return (
-    <div
-      id="pricing"
-      className="flex flex-col items-center justify-center py-12 xs:py-20 px-6"
-    >
-      <h2 className="text-3xl xs:text-4xl md:text-5xl font-bold text-center tracking-tight">
-        Pricing
-      </h2>
+    <section id="pricing" className="w-full px-6 py-16 sm:py-24">
+      <SectionHeading
+        eyebrow="Pricing"
+        title={
+          <>
+            Start Free. <span className="sm:block">Upgrade When You&apos;re Ready.</span>
+          </>
+        }
+        description={`Every account starts with ${FREE_PLAN_SCAN_LIMIT} free scans and no card. Pick a plan when you're applying every week.`}
+      />
       {/* <Tabs
         value={selectedBillingPeriod}
         onValueChange={setSelectedBillingPeriod}
@@ -96,58 +101,71 @@ const Pricing = () => {
           </TabsTrigger>
         </TabsList>
       </Tabs> */}
-      <div className="mt-12 max-w-screen-xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 items-center gap-8">
-        {plans.map((plan) => (
-          <div
+      <div className="mx-auto mt-12 grid max-w-screen-xl grid-cols-1 items-center gap-8 sm:mt-16 md:grid-cols-2 lg:grid-cols-3">
+        {plans.map((plan, index) => (
+          <Reveal
             key={plan.name}
-            className={cn("relative border rounded-xl p-6 bg-background/50", {
-              "border-[2px] border-primary bg-background py-10": plan.isPopular,
-            })}
+            delay={index * 100}
+            className={cn(
+              "relative rounded-2xl border border-hairline bg-white p-6 shadow-sm sm:p-8",
+              {
+                "border-2 border-brand py-10 shadow-xl shadow-neutral-900/10 sm:py-10":
+                  plan.isPopular,
+              }
+            )}
           >
             {plan.isPopular && (
-              <Badge className="absolute top-0 right-1/2 translate-x-1/2 -translate-y-1/2">
+              <Badge className="absolute right-1/2 top-0 -translate-y-1/2 translate-x-1/2 rounded-full bg-ink px-3 py-1 text-white shadow-sm hover:bg-ink">
                 Most Popular
               </Badge>
             )}
-            <h3 className="text-lg font-medium">{plan.name}</h3>
-            <p className="mt-2 text-4xl font-bold">
+            <h3 className="text-lg font-semibold text-ink">{plan.name}</h3>
+            <p className="mt-3 text-5xl font-bold tracking-tight text-ink">
               {plan.price === 0 ? "Free" : `₹${plan.price}`}
-              <span className="ml-1.5 text-sm text-muted-foreground font-normal">
+              <span className="ml-1.5 text-sm font-normal tracking-normal text-ink-soft">
                 {plan.price === 0 ? "to start" : "/month"}
               </span>
             </p>
-            <p className="mt-4 font-medium text-muted-foreground">
+            <p className="mt-4 text-[15px] leading-relaxed text-ink-soft">
               {plan.description}
             </p>
 
             <Button
               variant={plan.isPopular ? "default" : "outline"}
               size="lg"
-              className="w-full mt-6 text-base"
+              className="mt-6 h-11 w-full text-base"
               asChild
             >
               <Link href={plan.href}>{plan.buttonText}</Link>
             </Button>
             <Separator className="my-8" />
-            <ul className="space-y-2">
-              {plan.features.map((feature) => (
-                <li key={feature.title} className="flex items-start gap-1.5">
-                  {isUnavailableFeature(feature.title) ?
-                  <CircleX className="h-4 w-4 mt-1 text-red-600" /> :
-                  <CircleCheck className="h-4 w-4 mt-1 text-green-600" />}
-                  {feature.title}
-                  {feature.tooltip && (
-                    <TapTooltip content={feature.tooltip} className="mt-1 cursor-help">
-                      <CircleHelp className="h-4 w-4 text-gray-500" />
-                    </TapTooltip>
-                  )}
-                </li>
-              ))}
+            <ul className="space-y-3 text-[15px]">
+              {plan.features.map((feature) => {
+                const unavailable = isUnavailableFeature(feature.title);
+                return (
+                  <li
+                    key={feature.title}
+                    className={cn("flex items-start gap-2", unavailable ? "text-neutral-400" : "text-ink")}
+                  >
+                    {unavailable ? (
+                      <CircleX className="mt-0.5 h-4 w-4 shrink-0 text-neutral-300" />
+                    ) : (
+                      <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-ink" />
+                    )}
+                    {feature.title}
+                    {feature.tooltip && (
+                      <TapTooltip content={feature.tooltip} className="mt-0.5 cursor-help">
+                        <CircleHelp className="h-4 w-4 text-neutral-400" />
+                      </TapTooltip>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
-          </div>
+          </Reveal>
         ))}
       </div>
-    </div>
+    </section>
   );
 };
 

@@ -82,7 +82,8 @@ const Footer = () => {
       <div className="max-w-screen-xl mx-auto">
         <div className="grid gap-x-8 gap-y-10 px-6 py-12 sm:grid-cols-2 lg:grid-cols-5 xl:px-0">
           <div className="lg:col-span-2">
-            <Image alt="SynCV" src="/logo-white.png" height={100} width={100} />
+            {/* 2000 × 462 source: declaring the real ratio reserves the right box before the image loads. */}
+            <Image alt="SynCV" src="/logo-white.png" height={23} width={100} />
             <p className="mt-4 max-w-xs text-sm text-muted-foreground">
               Your resume should change for every job. Your experience shouldn&apos;t.
             </p>
