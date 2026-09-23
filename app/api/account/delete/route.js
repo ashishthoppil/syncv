@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { cancelDodoSubscription, DODO_ENDED_STATUSES } from "@/lib/server/dodo-payments";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -27,6 +28,23 @@ export async function POST(req) {
     }
 
     const supabase = getAdminClient();
+
+    // Stop billing first: once the rows are gone, nothing points at the Dodo
+    // subscriptions and they would keep charging a deleted account. A failure
+    // stops the deletion, so it can be retried.
+    const { data: dodoSubscriptions, error: dodoLookupError } = await supabase
+      .from("subscriptions")
+      .select("dodo_subscription_id,status")
+      .eq("user_id", userId)
+      .not("dodo_subscription_id", "is", null);
+    if (dodoLookupError) {
+      throw dodoLookupError;
+    }
+    for (const row of dodoSubscriptions || []) {
+      if (!DODO_ENDED_STATUSES.has(row.status)) {
+        await cancelDodoSubscription(row.dodo_subscription_id);
+      }
+    }
 
     // Delete subscription records
     const { error: subscriptionError } = await supabase

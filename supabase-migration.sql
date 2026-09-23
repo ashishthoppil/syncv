@@ -317,3 +317,101 @@ ALTER TABLE scan_usage
   ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'manual';
 
 CREATE INDEX IF NOT EXISTS idx_scan_usage_source ON scan_usage(source);
+
+-- ---------------------------------------------------------------------------
+-- Model cost controls
+-- ---------------------------------------------------------------------------
+-- Billing tables are written by the server only. scan_usage and subscriptions
+-- were created with INSERT/UPDATE/DELETE policies for their owner, which let a
+-- signed-in user write them straight from the browser with the public anon
+-- key: delete their scan_usage rows to reset the weekly allowance, or insert
+-- an 'active' subscription and get a paid plan for nothing. Every real write
+-- goes through an API route using the service role, which RLS does not apply
+-- to, so dropping these changes nothing for the app. Users keep read access to
+-- their own rows.
+DROP POLICY IF EXISTS "Users can insert their own scan usage" ON scan_usage;
+DROP POLICY IF EXISTS "Users can delete their own scan usage" ON scan_usage;
+DROP POLICY IF EXISTS "Users can insert their own subscriptions" ON subscriptions;
+DROP POLICY IF EXISTS "Users can update their own subscriptions" ON subscriptions;
+DROP POLICY IF EXISTS "Users can delete their own subscriptions" ON subscriptions;
+
+-- Which job description a scan was for (a SHA-256 of its cleaned text,
+-- organization and designation). A re-score after optimizing or editing is
+-- only free for a job description the user already has a scan row for.
+-- Nullable: rows from before this column simply never match.
+ALTER TABLE scan_usage
+  ADD COLUMN IF NOT EXISTS jd_hash TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_scan_usage_user_jd_hash ON scan_usage(user_id, jd_hash);
+
+-- Keywords extracted from a job description, shared by every scan of the same
+-- posting, so each posting is paid for once rather than once per user.
+-- cache_key is "<extraction version>:<model>:<jd hash>", so changing the
+-- prompt or the model starts a fresh set of entries instead of serving stale
+-- ones. Server-only: RLS on and no policies.
+CREATE TABLE IF NOT EXISTS jd_keyword_cache (
+  cache_key TEXT PRIMARY KEY,
+  weighted_keywords JSONB NOT NULL,
+  extraction_stats JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE jd_keyword_cache ENABLE ROW LEVEL SECURITY;
+
+-- Token usage, one row per OpenAI call, written by lib/server/openai.js. The
+-- source of truth for what each user and feature costs, and what the hourly
+-- ceilings on unmetered routes are counted from. user_id is kept anonymous
+-- rather than deleted with the account, so past spend still adds up.
+-- Server-only: RLS on and no policies.
+CREATE TABLE IF NOT EXISTS llm_usage (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  purpose TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  cached_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_usage_user_purpose_created
+  ON llm_usage(user_id, purpose, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_created_at ON llm_usage(created_at DESC);
+
+ALTER TABLE llm_usage ENABLE ROW LEVEL SECURITY;
+
+-- Spend per user and feature over the last 30 days. Prices are USD per million
+-- tokens (input, cached input, output); check them against OpenAI's pricing
+-- page before trusting the totals. `model` holds the name OpenAI reports,
+-- sometimes a dated snapshot like gpt-4o-mini-2024-07-18, hence the prefix
+-- match — the gpt-4o-mini line must come before gpt-4o.
+--
+-- SELECT user_id, purpose, COUNT(*) AS calls,
+--   ROUND(SUM(CASE
+--     WHEN model LIKE 'gpt-6-luna%' THEN
+--       (prompt_tokens - cached_tokens) * 0.10 + cached_tokens * 0.01 + completion_tokens * 0.50
+--     WHEN model LIKE 'gpt-4o-mini%' THEN
+--       (prompt_tokens - cached_tokens) * 0.15 + cached_tokens * 0.075 + completion_tokens * 0.60
+--     WHEN model LIKE 'gpt-4o%' THEN
+--       (prompt_tokens - cached_tokens) * 2.50 + cached_tokens * 1.25 + completion_tokens * 10.00
+--   END) / 1000000.0, 4) AS usd
+-- FROM llm_usage
+-- WHERE created_at > NOW() - INTERVAL '30 days'
+-- GROUP BY user_id, purpose
+-- ORDER BY usd DESC NULLS LAST;
+
+-- ---------------------------------------------------------------------------
+-- Payments: Razorpay → Dodo Payments
+-- ---------------------------------------------------------------------------
+-- New subscriptions are billed through Dodo Payments. A row is written by
+-- app/api/dodo/webhook once Dodo reports the subscription (after its checkout
+-- is paid): one row per Dodo subscription, with plan_id holding the Dodo
+-- product id. Razorpay rows are left as they are, so subscribers from before
+-- the move keep their plan; only those rows have a Razorpay id now.
+ALTER TABLE subscriptions
+  ALTER COLUMN razorpay_subscription_id DROP NOT NULL;
+
+ALTER TABLE subscriptions
+  ADD COLUMN IF NOT EXISTS dodo_subscription_id TEXT UNIQUE,
+  ADD COLUMN IF NOT EXISTS dodo_customer_id TEXT,
+  ADD COLUMN IF NOT EXISTS dodo_payment_id TEXT;

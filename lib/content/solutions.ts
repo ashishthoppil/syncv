@@ -394,7 +394,7 @@ export const SOLUTIONS = {
           "Read it aloud before sending. Anything that could appear in a letter to a different company should be cut or replaced.",
         ],
         callout:
-          "Cover letters are available on the Free and Pro plans. The Smart plan does not include them.",
+          "Cover letters are included with Pro and with the free trial.",
       },
     ],
     limits: [
@@ -475,7 +475,7 @@ export const SOLUTIONS = {
           "Anyone running more than a handful of applications at once, particularly across different role types where the tailored versions genuinely diverge.",
         ],
         callout:
-          "The job tracker is included on the Free and Pro plans. The Smart plan does not include it.",
+          "The job tracker is included with Pro and with the free trial.",
       },
     ],
     limits: [
@@ -493,7 +493,7 @@ export const SOLUTIONS = {
       {
         question: "Which plans include the job tracker?",
         answer:
-          "Free and Pro. The Smart plan is built around fast scanning and resume generation and does not include tracking.",
+          "Pro, on any billing period, and the free trial. There is one paid plan, and it includes every feature.",
       },
       FAQ_POOL.multipleJobs,
     ],

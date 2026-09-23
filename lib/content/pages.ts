@@ -1,6 +1,14 @@
 import type { ArticleSection } from "./articles";
 import { FAQ_POOL } from "./faqs";
-import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
+import {
+  FAIR_USE_OPTIMIZATION_BREAK_MINUTES,
+  FAIR_USE_OPTIMIZATIONS_PER_DAY,
+  FAIR_USE_OPTIMIZATIONS_PER_HOUR,
+  FAIR_USE_SCANS_PER_DAY,
+  FAIR_USE_SCANS_PER_HOUR,
+  FREE_PLAN_SCAN_LIMIT,
+  formatScanCount,
+} from "@/lib/subscription-plans";
 import { SUPPORT_EMAIL } from "@/lib/seo/site";
 
 /**
@@ -10,7 +18,7 @@ import { SUPPORT_EMAIL } from "@/lib/seo/site";
  * BEFORE PUBLISHING /privacy AND /terms
  *
  * Everything below is factually derived from this codebase — the processors we
- * actually call (Supabase, OpenAI, Razorpay, Resend, Vercel), what the account
+ * actually call (Supabase, OpenAI, Dodo Payments, Resend, Vercel), what the account
  * deletion endpoint actually removes, and what the product actually does. What
  * it deliberately does NOT contain, because the information is not in the repo
  * and inventing it would be worse than omitting it:
@@ -63,7 +71,7 @@ export const ABOUT: StaticPage = {
     {
       heading: "How AI is used",
       body: [
-        "When you run a scan, the text of your resume and the job description you pasted are sent to OpenAI's API for analysis and rewriting. SynCV uses OpenAI's GPT-4o and GPT-4o-mini models for this. The output is returned to you in an editor — you review and change anything before exporting.",
+        "When you run a scan, the text of your resume and the job description you pasted are sent to OpenAI's API for analysis and rewriting. SynCV uses OpenAI's GPT-6 Luna model for this. The output is returned to you in an editor — you review and change anything before exporting.",
         "AI is used for comparison and rewriting. It is not used to judge you: SynCV does not assess whether you are qualified for a role, does not score you as a candidate, and does not recommend whether to apply.",
       ],
     },
@@ -159,7 +167,7 @@ export const PRIVACY: StaticPage = {
       bullets: [
         "Supabase — authentication and database storage for your account, resumes, scans and applications",
         "OpenAI — processes resume and job description text to produce analysis and tailored output",
-        "Razorpay — payment processing for subscriptions. Card details go to Razorpay directly; SynCV never sees or stores them",
+        "Dodo Payments — our merchant of record for subscriptions: it takes payment, issues invoices and handles sales tax, and receives your email address and billing details to do so. Card details go to Dodo Payments directly; SynCV never sees or stores them",
         "Resend — transactional email, such as account and welcome messages",
         "Vercel — application hosting, and privacy-friendly traffic analytics that do not build a profile of you",
       ],
@@ -250,7 +258,8 @@ export const TERMS: StaticPage = {
     {
       heading: "Plans, billing and cancellation",
       body: [
-        "Free accounts include a fixed allowance of scans. Paid plans are billed weekly, monthly, quarterly or yearly through Razorpay, depending on the billing period you choose, and renew automatically until cancelled.",
+        "Free accounts include a fixed allowance of scans. Pro is billed weekly, monthly or quarterly through Dodo Payments, our merchant of record, depending on the billing period you choose, and renews automatically until cancelled. Prices are in Indian rupees in India and in US dollars everywhere else.",
+        `Pro's unlimited scans and optimizations are subject to fair use, per account: up to ${FAIR_USE_SCANS_PER_HOUR} scans an hour and ${FAIR_USE_SCANS_PER_DAY} a day, and up to ${FAIR_USE_OPTIMIZATIONS_PER_DAY} optimizations a day, with a ${FAIR_USE_OPTIMIZATION_BREAK_MINUTES}-minute break after ${FAIR_USE_OPTIMIZATIONS_PER_HOUR} optimizations in an hour. Days run from midnight UTC. These limits exist to stop automated use and reset on their own; your dashboard shows where you stand.`,
         "You can cancel at any time from account settings. Cancellation stops future renewals; your plan stays active until the end of the period you have paid for.",
         `Payments are non-refundable — see the refund policy. Prices can change, and we will give notice before a change affects an existing subscription.`,
       ],

@@ -1,6 +1,7 @@
 import {
   BILLING_PERIODS,
   FREE_PLAN,
+  PRICING_REGIONS,
   SUBSCRIPTION_PLANS,
   getPlanPrice,
 } from "@/lib/subscription-plans";
@@ -64,13 +65,15 @@ export const websiteNode = (): JsonLdNode => ({
   // that 404s is invalid markup.
 });
 
-/** One billing cycle of each period, in UN/CEFACT units (WEE, MON, ANN). */
+/** One billing cycle of each period, in UN/CEFACT units (WEE, MON). */
 const BILLING_UNITS: Record<string, { unitCode: string; units: number }> = {
   weekly: { unitCode: "WEE", units: 1 },
   monthly: { unitCode: "MON", units: 1 },
   quarterly: { unitCode: "MON", units: 3 },
-  yearly: { unitCode: "ANN", units: 1 },
 };
+
+// Rupee prices are for India only; dollar prices are for everywhere else.
+const INDIA = { "@type": "Country", name: "IN" };
 
 /**
  * Prices come from lib/subscription-plans.js — the same module that renders the
@@ -97,7 +100,7 @@ export const softwareApplicationNode = (): JsonLdNode => ({
     "Cover letter generation",
     "Job application tracking",
   ],
-  // One offer per plan and billing period, since each is its own price.
+  // One offer per plan, region and billing period, since each is its own price.
   offers: [
     {
       "@type": "Offer",
@@ -109,27 +112,30 @@ export const softwareApplicationNode = (): JsonLdNode => ({
       availability: "https://schema.org/InStock",
     },
     ...SUBSCRIPTION_PLANS.flatMap((plan) =>
-      BILLING_PERIODS.map((period) => {
-        const price = String(getPlanPrice(plan, period.key));
-        const { unitCode, units } = BILLING_UNITS[period.key];
-        return {
-          "@type": "Offer",
-          name: `${plan.name} (${period.label})`,
-          price,
-          priceCurrency: "INR",
-          description: plan.description,
-          url: absoluteUrl("/#pricing"),
-          availability: "https://schema.org/InStock",
-          priceSpecification: {
-            "@type": "UnitPriceSpecification",
+      PRICING_REGIONS.flatMap((region) =>
+        BILLING_PERIODS.map((period) => {
+          const price = String(getPlanPrice(plan, period.key, region.key));
+          const { unitCode, units } = BILLING_UNITS[period.key];
+          return {
+            "@type": "Offer",
+            name: `${plan.name} (${period.label})`,
             price,
-            priceCurrency: "INR",
-            billingDuration: units,
-            billingIncrement: 1,
-            unitCode,
-          },
-        };
-      })
+            priceCurrency: region.currency,
+            description: plan.description,
+            url: absoluteUrl("/#pricing"),
+            availability: "https://schema.org/InStock",
+            ...(region.key === "in" ? { eligibleRegion: INDIA } : { ineligibleRegion: INDIA }),
+            priceSpecification: {
+              "@type": "UnitPriceSpecification",
+              price,
+              priceCurrency: region.currency,
+              billingDuration: units,
+              billingIncrement: 1,
+              unitCode,
+            },
+          };
+        })
+      )
     ),
   ],
   // No aggregateRating / review: SynCV has no verified review corpus, and

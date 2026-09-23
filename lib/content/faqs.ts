@@ -1,4 +1,9 @@
-import { FREE_PLAN_SCAN_LIMIT, PLAN_BY_KEY, formatScanCount } from "@/lib/subscription-plans";
+import {
+  FAIR_USE_SCANS_PER_DAY,
+  FAIR_USE_SCANS_PER_HOUR,
+  FREE_PLAN_SCAN_LIMIT,
+  formatScanCount,
+} from "@/lib/subscription-plans";
 
 export type Faq = { question: string; answer: string };
 
@@ -28,7 +33,7 @@ export const FAQ_POOL = {
   },
   freeScans: {
     question: "How many free scans do I get?",
-    answer: `Every account includes ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free resume")} to start, with no card required; it does not refill. Paid plans refill scans every week, whether you pay weekly, monthly, quarterly or yearly — Smart includes ${PLAN_BY_KEY.smart.weeklyScanLimit} per week and Pro includes ${PLAN_BY_KEY.pro.weeklyScanLimit} per week.`,
+    answer: `Every account includes ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free resume")} to start, with no card required; it does not refill. Pro has no scan limit, whether you pay weekly, monthly or quarterly — only fair-use ceilings of ${FAIR_USE_SCANS_PER_HOUR} scans an hour and ${FAIR_USE_SCANS_PER_DAY} a day.`,
   },
   multipleJobs: {
     question: "Can I tailor the same resume to multiple jobs?",
@@ -73,7 +78,7 @@ export const FAQ_POOL = {
   payments: {
     question: "What payment methods do you accept?",
     answer:
-      "Payments are processed through Razorpay. We plan to add more providers.",
+      "Payments are processed by Dodo Payments, our merchant of record. The checkout page shows the payment methods available where you are.",
   },
   refunds: {
     question: "Do you offer refunds?",

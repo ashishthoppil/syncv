@@ -61,6 +61,7 @@ import {
   MAX_BASE_RESUMES,
   type BaseResumeRecord,
 } from "@/lib/base-resume";
+import { authedFetch } from "@/lib/authed-fetch";
 
 type SectionUser = {
   id?: string;
@@ -171,7 +172,7 @@ const BaseResumeEditor = ({
     formData.append("extractBaseResume", "true");
     setParsingResume(true);
     try {
-      const response = await fetch("/api/scan", { method: "POST", body: formData });
+      const response = await authedFetch("/api/scan", { method: "POST", body: formData });
       const result = await response.json();
       if (!result.success || !result.baseResume) {
         toast.error(result.message || "Failed to read that resume.");
@@ -625,7 +626,7 @@ export const BaseResumeSection = ({ user }: { user: SectionUser }) => {
     formData.append("extractBaseResume", "true");
     setParsing(true);
     try {
-      const response = await fetch("/api/scan", { method: "POST", body: formData });
+      const response = await authedFetch("/api/scan", { method: "POST", body: formData });
       const data = await response.json();
       if (!data.success || !data.baseResume) {
         toast.error(data.message || "We couldn't read that resume.");

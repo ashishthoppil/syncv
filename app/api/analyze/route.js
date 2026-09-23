@@ -1,9 +1,15 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/server/auth";
+import { chatCompletion, SMALL_MODEL } from "@/lib/server/openai";
 import {
   normalizeScanSource,
   SCAN_SOURCE_MANUAL,
 } from "@/lib/scan-sources";
+import { FAIR_USE_SCANS_PER_DAY, FAIR_USE_SCANS_PER_HOUR } from "@/lib/subscription-plans";
+import { describeWait, getDayStartUtc } from "@/lib/server/optimization-allowance";
 import {
+  countScansSince,
   countWeeklyScans,
   countFreeTrialScans,
   FREE_TRIAL_PLAN_KEY,
@@ -279,8 +285,97 @@ const SEMANTIC_EQUIVALENTS = {
   airflow: ["apache airflow"],
 };
 
+// A job description's keywords don't depend on whose resume is scanned against
+// it, so one extraction serves every scan of the same posting — a Remote Jobs
+// listing many users open, or the re-score after optimizing. Two layers: this
+// instance's memory, then `jd_keyword_cache`, which survives cold starts and is
+// shared by every instance.
+//
+// The model and this version are part of the cache key, so a cached list is
+// never served for a prompt or model it wasn't made with. Bump the version
+// whenever the extraction prompt or its post-processing changes.
+const KEYWORD_EXTRACTION_VERSION = "v2";
 const KEYWORD_EXTRACTION_CACHE = new Map();
 const KEYWORD_CACHE_LIMIT = 120;
+
+/**
+ * Identifies a job posting by its cleaned text, organization and designation —
+ * the inputs the extraction prompt sees. Also stored on `scan_usage.jd_hash`,
+ * where it ties a re-score to the scan that paid for it. Case and whitespace
+ * are folded; anything else, including non-Latin text, still tells postings
+ * apart.
+ */
+const fingerprintJobDescription = (cleanedJd = "", organization = "", designation = "") =>
+  createHash("sha256")
+    .update(
+      [cleanedJd, organization, designation]
+        .map((value) =>
+          String(value || "")
+            .normalize("NFKC")
+            .toLowerCase()
+            .replace(/\s+/g, " ")
+            .trim()
+        )
+        .join("\u0000")
+    )
+    .digest("hex");
+
+const rememberKeywords = (cacheKey, entry) => {
+  KEYWORD_EXTRACTION_CACHE.delete(cacheKey);
+  if (KEYWORD_EXTRACTION_CACHE.size >= KEYWORD_CACHE_LIMIT) {
+    const oldestKey = KEYWORD_EXTRACTION_CACHE.keys().next().value;
+    if (oldestKey) KEYWORD_EXTRACTION_CACHE.delete(oldestKey);
+  }
+  KEYWORD_EXTRACTION_CACHE.set(cacheKey, entry);
+};
+
+// Both cache helpers only report failures: a cache that can't be read or
+// written costs a model call, never the scan.
+const readCachedKeywords = async (supabase, cacheKey) => {
+  const { data, error } = await supabase
+    .from("jd_keyword_cache")
+    .select("weighted_keywords, extraction_stats")
+    .eq("cache_key", cacheKey)
+    .maybeSingle();
+  if (error) {
+    console.error("Could not read jd_keyword_cache:", error.message);
+    return null;
+  }
+  if (!Array.isArray(data?.weighted_keywords) || !data.weighted_keywords.length) return null;
+  return { weightedKeywords: data.weighted_keywords, stats: data.extraction_stats || null };
+};
+
+const writeCachedKeywords = async (supabase, cacheKey, { weightedKeywords, stats }) => {
+  const { error } = await supabase
+    .from("jd_keyword_cache")
+    .upsert(
+      { cache_key: cacheKey, weighted_keywords: weightedKeywords, extraction_stats: stats },
+      { onConflict: "cache_key", ignoreDuplicates: true }
+    );
+  if (error) console.error("Could not write jd_keyword_cache:", error.message);
+};
+
+/**
+ * Whether this user has already spent a scan on this job description. A
+ * re-score claims to be free with a flag the browser sets, so the claim only
+ * holds for a job the user has paid a scan for.
+ */
+const hasScannedJobDescription = async (supabase, userId, jdHash) => {
+  const { data, error } = await supabase
+    .from("scan_usage")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("jd_hash", jdHash)
+    .limit(1);
+  if (error) {
+    // Almost always scan_usage.jd_hash not existing yet. Until the migration
+    // has run, keep trusting the flag as before rather than charging a scan for
+    // every re-score.
+    console.warn("Could not check scan_usage.jd_hash; trusting skipUsageTracking:", error.message);
+    return true;
+  }
+  return data.length > 0;
+};
 
 const stripHtml = (value = "") => value.replace(/<[^>]*>/g, " ");
 
@@ -312,11 +407,6 @@ const tokenize = (value = "") =>
     .filter(Boolean);
 
 const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const buildKeywordCacheKey = (cleanedJd = "", organization = "", designation = "") =>
-  [cleanedJd, organization, designation]
-    .map((value) => normalizePhrase(value || ""))
-    .join("::");
 
 const extractOrganizationTokens = (organization = "") =>
   tokenize(organization).filter((token) => token.length > 2);
@@ -481,12 +571,13 @@ const clampWeight = (value) => {
   return Math.max(1, Math.min(10, Math.round(numeric)));
 };
 
-const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designation, exclusionTokenSet }) => {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set");
-  }
-
+const extractWeightedKeywordsWithAI = async ({
+  cleanedJd,
+  organization,
+  designation,
+  exclusionTokenSet,
+  userId,
+}) => {
   const prompt = [
     "Extract meaningful resume-match keywords from this job description.",
     "Rules:",
@@ -497,7 +588,7 @@ const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designat
     "5) Return up to 40 distinct keywords, prioritized by impact on candidate fit.",
     "6) Use weight 8-10 for must-have hard skills, 5-7 for important supporting skills, 1-4 for nice-to-have.",
     "7) Set importance='required' for keywords explicitly listed as required/must-have/minimum; 'preferred' otherwise.",
-    "8) Provide common variants (spelling, abbreviations, plural/singular) in 'variants' to maximize resume matching.",
+    "8) Provide up to 3 common variants (spelling, abbreviations, plural/singular) in 'variants' to maximize resume matching.",
     `Organization context: ${organization || ""}`,
     `Designation context: ${designation || ""}`,
     "JSON schema:",
@@ -506,35 +597,17 @@ const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designat
     cleanedJd.slice(0, 6000),
   ].join("\n");
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      temperature: 0,
-      // max_tokens: 500,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You extract strict, relevant ATS keywords only. Return valid compact JSON only.",
-        },
-        { role: "user", content: prompt },
-      ],
-    }),
+  // 40 keywords with 3 variants each come to roughly 1,600 tokens; the ceiling
+  // leaves room for that without letting a runaway answer bill without limit.
+  const content = await chatCompletion({
+    model: SMALL_MODEL,
+    maxTokens: 2500,
+    jsonMode: true,
+    system: "You extract strict, relevant ATS keywords only. Return valid compact JSON only.",
+    prompt,
+    userId,
+    purpose: "jd_keywords",
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
-  }
-
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
 
   if (!content) {
     throw new Error("OpenAI returned empty content");
@@ -560,7 +633,7 @@ const extractWeightedKeywordsWithAI = async ({ cleanedJd, organization, designat
         ? entry.variants
             .map((v) => String(v || "").trim())
             .filter(Boolean)
-            .slice(0, 6)
+            .slice(0, 3)
         : [];
 
       return {
@@ -1654,12 +1727,24 @@ const scoreResume = (
 
 export async function POST(req) {
   try {
+    // Who is scanning comes from their session token, never the payload: the
+    // weekly allowance is counted against this id.
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "Please log in to scan your resume." },
+        { status: 401 }
+      );
+    }
+    const userId = user.id;
+
     const {
       resume,
       jd,
       organization,
       designation,
-      userId = "",
+      // Set by the re-scores after optimizing or editing. Only honoured for a
+      // job description this user has already spent a scan on.
       skipUsageTracking = false,
       // Where the scan was started from — "remote-jobs" when the JD came from
       // the Remote Jobs list, "manual" when it was pasted in. Anything else is
@@ -1680,48 +1765,74 @@ export async function POST(req) {
       });
     }
 
-    let activePlan = null;
+    const supabase = getSupabaseAdminClient();
+    const cleanedJd = preprocessJobDescription(jd);
+    const jdHash = fingerprintJobDescription(cleanedJd, organization, designation);
+    const isRescore =
+      Boolean(skipUsageTracking) && (await hasScannedJobDescription(supabase, userId, jdHash));
+
     let scansUsedThisWeek = 0;
-    let usingFreeTrial = false;
-    if (userId) {
-      const supabase = getSupabaseAdminClient();
-      activePlan = await getPlanForUser(supabase, userId);
-      if (activePlan) {
+    const activePlan = await getPlanForUser(supabase, userId);
+    // Pro has no weekly cap (weeklyScanLimit null); a plan that sets one is
+    // still held to it.
+    const hasWeeklyCap = activePlan?.weeklyScanLimit != null;
+    if (activePlan) {
+      if (hasWeeklyCap) {
         scansUsedThisWeek = await countWeeklyScans(supabase, userId);
-        if (!skipUsageTracking && scansUsedThisWeek >= activePlan.weeklyScanLimit) {
+        if (!isRescore && scansUsedThisWeek >= activePlan.weeklyScanLimit) {
           return NextResponse.json({
             success: false,
             message: `Weekly scan limit reached for ${activePlan.name} plan (${activePlan.weeklyScanLimit}/week).`,
           });
         }
-      } else {
-        // No active plan — fall back to the lifetime free-trial allowance.
-        const freeTrialUsed = await countFreeTrialScans(supabase, userId);
-        if (!skipUsageTracking && freeTrialUsed >= FREE_TRIAL_SCAN_LIMIT) {
+      }
+      // Unlimited, within fair use: the hourly and daily ceilings quoted on
+      // the Pro card. The day is a UTC day, as for optimizations.
+      if (!isRescore) {
+        const now = new Date();
+        const hourAgo = new Date(now.getTime() - 60 * 60_000);
+        if ((await countScansSince(supabase, userId, hourAgo)) >= FAIR_USE_SCANS_PER_HOUR) {
           return NextResponse.json({
             success: false,
-            message: `You've used ${
-              FREE_TRIAL_SCAN_LIMIT === 1 ? "your free scan" : `all ${FREE_TRIAL_SCAN_LIMIT} free scans`
-            }. Please subscribe to a plan to continue.`,
+            message: `You've run ${FAIR_USE_SCANS_PER_HOUR} scans in the last hour, the fair-use limit. Please wait a little and try again.`,
           });
         }
-        usingFreeTrial = true;
+        const dayStart = getDayStartUtc(now);
+        if ((await countScansSince(supabase, userId, dayStart)) >= FAIR_USE_SCANS_PER_DAY) {
+          const resetsAt = new Date(dayStart.getTime() + 24 * 60 * 60_000).toISOString();
+          return NextResponse.json({
+            success: false,
+            message: `You've run ${FAIR_USE_SCANS_PER_DAY} scans today, the fair-use limit. It resets in ${describeWait(resetsAt, now)}.`,
+          });
+        }
+      }
+    } else {
+      // No active plan — fall back to the lifetime free-trial allowance.
+      const freeTrialUsed = await countFreeTrialScans(supabase, userId);
+      if (!isRescore && freeTrialUsed >= FREE_TRIAL_SCAN_LIMIT) {
+        return NextResponse.json({
+          success: false,
+          message: `You've used ${
+            FREE_TRIAL_SCAN_LIMIT === 1 ? "your free scan" : `all ${FREE_TRIAL_SCAN_LIMIT} free scans`
+          }. Please subscribe to a plan to continue.`,
+        });
       }
     }
 
-    const cleanedJd = preprocessJobDescription(jd);
     const exclusionTokenSet = extractJdExclusionTokens(jd, organization);
-    const keywordCacheKey = buildKeywordCacheKey(cleanedJd, organization, designation);
+    const keywordCacheKey = `${KEYWORD_EXTRACTION_VERSION}:${SMALL_MODEL}:${jdHash}`;
 
     let weightedKeywords = [];
     let extractionMode = "ai";
     let extractionStats = { rawCount: 0, cleanedCount: 0 };
-    const cachedKeywords = KEYWORD_EXTRACTION_CACHE.get(keywordCacheKey);
-    // Only successful AI extractions are cached, so a cache hit is always AI-quality.
-    if (cachedKeywords?.weightedKeywords?.length && cachedKeywords.mode !== "fallback") {
+    const cachedKeywords =
+      KEYWORD_EXTRACTION_CACHE.get(keywordCacheKey) ||
+      (await readCachedKeywords(supabase, keywordCacheKey));
+    if (cachedKeywords) {
       weightedKeywords = cachedKeywords.weightedKeywords;
       extractionMode = "cache-ai";
       extractionStats = cachedKeywords.stats || extractionStats;
+      rememberKeywords(keywordCacheKey, cachedKeywords);
     } else {
       const EXTRACTION_ATTEMPTS = 2;
       let aiError = null;
@@ -1732,6 +1843,7 @@ export async function POST(req) {
             organization,
             designation,
             exclusionTokenSet,
+            userId,
           });
           weightedKeywords = ai.keywords;
           extractionStats = { rawCount: ai.rawCount, cleanedCount: ai.cleanedCount };
@@ -1754,17 +1866,12 @@ export async function POST(req) {
         });
       }
 
+      // Only successful extractions are cached, so a cache hit is always a
+      // real model answer.
       if (weightedKeywords.length) {
-        if (KEYWORD_EXTRACTION_CACHE.size >= KEYWORD_CACHE_LIMIT) {
-          const firstKey = KEYWORD_EXTRACTION_CACHE.keys().next().value;
-          if (firstKey) KEYWORD_EXTRACTION_CACHE.delete(firstKey);
-        }
-        KEYWORD_EXTRACTION_CACHE.set(keywordCacheKey, {
-          weightedKeywords,
-          mode: extractionMode,
-          stats: extractionStats,
-          cachedAt: Date.now(),
-        });
+        const entry = { weightedKeywords, stats: extractionStats };
+        rememberKeywords(keywordCacheKey, entry);
+        await writeCachedKeywords(supabase, keywordCacheKey, entry);
       }
     }
 
@@ -1783,8 +1890,7 @@ export async function POST(req) {
       candidateTitle,
     });
 
-    if (userId && (activePlan || usingFreeTrial) && !skipUsageTracking) {
-      const supabase = getSupabaseAdminClient();
+    if (!isRescore) {
       const usageRow = {
         user_id: userId,
         plan_key: activePlan ? activePlan.key : FREE_TRIAL_PLAN_KEY,
@@ -1792,15 +1898,15 @@ export async function POST(req) {
 
       let { error: usageError } = await supabase
         .from("scan_usage")
-        .insert({ ...usageRow, source: normalizeScanSource(source) });
+        .insert({ ...usageRow, source: normalizeScanSource(source), jd_hash: jdHash });
 
-      // The `source` column arrives with a migration. Until that has been run,
-      // writing it fails — and because this insert is best-effort, the failure
-      // would silently stop counting scans against the user's quota. Retry
-      // without the column so quota enforcement never depends on the migration.
-      if (usageError && /source/.test(usageError.message || "")) {
+      // `source` and `jd_hash` arrive with migrations. Until those have been
+      // run, writing them fails — and because this insert is best-effort, the
+      // failure would silently stop counting scans against the user's quota.
+      // Retry without them so quota enforcement never depends on a migration.
+      if (usageError && /source|jd_hash/.test(usageError.message || "")) {
         console.warn(
-          "scan_usage.source is missing — run the latest supabase-migration.sql to record scan origin."
+          "scan_usage.source or scan_usage.jd_hash is missing — run the latest supabase-migration.sql."
         );
         ({ error: usageError } = await supabase.from("scan_usage").insert(usageRow));
       }
@@ -1823,9 +1929,12 @@ export async function POST(req) {
         usage: activePlan
           ? {
               planKey: activePlan.key,
+              unlimitedScans: !hasWeeklyCap,
               weeklyScanLimit: activePlan.weeklyScanLimit,
-              scansUsedThisWeek,
-              scansRemainingThisWeek: Math.max(0, activePlan.weeklyScanLimit - scansUsedThisWeek),
+              scansUsedThisWeek: hasWeeklyCap ? scansUsedThisWeek : null,
+              scansRemainingThisWeek: hasWeeklyCap
+                ? Math.max(0, activePlan.weeklyScanLimit - scansUsedThisWeek)
+                : null,
             }
           : null,
       },

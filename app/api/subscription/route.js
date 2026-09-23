@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getOptimizationAllowance } from "@/lib/server/optimization-allowance";
 import {
   countWeeklyScans,
   countFreeTrialScans,
@@ -23,10 +24,17 @@ export async function GET(request) {
       activeSubscription || (await getLatestSubscriptionForUser(supabase, userId));
     const normalized = normalizeSubscriptionView(latestSubscription);
     const plan = await getPlanForUser(supabase, userId);
-    const scansUsedThisWeek = plan ? await countWeeklyScans(supabase, userId) : 0;
-    const weeklyScanLimit = plan?.weeklyScanLimit || 0;
-    const scansRemainingThisWeek =
-      weeklyScanLimit > 0 ? Math.max(0, weeklyScanLimit - scansUsedThisWeek) : 0;
+    // Pro has no weekly cap (weeklyScanLimit null), so there is no balance to
+    // count; a plan that sets a cap still reports what is left of it.
+    const unlimitedScans = Boolean(plan) && plan.weeklyScanLimit == null;
+    const weeklyScanLimit = plan && !unlimitedScans ? plan.weeklyScanLimit : 0;
+    const scansUsedThisWeek =
+      plan && !unlimitedScans ? await countWeeklyScans(supabase, userId) : 0;
+    const scansRemainingThisWeek = unlimitedScans
+      ? null
+      : weeklyScanLimit > 0
+        ? Math.max(0, weeklyScanLimit - scansUsedThisWeek)
+        : 0;
 
     // Users without an active plan get a lifetime free-trial allowance before
     // they are asked to subscribe.
@@ -35,6 +43,9 @@ export async function GET(request) {
       ? 0
       : Math.max(0, FREE_TRIAL_SCAN_LIMIT - freeTrialUsed);
     const canScan = Boolean(plan) || freeTrialRemaining > 0;
+    // Paid plan only: the optimization fair-use state the header shows — the
+    // day's count and cap, and the break timer.
+    const optimizationUsage = plan ? await getOptimizationAllowance(supabase, userId) : null;
 
     return NextResponse.json({
       data: {
@@ -45,6 +56,7 @@ export async function GET(request) {
         // account has a plan without one. The plan is what the UI gates read —
         // Remote Jobs access and the scans-left badge both key off this.
         hasActivePlan: Boolean(plan) || normalized.hasActivePlan,
+        unlimitedScans,
         weeklyScanLimit,
         scansUsedThisWeek,
         scansRemainingThisWeek,
@@ -52,6 +64,7 @@ export async function GET(request) {
         freeTrialUsed,
         freeTrialRemaining,
         canScan,
+        optimizationUsage,
         // Free-trial users get the full experience (cover letter + job tracker)
         // so the trial showcases every feature; paid plans use their own flags.
         allowsJobTracker: plan ? Boolean(plan.allowsJobTracker) : true,

@@ -1,53 +1,80 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/server/auth";
+import {
+  chatCompletion,
+  countModelCalls,
+  HOURLY_MODEL_CALL_LIMITS,
+  SMALL_MODEL,
+  TOO_MANY_MODEL_CALLS_MESSAGE,
+} from "@/lib/server/openai";
+import { getSupabaseAdminClient } from "@/lib/server/subscriptions";
+
+// One llm_usage purpose per action, so cost can be broken down by what the
+// editor asked for.
+const ACTION_PURPOSES = {
+  "categorize-skill": "cv_assist_categorize_skill",
+  "generate-summary": "cv_assist_generate_summary",
+  "rephrase-experience": "cv_assist_rephrase_experience",
+};
 
 const ensureString = (value) => String(value || "").trim();
 const ensureStringArray = (value) =>
   Array.isArray(value) ? value.map(ensureString).filter(Boolean) : [];
 
-const callOpenAI = async ({ apiKey, prompt, system, maxTokens = 600, temperature = 0.3 }) => {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature,
-      max_tokens: maxTokens,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            system ||
-            "You are an expert resume writer. Return ONLY a single valid JSON object — no markdown, no commentary.",
-        },
-        { role: "user", content: prompt },
-      ],
-    }),
+const callOpenAI = async ({
+  userId,
+  purpose,
+  prompt,
+  system,
+  maxTokens = 600,
+  temperature = 0.3,
+}) => {
+  const content = await chatCompletion({
+    model: SMALL_MODEL,
+    temperature,
+    maxTokens,
+    jsonMode: true,
+    system:
+      system ||
+      "You are an expert resume writer. Return ONLY a single valid JSON object — no markdown, no commentary.",
+    prompt,
+    userId,
+    purpose,
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
-  }
-
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
   if (!content) throw new Error("OpenAI returned empty content.");
   return JSON.parse(content);
 };
 
 export async function POST(req) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ success: false, message: "OPENAI_API_KEY is not set." });
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "Please log in to use the resume assistant." },
+        { status: 401 }
+      );
     }
 
     const body = await req.json();
     const action = ensureString(body?.action);
+    const purpose = ACTION_PURPOSES[action];
+    if (!purpose) {
+      return NextResponse.json({ success: false, message: "Unknown action." });
+    }
+
+    const recentCalls = await countModelCalls(
+      getSupabaseAdminClient(),
+      user.id,
+      Object.values(ACTION_PURPOSES),
+      60
+    );
+    if (recentCalls >= HOURLY_MODEL_CALL_LIMITS.cvAssist) {
+      return NextResponse.json(
+        { success: false, message: TOO_MANY_MODEL_CALLS_MESSAGE },
+        { status: 429 }
+      );
+    }
+    const assist = (options) => callOpenAI({ ...options, userId: user.id, purpose });
 
     // Categorize a single skill into a concise resume skill-section category.
     if (action === "categorize-skill") {
@@ -67,7 +94,7 @@ export async function POST(req) {
       ]
         .filter(Boolean)
         .join("\n");
-      const out = await callOpenAI({ apiKey, prompt, maxTokens: 60, temperature: 0 });
+      const out = await assist({ prompt, maxTokens: 60, temperature: 0 });
       const category = ensureString(out?.category) || "Other";
       return NextResponse.json({ success: true, category });
     }
@@ -87,7 +114,7 @@ export async function POST(req) {
         `Skills: ${skills.join(", ") || "(none)"}`,
         `Experience highlights:\n${experience.join("\n") || "(none)"}`,
       ].join("\n");
-      const out = await callOpenAI({ apiKey, prompt, maxTokens: 250 });
+      const out = await assist({ prompt, maxTokens: 250 });
       return NextResponse.json({ success: true, summary: ensureString(out?.summary) });
     }
 
@@ -111,7 +138,7 @@ export async function POST(req) {
         `Role: ${designation || "(unspecified)"} at ${company || "(unspecified)"}`,
         `Description:\n${text}`,
       ].join("\n");
-      const out = await callOpenAI({ apiKey, prompt, maxTokens: 500 });
+      const out = await assist({ prompt, maxTokens: 500 });
       // Defensive backstop: strip any placeholder/template tokens the model may
       // still slip in (e.g. "by [X]%", "[N]+", "$[amount]", "by XX%") and tidy
       // the resulting spacing/punctuation.

@@ -49,8 +49,8 @@
 | UF-021 | P0 | Job Tracker | Update interview status | Existing job entry | Change status (Applied/Interviewing/Offer/Rejected) | Change persists after refresh |  |  |  |  |  |  |  |
 | UF-022 | P1 | Job Tracker | Persist generated docs on job row | Generated resume/cover letter exists | Save generated docs to job row | Stored text/template IDs retrievable for same job |  |  |  |  |  |  |  |
 | UF-023 | P0 | Job Tracker | Job tracker plan gating | User without entitlement | Attempt to access tracker section | Section hidden or redirected to upgrade/settings |  |  |  |  |  |  |  |
-| UF-024 | P0 | Billing | Create subscription from settings | Razorpay test keys configured | Select plan and start checkout | Subscription enters pending/active lifecycle correctly |  |  |  |  |  |  |  |
-| UF-025 | P0 | Billing | Webhook-based activation | Razorpay webhook configured | Complete successful test payment | Plan becomes active and gated features unlock |  |  |  |  |  |  |  |
+| UF-024 | P0 | Billing | Create subscription from settings | Dodo Payments test-mode API key and product ids configured | Select plan and start checkout | Subscription enters pending/active lifecycle correctly |  |  |  |  |  |  |  |
+| UF-025 | P0 | Billing | Webhook-based activation | Dodo Payments webhook configured | Complete successful test payment | Plan becomes active and gated features unlock |  |  |  |  |  |  |  |
 | UF-026 | P0 | Billing | Cancel subscription | Active subscription exists | Cancel plan in settings | Status becomes cancelled and entitlements update |  |  |  |  |  |  |  |
 | UF-027 | P1 | Billing | Duplicate active subscription protection | Active plan exists | Attempt purchase of same plan again | Duplicate purchase is blocked with clear message |  |  |  |  |  |  |  |
 | UF-028 | P0 | Billing | Weekly scan limit enforcement | Plan with weekly cap exists | Run scans until limit reached | Limit enforced and user sees clear limit messaging |  |  |  |  |  |  |  |

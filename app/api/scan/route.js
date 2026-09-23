@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import PdfParse from "pdf-parse";
 import mammoth from "mammoth";
 import WordExtractor from "word-extractor";
+import { getAuthenticatedUser } from "@/lib/server/auth";
+import {
+  chatCompletion,
+  countModelCalls,
+  HOURLY_MODEL_CALL_LIMITS,
+  LARGE_MODEL,
+  SMALL_MODEL,
+  TOO_MANY_MODEL_CALLS_MESSAGE,
+} from "@/lib/server/openai";
+import { getSupabaseAdminClient } from "@/lib/server/subscriptions";
 
 const extractor = new WordExtractor();
 const SUPPORTED_FORMATS = ["pdf", "doc", "docx"];
@@ -177,12 +187,7 @@ const sanitizeProfile = (profile = {}) => {
   };
 };
 
-const extractProfileWithAI = async (resumeText = "") => {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set.");
-  }
-
+const extractProfileWithAI = async (resumeText = "", userId) => {
   const prompt = [
     "Extract structured profile data from this resume.",
     "",
@@ -219,35 +224,15 @@ const extractProfileWithAI = async (resumeText = "") => {
     resumeText.slice(0, 12000),
   ].join("\n");
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      temperature: 0,
-      max_tokens: 900,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You extract resume profile data with high precision. Return valid compact JSON only.",
-        },
-        { role: "user", content: prompt },
-      ],
-    }),
+  const content = await chatCompletion({
+    model: SMALL_MODEL,
+    maxTokens: 900,
+    jsonMode: true,
+    system: "You extract resume profile data with high precision. Return valid compact JSON only.",
+    prompt,
+    userId,
+    purpose: "profile_extract",
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
-  }
-
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
 
   if (!content) {
     throw new Error("OpenAI returned empty profile extraction.");
@@ -272,12 +257,7 @@ const ensureStringArray = (value) => {
 // Extract the FULL structured resume (not just contact fields) so it can serve
 // as the user's editable base resume. Grounded strictly in the resume text —
 // never invents roles, degrees, skills, or languages.
-const extractBaseResumeWithAI = async (resumeText = "") => {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set.");
-  }
-
+const extractBaseResumeWithAI = async (resumeText = "", userId) => {
   const schema = {
     candidateName: "string",
     designation: "string",
@@ -337,35 +317,19 @@ const extractBaseResumeWithAI = async (resumeText = "") => {
     resumeText.slice(0, 16000),
   ].join("\n");
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      temperature: 0,
-      max_tokens: 4096,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You extract resume data with high precision, preserving ALL of the resume's content verbatim. Return valid compact JSON only. Never fabricate facts not present in the resume, and never condense or drop detail that is present.",
-        },
-        { role: "user", content: prompt },
-      ],
-    }),
+  // Stays on the large model: this becomes the master resume every later
+  // tailoring starts from, so it must come out verbatim — and it runs once per
+  // upload, not once per scan.
+  const content = await chatCompletion({
+    model: LARGE_MODEL,
+    maxTokens: 4096,
+    jsonMode: true,
+    system:
+      "You extract resume data with high precision, preserving ALL of the resume's content verbatim. Return valid compact JSON only. Never fabricate facts not present in the resume, and never condense or drop detail that is present.",
+    prompt,
+    userId,
+    purpose: "base_resume_extract",
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
-  }
-
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
   if (!content) {
     throw new Error("OpenAI returned empty resume extraction.");
   }
@@ -623,6 +587,34 @@ export async function POST(req) {
     const shouldExtractProfile = formData.get("extractProfile") === "true";
     const shouldExtractBaseResume = formData.get("extractBaseResume") === "true";
 
+    // Plain text extraction is free and stays open. Reading the resume into
+    // structured fields is a model call, so it needs a signed-in caller and
+    // stays under the hourly ceiling.
+    let userId = null;
+    if (shouldExtractProfile || shouldExtractBaseResume) {
+      const user = await getAuthenticatedUser(req);
+      if (!user) {
+        return NextResponse.json(
+          { success: false, message: "Please log in to upload your resume." },
+          { status: 401 }
+        );
+      }
+      userId = user.id;
+
+      const recentExtractions = await countModelCalls(
+        getSupabaseAdminClient(),
+        userId,
+        ["profile_extract", "base_resume_extract"],
+        60
+      );
+      if (recentExtractions >= HOURLY_MODEL_CALL_LIMITS.resumeExtraction) {
+        return NextResponse.json(
+          { success: false, message: TOO_MANY_MODEL_CALLS_MESSAGE },
+          { status: 429 }
+        );
+      }
+    }
+
     if (!file) {
       return NextResponse.json({
         success: false,
@@ -662,7 +654,7 @@ export async function POST(req) {
     }
 
     if (shouldExtractBaseResume) {
-      const baseResume = await extractBaseResumeWithAI(cleaned);
+      const baseResume = await extractBaseResumeWithAI(cleaned, userId);
       return NextResponse.json({ success: true, message: cleaned, baseResume });
     }
 
@@ -670,7 +662,7 @@ export async function POST(req) {
       return NextResponse.json({ success: true, message: cleaned });
     }
 
-    const profile = await extractProfileWithAI(cleaned);
+    const profile = await extractProfileWithAI(cleaned, userId);
 
     return NextResponse.json({ success: true, message: cleaned, profile });
   } catch (error) {
