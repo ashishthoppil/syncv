@@ -17,7 +17,7 @@ const isUnavailableFeature = (title: string) => title.startsWith("No ");
 const tooltipContent = {
   scans: "Each scan gives role-specific feedback to improve your resume quickly.",
   generation: "Generate targeted resume and cover letter drafts from each job description.",
-};
+}; 
 
 const plans = [
   {
