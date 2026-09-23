@@ -1,4 +1,9 @@
-import { ALL_PLANS } from "@/lib/subscription-plans";
+import {
+  BILLING_PERIODS,
+  FREE_PLAN,
+  SUBSCRIPTION_PLANS,
+  getPlanPrice,
+} from "@/lib/subscription-plans";
 import {
   SITE_NAME,
   SITE_URL,
@@ -33,7 +38,7 @@ export const organizationNode = (): JsonLdNode => ({
   },
   image: { "@id": `${SITE_URL}/#logo` },
   description:
-    "SynCV is an AI resume tailoring tool that rewrites a candidate's existing resume to match a specific job description, without inventing experience.",
+    "SynCV is a job-specific resume tailoring tool: it rewrites a candidate's existing resume to match one job description at a time, without inventing experience.",
   sameAs: [...SOCIAL_PROFILES],
   contactPoint: [
     {
@@ -58,6 +63,14 @@ export const websiteNode = (): JsonLdNode => ({
   // No SearchAction: the site has no internal search endpoint, and claiming one
   // that 404s is invalid markup.
 });
+
+/** One billing cycle of each period, in UN/CEFACT units (WEE, MON, ANN). */
+const BILLING_UNITS: Record<string, { unitCode: string; units: number }> = {
+  weekly: { unitCode: "WEE", units: 1 },
+  monthly: { unitCode: "MON", units: 1 },
+  quarterly: { unitCode: "MON", units: 3 },
+  yearly: { unitCode: "ANN", units: 1 },
+};
 
 /**
  * Prices come from lib/subscription-plans.js — the same module that renders the
@@ -84,27 +97,41 @@ export const softwareApplicationNode = (): JsonLdNode => ({
     "Cover letter generation",
     "Job application tracking",
   ],
-  offers: ALL_PLANS.map((plan) => ({
-    "@type": "Offer",
-    name: plan.name,
-    price: String(plan.priceInr),
-    priceCurrency: "INR",
-    description: plan.description,
-    url: absoluteUrl("/#pricing"),
-    availability: "https://schema.org/InStock",
-    ...(plan.priceInr > 0
-      ? {
+  // One offer per plan and billing period, since each is its own price.
+  offers: [
+    {
+      "@type": "Offer",
+      name: FREE_PLAN.name,
+      price: "0",
+      priceCurrency: "INR",
+      description: FREE_PLAN.description,
+      url: absoluteUrl("/#pricing"),
+      availability: "https://schema.org/InStock",
+    },
+    ...SUBSCRIPTION_PLANS.flatMap((plan) =>
+      BILLING_PERIODS.map((period) => {
+        const price = String(getPlanPrice(plan, period.key));
+        const { unitCode, units } = BILLING_UNITS[period.key];
+        return {
+          "@type": "Offer",
+          name: `${plan.name} (${period.label})`,
+          price,
+          priceCurrency: "INR",
+          description: plan.description,
+          url: absoluteUrl("/#pricing"),
+          availability: "https://schema.org/InStock",
           priceSpecification: {
             "@type": "UnitPriceSpecification",
-            price: String(plan.priceInr),
+            price,
             priceCurrency: "INR",
-            billingDuration: 1,
+            billingDuration: units,
             billingIncrement: 1,
-            unitCode: "MON",
+            unitCode,
           },
-        }
-      : {}),
-  })),
+        };
+      })
+    ),
+  ],
   // No aggregateRating / review: SynCV has no verified review corpus, and
   // inventing one is both a Google violation and a lie.
 });

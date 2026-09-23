@@ -151,7 +151,7 @@ export const POSTED_WITHIN_OPTIONS = [
 export const REMOTE_JOBS_PAGE_SIZE = 10;
 
 /**
- * What a user without an active Speed or Pro plan gets: two jobs they can open
+ * What a user without an active Smart or Pro plan gets: two jobs they can open
  * and scan, then a short blurred run underneath so the depth of the list is
  * visible. They don't page on scroll — the rest is behind the plan.
  */

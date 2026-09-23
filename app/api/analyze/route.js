@@ -1700,7 +1700,9 @@ export async function POST(req) {
         if (!skipUsageTracking && freeTrialUsed >= FREE_TRIAL_SCAN_LIMIT) {
           return NextResponse.json({
             success: false,
-            message: `You've used all ${FREE_TRIAL_SCAN_LIMIT} free scans. Please subscribe to a plan to continue.`,
+            message: `You've used ${
+              FREE_TRIAL_SCAN_LIMIT === 1 ? "your free scan" : `all ${FREE_TRIAL_SCAN_LIMIT} free scans`
+            }. Please subscribe to a plan to continue.`,
           });
         }
         usingFreeTrial = true;

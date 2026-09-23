@@ -15,7 +15,7 @@ import { FAQ_POOL, pickFaqs, type Faq } from "./faqs";
  * There is exactly one page per search intent. "resume tailoring tool",
  * "resume customization tool" and "customize resume for a job" are one intent
  * and share /resume-tailor rather than becoming three near-duplicate pages;
- * the broader "AI resume tailor" query belongs to the homepage. `primaryKeyword`
+ * the broader "job-specific resume tailoring" query belongs to the homepage. `primaryKeyword`
  * and `alsoTargets` document that split so the next page added can be checked
  * against it.
  */
@@ -46,7 +46,7 @@ export const SOLUTIONS = {
     h1: "Tailor your resume to a job description",
     description:
       "Upload your resume once, paste a job description, and SynCV rewrites it for that job using the experience you already have. Tailor, don't fabricate.",
-    // The homepage owns the broad "AI resume tailor" query; this page owns the
+    // The homepage owns the broad "job-specific resume tailoring" query; this page owns the
     // specific action. Splitting them this way is what stops the two pages
     // competing for the same result.
     primaryKeyword: "tailor resume to job description",
@@ -54,12 +54,11 @@ export const SOLUTIONS = {
       "resume tailoring tool",
       "resume customization tool",
       "customize resume for a job",
-      "job-specific resume",
       "targeted resume",
     ],
     isPrimaryProductPage: true,
     answer:
-      "SynCV is an AI resume tailor: it reads your resume and a job description together, then produces a version of your resume aimed at that specific job. It reorders bullets, rewrites phrasing and re-leads your summary and skills so the experience the employer cares about appears first. It works only from what is already on your resume — it does not add skills, employers or achievements you have not claimed.",
+      "SynCV is a job-specific resume tailor: it reads your resume and a job description together, then produces a version of your resume aimed at that one posting. It reorders bullets, rewrites phrasing and re-leads your summary and skills so the experience the employer cares about appears first. It works only from what is already on your resume — it does not add skills, employers or achievements you have not claimed.",
     sections: [
       {
         heading: "What resume tailoring actually changes",
@@ -142,7 +141,7 @@ export const SOLUTIONS = {
       "It does not apply to jobs for you or send anything on your behalf. You review and export the file yourself.",
     ],
     faqs: pickFaqs([
-      "whatIsAiResumeTailor",
+      "whatIsJobSpecificTailor",
       "doesSyncvInvent",
       "multipleJobs",
       "tailoringVsRewriting",
@@ -356,14 +355,13 @@ export const SOLUTIONS = {
 
   coverLetter: {
     path: "/ai-cover-letter-generator",
-    title: "AI Cover Letter Generator From Your Resume",
+    title: "Cover Letter Generator From Your Resume",
     h1: "Generate a cover letter from your actual resume",
     description:
       "A cover letter drafted from the experience on your resume and the requirements in the posting — specific enough to be worth reading, and true enough to defend.",
-    primaryKeyword: "AI cover letter generator",
+    primaryKeyword: "cover letter generator",
     alsoTargets: [
-      "cover letter generator",
-      "AI cover letter writer",
+      "cover letter writer",
       "cover letter for job application",
     ],
     answer:
@@ -396,7 +394,7 @@ export const SOLUTIONS = {
           "Read it aloud before sending. Anything that could appear in a letter to a different company should be cut or replaced.",
         ],
         callout:
-          "Cover letters are available on the Free and Pro plans. The Speed plan does not include them.",
+          "Cover letters are available on the Free and Pro plans. The Smart plan does not include them.",
       },
     ],
     limits: [
@@ -477,7 +475,7 @@ export const SOLUTIONS = {
           "Anyone running more than a handful of applications at once, particularly across different role types where the tailored versions genuinely diverge.",
         ],
         callout:
-          "The job tracker is included on the Free and Pro plans. The Speed plan does not include it.",
+          "The job tracker is included on the Free and Pro plans. The Smart plan does not include it.",
       },
     ],
     limits: [
@@ -495,7 +493,7 @@ export const SOLUTIONS = {
       {
         question: "Which plans include the job tracker?",
         answer:
-          "Free and Pro. The Speed plan is built around fast scanning and resume generation and does not include tracking.",
+          "Free and Pro. The Smart plan is built around fast scanning and resume generation and does not include tracking.",
       },
       FAQ_POOL.multipleJobs,
     ],

@@ -167,19 +167,19 @@ const DashboardPageContent = () => {
   }, [router]);
 
   // Base Resume is only available while the user can still scan — i.e. an active
-  // Speed/Pro plan, or free-trial scans remaining. Once the trial is over with
+  // Smart/Pro plan, or free-trial scans remaining. Once the trial is over with
   // no plan, it is hidden (like Job Tracker). Kept visible while loading to
   // avoid a flicker.
   const baseResumeLocked = !subscriptionLoading && !subscription.canScan;
   const isBaseResumeSection = (id) => id === "base-resume" || id === "profile";
 
-  // The full Remote Jobs list is a paid capability: an active Speed or Pro
+  // The full Remote Jobs list is a paid capability: an active Smart or Pro
   // plan. Free-trial users are not paid users here — they get the preview.
   // Held false while loading so the list can't flash open then lock.
   const hasRemoteJobsAccess =
     !subscriptionLoading &&
     subscription.hasActivePlan &&
-    ["speed", "pro"].includes(String(subscription.planKey || ""));
+    ["smart", "pro"].includes(String(subscription.planKey || ""));
 
   useEffect(() => {
     const sectionFromQuery = searchParams?.get("section");
@@ -262,7 +262,7 @@ const DashboardPageContent = () => {
     }
     // Reachable while a user still has a scan to spend — discovering a job is
     // what leads them into the scanner, so the trial keeps browsing. Two gates,
-    // not one: without an active Speed or Pro plan the list stops after the
+    // not one: without an active Smart or Pro plan the list stops after the
     // first few results, and once the free trial is spent it stops entirely,
     // since a job you can't scan is a dead end.
     if (activeSection === "remote-jobs") {

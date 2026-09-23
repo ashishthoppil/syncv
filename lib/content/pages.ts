@@ -1,5 +1,6 @@
 import type { ArticleSection } from "./articles";
 import { FAQ_POOL } from "./faqs";
+import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
 import { SUPPORT_EMAIL } from "@/lib/seo/site";
 
 /**
@@ -249,7 +250,7 @@ export const TERMS: StaticPage = {
     {
       heading: "Plans, billing and cancellation",
       body: [
-        "Free accounts include a fixed allowance of scans. Paid plans are billed monthly through Razorpay and renew automatically until cancelled.",
+        "Free accounts include a fixed allowance of scans. Paid plans are billed weekly, monthly, quarterly or yearly through Razorpay, depending on the billing period you choose, and renew automatically until cancelled.",
         "You can cancel at any time from account settings. Cancellation stops future renewals; your plan stays active until the end of the period you have paid for.",
         `Payments are non-refundable — see the refund policy. Prices can change, and we will give notice before a change affects an existing subscription.`,
       ],
@@ -288,7 +289,7 @@ export const REFUND_POLICY: StaticPage = {
   description:
     "SynCV does not offer refunds. Here is why, what the free allowance is for, and what we will do if something genuinely does not work.",
   answer:
-    "SynCV does not issue refunds on subscription payments. Every account includes free scans before any payment is taken, so you can judge the output on your own resume before subscribing. You can cancel at any time to stop future renewals.",
+    `SynCV does not issue refunds on subscription payments. Every account includes ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")} before any payment is taken, so you can judge the output on your own resume before subscribing. You can cancel at any time to stop future renewals.`,
   updated: "14 September 2026",
   sections: [
     {

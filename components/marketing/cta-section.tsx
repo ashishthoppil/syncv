@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
+import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
 import Link from "next/link";
 
 /**
@@ -27,7 +27,7 @@ export function CtaSection({
           <Link href={href}>{action}</Link>
         </Button>
         <span className="text-sm text-muted-foreground">
-          {FREE_PLAN_SCAN_LIMIT} free scans · no credit card
+          {formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")} · no credit card
         </span>
       </div>
     </section>

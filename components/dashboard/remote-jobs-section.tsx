@@ -60,7 +60,7 @@ const EMPTY_FILTERS: Filters = {
 type RemoteJobsSectionProps = {
   userId?: string;
   /**
-   * True only for an active Speed or Pro plan. Defaults to false so a missing
+   * True only for an active Smart or Pro plan. Defaults to false so a missing
    * prop locks the list rather than giving it away — the gate fails closed.
    */
   hasFullAccess?: boolean;
@@ -235,7 +235,7 @@ export const RemoteJobsSection = ({
   /** Header is on screen from the list, but the JD is still in flight. */
   const detailPending = Boolean(activeJobId) && !selectedJob && !linkedJobError;
 
-  // Speed/Pro see the whole list; everyone else gets three they can open and a
+  // Smart/Pro see the whole list; everyone else gets three they can open and a
   // blurred run beneath.
   const openJobs = useMemo(
     () => (hasFullAccess ? jobs : jobs.slice(0, FREE_PLAN_VISIBLE_JOBS)),
@@ -866,7 +866,7 @@ const UpgradePrompt = ({
       Unlock every remote job
     </h2>
     <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-      Your free plan shows the first {FREE_PLAN_VISIBLE_JOBS}. Speed and Pro
+      Your free plan shows the first {FREE_PLAN_VISIBLE_JOBS}. Smart and Pro
       open the full list, so you can keep scrolling and scan any role against
       your resume.
     </p>

@@ -1,6 +1,11 @@
 import Razorpay from "razorpay";
 import { NextResponse } from "next/server";
-import { PLAN_BY_PLAN_ID, PLAN_BY_KEY } from "@/lib/subscription-plans";
+import {
+  BILLING_PERIOD_BY_KEY,
+  DEFAULT_BILLING_PERIOD,
+  PLAN_BY_KEY,
+  resolvePlanSelection,
+} from "@/lib/subscription-plans";
 import { getSupabaseAdminClient } from "@/lib/server/subscriptions";
 
 export async function POST(request) {
@@ -8,15 +13,35 @@ export async function POST(request) {
     const body = await request.json();
     const userId = body?.userId;
     const planKey = body?.planKey;
-    const planId = body?.planId;
+    const billingPeriod = body?.billingPeriod || DEFAULT_BILLING_PERIOD;
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const selectedPlan = PLAN_BY_PLAN_ID[planId] || PLAN_BY_KEY[planKey];
-    if (!selectedPlan) {
+    // Own keys only: these come straight from the request body.
+    const selectedPlan = Object.hasOwn(PLAN_BY_KEY, planKey) ? PLAN_BY_KEY[planKey] : null;
+    const selectedPeriod = Object.hasOwn(BILLING_PERIOD_BY_KEY, billingPeriod)
+      ? BILLING_PERIOD_BY_KEY[billingPeriod]
+      : null;
+    if (!selectedPlan || !selectedPeriod) {
       return NextResponse.json({ error: "Invalid plan selected." }, { status: 400 });
+    }
+
+    // The Razorpay plan is looked up here, never taken from the client: the id
+    // is what sets the amount charged.
+    const selectedPlanId = selectedPlan.planIds[selectedPeriod.key];
+    if (!selectedPlanId) {
+      console.error("[razorpay/order] no Razorpay plan id configured", {
+        planKey: selectedPlan.key,
+        billingPeriod: selectedPeriod.key,
+      });
+      return NextResponse.json(
+        {
+          error: `${selectedPeriod.label} billing for ${selectedPlan.name} isn't available yet. Please pick another billing period.`,
+        },
+        { status: 503 }
+      );
     }
 
     const keyId = process.env.RAZORPAY_KEY_ID;
@@ -42,10 +67,17 @@ export async function POST(request) {
 
     if (existingError) throw existingError;
 
+    // Same plan on a different billing period is a switch, not a duplicate. A
+    // row whose period can't be told (a plan id no longer configured) is
+    // treated as a duplicate of any period rather than risk a second charge.
+    const existingSelection = resolvePlanSelection({
+      planId: existingSubscription?.plan_id,
+      planKey: existingSubscription?.plan_key,
+    });
     if (
       existingSubscription?.status === "active" &&
-      (existingSubscription?.plan_id === selectedPlan.planId ||
-        existingSubscription?.plan_key === selectedPlan.key)
+      existingSelection?.plan.key === selectedPlan.key &&
+      (!existingSelection.billingPeriod || existingSelection.billingPeriod === selectedPeriod.key)
     ) {
       return NextResponse.json({ error: "Subscription already active." }, { status: 409 });
     }
@@ -56,7 +88,7 @@ export async function POST(request) {
     if (
       existingSubscription?.status === "pending" &&
       existingSubscription?.razorpay_subscription_id &&
-      existingSubscription?.plan_id === selectedPlan.planId
+      existingSubscription?.plan_id === selectedPlanId
     ) {
       let existingRazorpay = null;
       try {
@@ -69,7 +101,7 @@ export async function POST(request) {
 
       if (
         existingRazorpay?.short_url &&
-        existingRazorpay?.plan_id === selectedPlan.planId &&
+        existingRazorpay?.plan_id === selectedPlanId &&
         existingRazorpay?.status === "created"
       ) {
         return NextResponse.json({
@@ -80,8 +112,8 @@ export async function POST(request) {
     }
 
     const created = await razorpay.subscriptions.create({
-      plan_id: selectedPlan.planId,
-      total_count: 12,
+      plan_id: selectedPlanId,
+      total_count: selectedPeriod.totalCount,
       customer_notify: 0,
     });
 
@@ -95,7 +127,7 @@ export async function POST(request) {
     const subscriptionPayload = {
       user_id: userId,
       plan_key: selectedPlan.key,
-      plan_id: selectedPlan.planId,
+      plan_id: selectedPlanId,
       status: "pending",
       razorpay_subscription_id: created.id,
       updated_at: new Date().toISOString(),

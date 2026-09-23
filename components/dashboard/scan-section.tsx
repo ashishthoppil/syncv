@@ -553,8 +553,8 @@ export const ScanSection = ({
       ],
     },
   ];
-  const isSpeedPlan = planKey === "speed";
-  const shouldAllowCoverLetter = !isSpeedPlan && allowsCoverLetter;
+  const isSmartPlan = planKey === "smart";
+  const shouldAllowCoverLetter = !isSmartPlan && allowsCoverLetter;
   const selectedTemplateConfig = getResumeTemplateConfig(selectedTemplate);
   const selectedTemplateTheme = resolveResumeTemplateTheme(
     selectedTemplate,
@@ -721,7 +721,7 @@ export const ScanSection = ({
         }
 
         // Gate on the server-derived entitlement, not on `planKey`, which falls
-        // back to the latest *inactive* subscription — a lapsed Speed user is a
+        // back to the latest *inactive* subscription — a lapsed Smart user is a
         // free user and must still get their scans saved.
         if (allowsJobTracker) {
           // Save to job tracker
@@ -1247,7 +1247,7 @@ export const ScanSection = ({
 
   /**
    * Documents this plan produces, and which of them are still un-downloaded.
-   * Speed has no cover letter, and a guest cannot download at all — prompting
+   * Smart has no cover letter, and a guest cannot download at all — prompting
    * either of them to "download first" would be a dead end.
    */
   const requiredDownloads: TailoredDocType[] = guestTrial

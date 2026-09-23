@@ -540,8 +540,8 @@ export const CreateCvSection = () => {
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Create a CV from scratch</h2>
           <p className="mt-1 text-sm text-slate-500">
-            No resume yet? Fill in your details and let AI help you polish it into an
-            ATS-ready PDF.
+            No resume yet? Fill in your details and we&apos;ll help you polish it into
+            an ATS-ready PDF.
           </p>
         </div>
         <Button className="rounded-md" onClick={downloadPdf} disabled={downloading}>

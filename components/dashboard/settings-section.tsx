@@ -1,8 +1,16 @@
 "use client";
 
+import { BillingPeriodTabs, PlanPrice } from "@/components/plan-billing";
 import { Button } from "@/components/ui/button";
 import { TapTooltip } from "@/components/ui/tooltip";
-import { ALL_PLANS, SUBSCRIPTION_PLANS } from "@/lib/subscription-plans";
+import {
+  ALL_PLANS,
+  BILLING_PERIOD_BY_KEY,
+  DEFAULT_BILLING_PERIOD,
+  PLAN_BY_KEY,
+  SUBSCRIPTION_PLANS,
+  resolvePlanSelection,
+} from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
@@ -30,6 +38,8 @@ type SubscriptionView = {
   hasActivePlan: boolean;
   planKey: string | null;
   planName: string | null;
+  /** Null when there is no subscription, or its Razorpay plan id is unknown. */
+  billingPeriod: string | null;
   status: string;
   subscriptionId: string | null;
 };
@@ -43,6 +53,7 @@ type SubscriptionRecord = {
   planKey?: string | null;
   planId?: string | null;
   planName?: string | null;
+  billingPeriod?: string | null;
   subscriptionId?: string | null;
 };
 
@@ -55,6 +66,7 @@ const initialSubscription: SubscriptionView = {
   hasActivePlan: false,
   planKey: null,
   planName: null,
+  billingPeriod: null,
   status: "none",
   subscriptionId: null,
 };
@@ -76,6 +88,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionView>(initialSubscription);
   const [paymentPollingPlanName, setPaymentPollingPlanName] = useState<string | null>(null);
+  const [billingPeriod, setBillingPeriod] = useState<string>(DEFAULT_BILLING_PERIOD);
   const pollingIntervalRef = useRef<number | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -117,9 +130,11 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   const mapSubscriptionView = (record: SubscriptionRecord | null): SubscriptionView => {
     if (!record) return initialSubscription;
 
-    const matchedPlan =
-      SUBSCRIPTION_PLANS.find((plan) => plan.planId === (record.plan_id || record.planId)) ||
-      SUBSCRIPTION_PLANS.find((plan) => plan.key === (record.plan_key || record.planKey));
+    const selection = resolvePlanSelection({
+      planId: record.plan_id || record.planId || "",
+      planKey: record.plan_key || record.planKey || "",
+    });
+    const matchedPlan = selection?.plan;
     const normalizedStatus = String(record.status || "none").toLowerCase();
     const hasActivePlan =
       typeof record.hasActivePlan === "boolean"
@@ -130,6 +145,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
       hasActivePlan,
       planKey: matchedPlan?.key || record.plan_key || record.planKey || null,
       planName: matchedPlan?.name || record.planName || null,
+      billingPeriod: selection?.billingPeriod || record.billingPeriod || null,
       status: normalizedStatus,
       subscriptionId: record.razorpay_subscription_id || record.subscriptionId || null,
     };
@@ -180,6 +196,13 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
 
     loadSettings();
   }, [loadSubscriptionStatus]);
+
+  // Open the plan grid on the period the user already pays for, once known.
+  useEffect(() => {
+    if (subscription.hasActivePlan && subscription.billingPeriod) {
+      setBillingPeriod(subscription.billingPeriod);
+    }
+  }, [subscription.hasActivePlan, subscription.billingPeriod]);
 
   const handleSaveSettings = async () => {
     const {
@@ -260,7 +283,8 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
   const handleSelectPlan = async (planKey: string) => {
     // Only paid plans go through checkout; the free plan has no Razorpay plan.
     const plan = SUBSCRIPTION_PLANS.find((item) => item.key === planKey);
-    if (!plan) {
+    const period = BILLING_PERIOD_BY_KEY[billingPeriod];
+    if (!plan || !period) {
       toast.error("Invalid plan selected.");
       return;
     }
@@ -278,7 +302,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
         body: JSON.stringify({
           userId: currentUserId,
           planKey: plan.key,
-          planId: plan.planId,
+          billingPeriod: period.key,
         }),
       });
       const json = await response.json();
@@ -290,7 +314,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
       }
 
       startedPolling = true;
-      setPaymentPollingPlanName(plan.name);
+      setPaymentPollingPlanName(`${plan.name} (${period.label})`);
       toast.info("Complete payment in Razorpay. We'll activate your plan automatically.");
     } catch (error: unknown) {
       const message =
@@ -542,7 +566,14 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
               {subscriptionLoading
                 ? "Loading…"
                 : subscription.hasActivePlan
-                ? subscription.planName
+                ? [
+                    subscription.planName,
+                    subscription.billingPeriod
+                      ? BILLING_PERIOD_BY_KEY[subscription.billingPeriod]?.label
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
                 : "Free"}
             </span>
             {!subscriptionLoading && subscription.status !== "none" ? (
@@ -553,22 +584,35 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
           </p>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-6 flex justify-center sm:mt-5">
+          <BillingPeriodTabs value={billingPeriod} onChange={setBillingPeriod} />
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {ALL_PLANS.map((plan) => {
+            const activePlanKey = subscription.hasActivePlan ? subscription.planKey : null;
             // The free plan is the fallback for anyone without an active paid
             // subscription, so it is "current" exactly when no plan is active.
+            // A paid card is current on the tab of the period being paid for —
+            // or on every tab when that period can't be told, so it is never
+            // offered a second time.
             const isCurrent = plan.isFree
               ? !subscription.hasActivePlan
-              : subscription.planKey === plan.key && subscription.hasActivePlan;
+              : activePlanKey === plan.key &&
+                (!subscription.billingPeriod || subscription.billingPeriod === billingPeriod);
             let cta = `Choose ${plan.name} plan`;
             if (isCurrent) {
               cta = "Current plan";
             } else if (plan.isFree) {
               cta = "Included with every account";
-            } else if (subscription.planKey === "speed" && plan.key === "pro") {
-              cta = "Upgrade to Pro";
-            } else if (subscription.planKey === "pro" && plan.key === "speed") {
-              cta = "Switch to Speed";
+            } else if (activePlanKey === plan.key) {
+              cta = `Switch to ${BILLING_PERIOD_BY_KEY[billingPeriod]?.label.toLowerCase()} billing`;
+            } else if (activePlanKey && activePlanKey !== plan.key) {
+              // Plans are listed cheapest first, so a later one is an upgrade.
+              const rank = (key: string) =>
+                SUBSCRIPTION_PLANS.findIndex((item) => item.key === PLAN_BY_KEY[key]?.key);
+              const isUpgrade = rank(plan.key) > rank(activePlanKey);
+              cta = isUpgrade ? `Upgrade to ${plan.name}` : `Switch to ${plan.name}`;
             }
 
             return (
@@ -588,14 +632,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
                 ) : null}
                 <h3 className="text-base font-semibold text-slate-900">{plan.name}</h3>
                 <p className="mt-1 text-sm text-slate-500">{plan.description}</p>
-                <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-3xl font-bold text-slate-900">
-                    {plan.isFree ? "Free" : `₹${plan.priceInr}`}
-                  </span>
-                  <span className="text-xs font-medium text-slate-500">
-                    {plan.isFree ? "to start" : "/ month"}
-                  </span>
-                </div>
+                <PlanPrice plan={plan} billingPeriod={billingPeriod} />
                 <ul className="mt-4 space-y-2.5 text-sm">
                   {plan.features.map((feature: PlanFeature) => {
                     const isUnavailable = isUnavailableFeature(feature);
