@@ -12,6 +12,7 @@ import {
   emptyBaseResumeDraft,
   extractedToDraft,
 } from "@/components/dashboard/resume-form";
+import { authedFetch } from "@/lib/authed-fetch";
 
 export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
@@ -54,7 +55,7 @@ export default function OnboardingPage() {
     formData.append("extractBaseResume", "true");
     setParsing(true);
     try {
-      const response = await fetch("/api/scan", { method: "POST", body: formData });
+      const response = await authedFetch("/api/scan", { method: "POST", body: formData });
       const data = await response.json();
       if (!data.success || !data.baseResume) {
         toast.error(data.message || "We couldn't read that resume. Try another file.");

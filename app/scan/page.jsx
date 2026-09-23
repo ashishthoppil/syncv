@@ -25,6 +25,8 @@ import {
   ProductTourProvider,
   TourSectionSignal,
 } from "@/components/onboarding/product-tour";
+import { describeScanBalance } from "@/lib/subscription-plans";
+import { OptimizationMeter } from "@/components/dashboard/optimization-meter";
 
 // "create-cv" and legacy "profile" are kept in the map so their routes still
 // resolve, but only the entries in DASHBOARD_SECTIONS appear in the sidebar.
@@ -67,6 +69,7 @@ const DashboardPageContent = () => {
     status: "none",
     allowsJobTracker: false,
     allowsCoverLetter: false,
+    unlimitedScans: false,
     weeklyScanLimit: 0,
     scansUsedThisWeek: 0,
     scansRemainingThisWeek: 0,
@@ -74,6 +77,7 @@ const DashboardPageContent = () => {
     freeTrialUsed: 0,
     freeTrialRemaining: 0,
     canScan: false,
+    optimizationUsage: null,
   });
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   // Set when a job is picked in Remote Jobs; the scan form seeds itself from it
@@ -99,6 +103,7 @@ const DashboardPageContent = () => {
           status: String(subscriptionData.status || "none"),
           allowsJobTracker: Boolean(subscriptionData.allowsJobTracker),
           allowsCoverLetter: Boolean(subscriptionData.allowsCoverLetter),
+          unlimitedScans: Boolean(subscriptionData.unlimitedScans),
           weeklyScanLimit: Number(subscriptionData.weeklyScanLimit || 0),
           scansUsedThisWeek: Number(subscriptionData.scansUsedThisWeek || 0),
           scansRemainingThisWeek: Number(subscriptionData.scansRemainingThisWeek || 0),
@@ -106,6 +111,8 @@ const DashboardPageContent = () => {
           freeTrialUsed: Number(subscriptionData.freeTrialUsed || 0),
           freeTrialRemaining: Number(subscriptionData.freeTrialRemaining || 0),
           canScan: Boolean(subscriptionData.canScan),
+          // Paid plan only: the day's optimizations and any break, for the header.
+          optimizationUsage: subscriptionData.optimizationUsage || null,
         });
       } else if (!silent) {
         setSubscription({
@@ -115,6 +122,7 @@ const DashboardPageContent = () => {
           status: "none",
           allowsJobTracker: false,
           allowsCoverLetter: false,
+          unlimitedScans: false,
           weeklyScanLimit: 0,
           scansUsedThisWeek: 0,
           scansRemainingThisWeek: 0,
@@ -122,6 +130,7 @@ const DashboardPageContent = () => {
           freeTrialUsed: 0,
           freeTrialRemaining: 0,
           canScan: false,
+          optimizationUsage: null,
         });
       }
     } catch (error) {
@@ -135,6 +144,7 @@ const DashboardPageContent = () => {
           status: "none",
           allowsJobTracker: false,
           allowsCoverLetter: false,
+          unlimitedScans: false,
           weeklyScanLimit: 0,
           scansUsedThisWeek: 0,
           scansRemainingThisWeek: 0,
@@ -142,6 +152,7 @@ const DashboardPageContent = () => {
           freeTrialUsed: 0,
           freeTrialRemaining: 0,
           canScan: false,
+          optimizationUsage: null,
         });
       }
     } finally {
@@ -167,19 +178,16 @@ const DashboardPageContent = () => {
   }, [router]);
 
   // Base Resume is only available while the user can still scan — i.e. an active
-  // Speed/Pro plan, or free-trial scans remaining. Once the trial is over with
+  // Pro plan, or free-trial scans remaining. Once the trial is over with
   // no plan, it is hidden (like Job Tracker). Kept visible while loading to
   // avoid a flicker.
   const baseResumeLocked = !subscriptionLoading && !subscription.canScan;
   const isBaseResumeSection = (id) => id === "base-resume" || id === "profile";
 
-  // The full Remote Jobs list is a paid capability: an active Speed or Pro
-  // plan. Free-trial users are not paid users here — they get the preview.
+  // The full Remote Jobs list is a paid capability: an active Pro
+  // subscription. Free-trial users are not paid users here — they get the preview.
   // Held false while loading so the list can't flash open then lock.
-  const hasRemoteJobsAccess =
-    !subscriptionLoading &&
-    subscription.hasActivePlan &&
-    ["speed", "pro"].includes(String(subscription.planKey || ""));
+  const hasRemoteJobsAccess = !subscriptionLoading && subscription.hasActivePlan;
 
   useEffect(() => {
     const sectionFromQuery = searchParams?.get("section");
@@ -242,10 +250,10 @@ const DashboardPageContent = () => {
       return (
         <ScanSection
           subscriptionLocked={subscriptionLocked}
-          planKey={subscription.planKey}
           allowsCoverLetter={subscription.allowsCoverLetter}
           allowsJobTracker={subscription.allowsJobTracker}
           onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
+          optimizationUsage={subscription.hasActivePlan ? subscription.optimizationUsage : null}
           prefill={scanPrefill}
           onPrefillConsumed={() => setScanPrefill(null)}
         />
@@ -262,7 +270,7 @@ const DashboardPageContent = () => {
     }
     // Reachable while a user still has a scan to spend — discovering a job is
     // what leads them into the scanner, so the trial keeps browsing. Two gates,
-    // not one: without an active Speed or Pro plan the list stops after the
+    // not one: without an active Pro plan the list stops after the
     // first few results, and once the free trial is spent it stops entirely,
     // since a job you can't scan is a dead end.
     if (activeSection === "remote-jobs") {
@@ -286,10 +294,10 @@ const DashboardPageContent = () => {
     return (
       <ScanSection
         subscriptionLocked={subscriptionLocked}
-        planKey={subscription.planKey}
         allowsCoverLetter={subscription.allowsCoverLetter}
         allowsJobTracker={subscription.allowsJobTracker}
         onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
+        optimizationUsage={subscription.hasActivePlan ? subscription.optimizationUsage : null}
       />
     );
   };
@@ -313,20 +321,12 @@ const DashboardPageContent = () => {
     if (section.id === "base-resume") return !baseResumeLocked;
     return true;
   });
-  // Paid users see their weekly balance; free-trial users see trial scans left.
-  const scansRemaining = subscription.hasActivePlan
-    ? Number(subscription.scansRemainingThisWeek || 0)
-    : Number(subscription.freeTrialRemaining || 0);
-  const scansRemainingLabel = subscriptionLoading
-    ? "Loading scans"
-    : subscription.hasActivePlan
-    ? `${scansRemaining} scan${scansRemaining === 1 ? "" : "s"} left`
-    : `${scansRemaining} free scan${scansRemaining === 1 ? "" : "s"} left`;
+  // Pro sees "Unlimited scans"; free-trial users see trial scans left.
+  const scanBalance = describeScanBalance(subscription);
+  const scansRemainingLabel = subscriptionLoading ? "Loading scans" : scanBalance.label;
   // The app bar is title + balance + sign-out on a 360px row, so the badge
-  // drops to a numeric form on phones and keeps the full sentence from `sm` up.
-  const scansRemainingShortLabel = subscriptionLoading
-    ? "…"
-    : `${scansRemaining} left`;
+  // drops to a short form on phones and keeps the full sentence from `sm` up.
+  const scansRemainingShortLabel = subscriptionLoading ? "…" : scanBalance.short;
 
   const dashboard = (
     <div className="flex min-h-screen bg-slate-50">
@@ -356,13 +356,25 @@ const DashboardPageContent = () => {
               </span>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <Badge
-                variant="outline"
-                className="whitespace-nowrap border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 sm:px-3 sm:text-xs"
-              >
-                <span className="sm:hidden">{scansRemainingShortLabel}</span>
-                <span className="hidden sm:inline">{scansRemainingLabel}</span>
-              </Badge>
+              {/* Paid users: optimizations today and any break timer. Scans
+                  are unlimited on the paid plan, so there's no balance to show.
+                  Everyone else keeps the scans-left badge. */}
+              {!subscriptionLoading &&
+              subscription.hasActivePlan &&
+              subscription.optimizationUsage ? (
+                <OptimizationMeter
+                  usage={subscription.optimizationUsage}
+                  onExpire={() => refreshSubscription(user?.id, { silent: true })}
+                />
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="whitespace-nowrap border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 sm:px-3 sm:text-xs"
+                >
+                  <span className="sm:hidden">{scansRemainingShortLabel}</span>
+                  <span className="hidden sm:inline">{scansRemainingLabel}</span>
+                </Badge>
+              )}
               <Button
                 variant="ghost"
                 size="sm"

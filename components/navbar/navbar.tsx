@@ -9,11 +9,12 @@ import { useEffect, useState } from "react";
 import { LogInIcon, LogOutIcon, User2Icon } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { toast } from "react-toastify";
+import { describeScanBalance } from "@/lib/subscription-plans";
 
 const Navbar = ({ isHome = false }) => {
   const router = useRouter();
   const [authenticated, setAuthenticated] = useState(false)
-  const [scansRemaining, setScansRemaining] = useState<number | null>(null)
+  const [scansRemainingLabel, setScansRemainingLabel] = useState("")
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -25,25 +26,26 @@ const Navbar = ({ isHome = false }) => {
       if (error) {
         console.error('Error fetching session:', error.message)
         setAuthenticated(false)
-        setScansRemaining(null)
+        setScansRemainingLabel("")
         return
       }
 
       setAuthenticated(Boolean(session))
 
       if (!session?.user?.id) {
-        setScansRemaining(null)
+        setScansRemainingLabel("")
         return
       }
 
       try {
         const response = await fetch(`/api/subscription/status?userId=${session.user.id}`)
         const json = await response.json()
-        const remaining = Number(json?.data?.scansRemainingThisWeek || 0)
-        setScansRemaining(response.ok ? remaining : 0)
+        // Same wording as the dashboard badge: "Unlimited scans" on Pro, the
+        // trial balance otherwise. Nothing, rather than a wrong number, on error.
+        setScansRemainingLabel(response.ok ? describeScanBalance(json?.data).label : "")
       } catch (scanError) {
         console.error('Error fetching scan balance:', scanError)
-        setScansRemaining(null)
+        setScansRemainingLabel("")
       }
     }
     checkAuth()
@@ -56,17 +58,13 @@ const Navbar = ({ isHome = false }) => {
       return;
     }
     setAuthenticated(false);
-    setScansRemaining(null);
+    setScansRemainingLabel("");
     toast.info('You have been logged out');
     setTimeout(() => {
       router.push('/');
     }, 2000)
   }
 
-  const scansRemainingLabel =
-    scansRemaining === null
-      ? ""
-      : `${scansRemaining} scan${scansRemaining === 1 ? "" : "s"} left`;
   
   return (
     // The top offset carries the status-bar inset so the floating bar clears the

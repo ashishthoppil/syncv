@@ -22,11 +22,12 @@ import {
   webPageNode,
 } from "@/lib/seo/schema";
 import { absoluteUrl } from "@/lib/seo/site";
+import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
 
 const PATH = "/";
-const TITLE = "AI Resume Tailor – Tailor Your Resume to Any Job";
+const TITLE = "Job-Specific Resume Tailoring – Match Any Job Description";
 const DESCRIPTION =
-  "Tailor your resume to every job in 2 clicks. SynCV uses AI to highlight your relevant experience without inventing skills, experience, or achievements. Try 3 scans free.";
+  `Tailor your resume to every job in 2 clicks. SynCV leads with the experience each job asks for — no invented skills, experience, or achievements. Try ${formatScanCount(FREE_PLAN_SCAN_LIMIT)} free.`;
 
 export const metadata = buildMetadata({
   title: TITLE,
@@ -44,7 +45,7 @@ export const metadata = buildMetadata({
  * a structured-data violation.
  */
 const homepageFaqs = [
-  FAQ_POOL.whatIsAiResumeTailor,
+  FAQ_POOL.whatIsJobSpecificTailor,
   FAQ_POOL.doesSyncvInvent,
   FAQ_POOL.multipleJobs,
   FAQ_POOL.tailoringVsRewriting,

@@ -448,7 +448,7 @@ export const ARTICLES: Article[] = [
       "how-to-optimize-a-resume-for-ats",
     ],
     productLinks: [
-      { label: "AI resume tailoring bounded by your real experience", href: "/resume-tailor" },
+      { label: "Job-specific resume tailoring bounded by your real experience", href: "/resume-tailor" },
       { label: "see what a job description is really asking for", href: "/job-description-analyzer" },
     ],
   },

@@ -1,4 +1,9 @@
-import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
+import {
+  FAIR_USE_SCANS_PER_DAY,
+  FAIR_USE_SCANS_PER_HOUR,
+  FREE_PLAN_SCAN_LIMIT,
+  formatScanCount,
+} from "@/lib/subscription-plans";
 
 export type Faq = { question: string; answer: string };
 
@@ -16,10 +21,10 @@ export const FAQ_POOL = {
     answer:
       "Resume tailoring is editing an existing resume so that the experience most relevant to one specific job appears first, in the words that job posting uses. Nothing is added: the same roles, dates and achievements stay on the page, but the emphasis, ordering and phrasing change to match what the employer asked for.",
   },
-  whatIsAiResumeTailor: {
-    question: "What is an AI resume tailor?",
+  whatIsJobSpecificTailor: {
+    question: "What is job-specific resume tailoring?",
     answer:
-      "An AI resume tailor reads your resume and a job description together, works out which of your existing experience matters most for that role, and rewrites the resume to lead with it. SynCV does this in two clicks: upload your resume once, paste a job description, and get a version aimed at that posting.",
+      "Job-specific resume tailoring reads your resume and a job description together, works out which of your existing experience matters most for that role, and rewrites the resume to lead with it. SynCV does this in two clicks: upload your resume once, paste a job description, and get a version aimed at that posting.",
   },
   doesSyncvInvent: {
     question: "Does SynCV invent experience or skills?",
@@ -28,7 +33,7 @@ export const FAQ_POOL = {
   },
   freeScans: {
     question: "How many free scans do I get?",
-    answer: `Every account includes ${FREE_PLAN_SCAN_LIMIT} free resume scans in total, with no card required. Paid plans refill scans weekly — Speed includes 12 per week and Pro includes 50 per week.`,
+    answer: `Every account includes ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free resume")} to start, with no card required; it does not refill. Pro has no scan limit, whether you pay weekly, monthly or quarterly — only fair-use ceilings of ${FAIR_USE_SCANS_PER_HOUR} scans an hour and ${FAIR_USE_SCANS_PER_DAY} a day.`,
   },
   multipleJobs: {
     question: "Can I tailor the same resume to multiple jobs?",
@@ -73,12 +78,12 @@ export const FAQ_POOL = {
   payments: {
     question: "What payment methods do you accept?",
     answer:
-      "Payments are processed through Razorpay. We plan to add more providers.",
+      "Payments are processed by Dodo Payments, our merchant of record. The checkout page shows the payment methods available where you are.",
   },
   refunds: {
     question: "Do you offer refunds?",
     answer:
-      "We do not offer refunds. Every account gets free scans before any payment so you can judge the output first, and support will help with anything that does not work as described.",
+      `We do not offer refunds. Every account gets ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")} before any payment so you can judge the output first, and support will help with anything that does not work as described.`,
   },
   support: {
     question: "How do I contact support?",

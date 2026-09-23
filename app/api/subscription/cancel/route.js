@@ -1,50 +1,33 @@
-import Razorpay from "razorpay";
 import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/server/auth";
+import { cancelDodoSubscription } from "@/lib/server/dodo-payments";
 import {
   getActiveSubscriptionForUser,
   getLatestSubscriptionForUser,
   getSupabaseAdminClient,
 } from "@/lib/server/subscriptions";
 
-const getRazorpayClient = () => {
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
-  if (!keyId || !keySecret) {
-    throw new Error("Missing Razorpay API credentials.");
-  }
-  return new Razorpay({
-    key_id: keyId,
-    key_secret: keySecret,
-  });
-};
-
-const cancelRazorpaySubscription = async (subscriptionId, razorpay) => {
-  try {
-    await razorpay.subscriptions.cancel(subscriptionId, { cancel_at_cycle_end: 0 });
-    return;
-  } catch (error) {
-    const description =
-      error?.error?.description || error?.description || error?.message || String(error);
-    if (/already cancelled|already completed|not active/i.test(description)) {
-      return;
-    }
-    throw new Error(`Razorpay cancel failed: ${description}`);
-  }
-};
-
+/**
+ * Cancels the caller's subscription at the end of the period they have paid
+ * for, as the terms promise. The plan stays active until then; Dodo sends
+ * subscription.cancelled when it ends, and app/api/dodo/webhook records it.
+ */
 export async function POST(request) {
   try {
-    const { userId } = await request.json();
-    if (!userId) {
+    // From the access token, never the body: otherwise anyone could cancel
+    // anyone's subscription by posting their user id.
+    const user = await getAuthenticatedUser(request);
+    if (!user) {
       return NextResponse.json(
-        { success: false, message: "userId is required." },
-        { status: 400 }
+        { success: false, message: "Please log in again." },
+        { status: 401 }
       );
     }
 
     const supabase = getSupabaseAdminClient();
-    const activeSubscription = await getActiveSubscriptionForUser(supabase, userId);
-    const latestSubscription = activeSubscription || (await getLatestSubscriptionForUser(supabase, userId));
+    const activeSubscription = await getActiveSubscriptionForUser(supabase, user.id);
+    const latestSubscription =
+      activeSubscription || (await getLatestSubscriptionForUser(supabase, user.id));
 
     if (!latestSubscription) {
       return NextResponse.json(
@@ -53,27 +36,24 @@ export async function POST(request) {
       );
     }
 
-    if (latestSubscription.razorpay_subscription_id) {
-      const razorpay = getRazorpayClient();
-      await cancelRazorpaySubscription(latestSubscription.razorpay_subscription_id, razorpay);
+    if (!latestSubscription.dodo_subscription_id) {
+      // Bought through Razorpay, before the move to Dodo. It can only be
+      // stopped from the Razorpay dashboard, so marking it cancelled here would
+      // leave it charging.
+      if (activeSubscription) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "This subscription was set up with our previous payment provider. Contact us from the Help Center and we'll cancel it for you.",
+          },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({ success: true });
     }
 
-    const now = new Date().toISOString();
-    const { error: updateError } = await supabase
-      .from("subscriptions")
-      .update({
-        status: "cancelled",
-        canceled_at: now,
-        updated_at: now,
-      })
-      .eq("id", latestSubscription.id);
-    if (updateError) throw updateError;
-
-    await supabase.from("profiles").upsert({
-      id: userId,
-      plan: null,
-      updated_at: now,
-    });
+    await cancelDodoSubscription(latestSubscription.dodo_subscription_id, { atPeriodEnd: true });
 
     return NextResponse.json({ success: true });
   } catch (error) {

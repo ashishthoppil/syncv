@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
+import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
 import { ArrowRight, CircleCheck } from "lucide-react";
 import Link from "next/link";
 import type { CSSProperties } from "react";
@@ -117,7 +117,7 @@ const Hero = () => {
               <Link href="#pricing">View Plans</Link>
             </Button> */}
             <p className="text-sm text-ink-soft">
-              {FREE_PLAN_SCAN_LIMIT} free scans · PDF or Word resumes
+              {formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")} · PDF or Word resumes
             </p>
           </div>
         </div>

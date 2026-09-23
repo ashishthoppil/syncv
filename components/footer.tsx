@@ -24,7 +24,7 @@ const linkGroups = [
       { title: "Resume tailoring", href: "/resume-tailor" },
       { title: "ATS resume checker", href: "/ats-resume-checker" },
       { title: "Job description analyzer", href: "/job-description-analyzer" },
-      { title: "AI cover letter generator", href: "/ai-cover-letter-generator" },
+      { title: "Cover letter generator", href: "/ai-cover-letter-generator" },
       { title: "Job application tracker", href: "/job-application-tracker" },
     ],
   },

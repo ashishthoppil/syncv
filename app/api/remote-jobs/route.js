@@ -49,7 +49,7 @@ export async function GET(req) {
         success: false,
         locked: true,
         message:
-          "Your free scans are used up. Subscribe to a plan to browse remote jobs.",
+          "Your free trial is used up. Subscribe to a plan to browse remote jobs.",
       });
     }
 

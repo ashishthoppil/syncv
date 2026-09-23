@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { AlertCircleIcon, BriefcaseBusiness, Building2, CalendarPlusIcon, FileText, GithubIcon, Globe, Image as ImageIcon, LinkedinIcon, Loader2, Mail, MapIcon, PhoneCall, SaveIcon, UploadCloud, User2, User2Icon, UserCircle2Icon } from "lucide-react";
 import { ChangeEvent, ComponentType, FormEvent, ReactNode, useEffect, useState } from "react";
 import { toast } from "react-toastify";
+import { authedFetch } from "@/lib/authed-fetch";
 
 const FieldLabel = ({
   icon: Icon,
@@ -317,7 +318,7 @@ export const ProfileSection = ({ user }: ProfileSectionProps) => {
     formData.append("extractProfile", "true");
     setParsingResume(true);
     try {
-      const response = await fetch("/api/scan", {
+      const response = await authedFetch("/api/scan", {
         method: "POST",
         body: formData,
       });

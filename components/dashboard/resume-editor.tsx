@@ -29,6 +29,7 @@ import {
   ResumeTemplateId,
   ResumeTemplateThemeOverrides,
 } from "@/components/resume-templates/types";
+import { authedFetch } from "@/lib/authed-fetch";
 
 type ResumeEditorProps = {
   data: ResumeData;
@@ -262,7 +263,7 @@ const draftsToData = (drafts: Drafts): ResumeData => ({
 });
 
 const callAssist = async (payload: Record<string, unknown>) => {
-  const response = await fetch("/api/cv-assist", {
+  const response = await authedFetch("/api/cv-assist", {
     method: "POST",
     body: JSON.stringify(payload),
   });

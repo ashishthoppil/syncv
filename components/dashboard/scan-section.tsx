@@ -18,6 +18,7 @@ import {
 } from "@/lib/base-resume";
 import { toast } from "react-toastify";
 import { supabase } from "@/lib/supabaseClient";
+import { authedFetch } from "@/lib/authed-fetch";
 import { useRouter } from "next/navigation";
 import {
   getResumeTemplateConfig,
@@ -36,6 +37,10 @@ import {
 } from "@/components/resume-templates/render";
 import { ResumeEditor } from "@/components/dashboard/resume-editor";
 import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
+import {
+  type OptimizationUsage,
+  useOptimizationWait,
+} from "@/components/dashboard/optimization-meter";
 import { useProductTour } from "@/components/onboarding/product-tour";
 import {
   ResumeTemplateId,
@@ -68,6 +73,7 @@ import {
   TrendingUp,
   UploadCloud,
   WandSparkles,
+  Clock3,
   X,
   XCircleIcon,
 } from "lucide-react";
@@ -181,11 +187,15 @@ type ScanSectionProps = {
   hideTopHeading?: boolean;
   className?: string;
   subscriptionLocked?: boolean;
-  planKey?: string | null;
   allowsCoverLetter?: boolean;
   allowsJobTracker?: boolean;
   /** Called after a scan consumes quota, so the host can refresh the balance. */
   onUsageChange?: () => void;
+  /**
+   * Paid plan only: the optimization fair-use state. During a break, or once
+   * the day's cap is used, every way into optimizing is disabled until it ends.
+   */
+  optimizationUsage?: OptimizationUsage | null;
   /**
    * Seeds the form when the user arrives from Remote Jobs, so they don't have
    * to copy a job description across. Absent everywhere else, which leaves the
@@ -266,10 +276,10 @@ export const ScanSection = ({
   hideTopHeading = false,
   className,
   subscriptionLocked = false,
-  planKey = null,
   allowsCoverLetter = true,
   allowsJobTracker = true,
   onUsageChange,
+  optimizationUsage = null,
   prefill = null,
   onPrefillConsumed,
 }: ScanSectionProps = {}) => {
@@ -553,8 +563,13 @@ export const ScanSection = ({
       ],
     },
   ];
-  const isSpeedPlan = planKey === "speed";
-  const shouldAllowCoverLetter = !isSpeedPlan && allowsCoverLetter;
+  const shouldAllowCoverLetter = allowsCoverLetter;
+  // Ticks with the header's timer, from the same state, so they unlock together.
+  const optimizeWait = useOptimizationWait(optimizationUsage);
+  const optimizeWaitLabel =
+    optimizeWait.blockedBy === "daily"
+      ? `Daily limit reached · resets in ${optimizeWait.countdown}`
+      : `Optimize again in ${optimizeWait.countdown}`;
   const selectedTemplateConfig = getResumeTemplateConfig(selectedTemplate);
   const selectedTemplateTheme = resolveResumeTemplateTheme(
     selectedTemplate,
@@ -569,13 +584,6 @@ export const ScanSection = ({
         ...patch,
       },
     }));
-  };
-
-  const getSessionUserId = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    return session?.user?.id || "";
   };
 
   const redirectGuestToSignUp = () => {
@@ -687,14 +695,13 @@ export const ScanSection = ({
         return;
       }
 
-      const response = await fetch("/api/analyze", {
+      const response = await authedFetch("/api/analyze", {
         method: "POST",
         body: JSON.stringify({
           resume: form.resume,
           jd: form.jd,
           organization: form.organization,
           designation: form.designation,
-          userId: sessionUserId,
           // Only this call records scan usage; the post-optimize re-scores pass
           // skipUsageTracking, so they have no origin to record.
           source: scanSource,
@@ -721,7 +728,7 @@ export const ScanSection = ({
         }
 
         // Gate on the server-derived entitlement, not on `planKey`, which falls
-        // back to the latest *inactive* subscription — a lapsed Speed user is a
+        // back to the latest *inactive* subscription — a lapsed subscriber is a
         // free user and must still get their scans saved.
         if (allowsJobTracker) {
           // Save to job tracker
@@ -1247,8 +1254,8 @@ export const ScanSection = ({
 
   /**
    * Documents this plan produces, and which of them are still un-downloaded.
-   * Speed has no cover letter, and a guest cannot download at all — prompting
-   * either of them to "download first" would be a dead end.
+   * A plan without a cover letter, or a guest, who cannot download at all —
+   * prompting either of them to "download first" would be a dead end.
    */
   const requiredDownloads: TailoredDocType[] = guestTrial
     ? []
@@ -1292,6 +1299,10 @@ export const ScanSection = ({
   ) => {
     if (!result) {
       toast.error("Run a scan first.");
+      return;
+    }
+    if (optimizeWait.waiting) {
+      toast.info(optimizeWaitLabel);
       return;
     }
 
@@ -1355,10 +1366,10 @@ export const ScanSection = ({
       const selectedResumeData = selectedDraft ? draftToResumeData(selectedDraft) : null;
       const structuredExperience = selectedResumeData?.experience || [];
       const structuredProjects = selectedResumeData?.projects || [];
-      const response = await fetch("/api/tailor-documents", {
+      const structuredEducation = selectedResumeData?.education || [];
+      const response = await authedFetch("/api/tailor-documents", {
         method: "POST",
         body: JSON.stringify({
-          userId: await getSessionUserId(),
           resume: form.resume,
           jd: form.jd,
           organization: form.organization,
@@ -1386,12 +1397,17 @@ export const ScanSection = ({
           // Structured projects (with links) — links are re-attached from here
           // since the model output has no link field.
           structuredProjects,
+          // Structured education — every saved entry is checked for in the
+          // output and put back if the model dropped it.
+          structuredEducation,
         }),
       });
       const data = await response.json();
 
       if (!data.success) {
         toast.error(data.message || "Unable to generate tailored documents.");
+        // A fair-use refusal starts the header's break timer; refresh it.
+        if (!guestTrial) onUsageChange?.();
         return;
       }
 
@@ -1416,14 +1432,13 @@ export const ScanSection = ({
       let optimizedScore: number | null = null;
 
       try {
-        const finalScoreResponse = await fetch("/api/analyze", {
+        const finalScoreResponse = await authedFetch("/api/analyze", {
           method: "POST",
           body: JSON.stringify({
             resume: data.message.optimizedResumeText,
             jd: form.jd,
             organization: form.organization,
             designation: form.designation,
-            userId: await getSessionUserId(),
             skipUsageTracking: true,
             experienceYears:
               baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
@@ -1450,6 +1465,11 @@ export const ScanSection = ({
       });
       if (guestTrial) {
         persistGuestState("optimized");
+      } else {
+        // The header counts today's optimizations. Refreshed only now, after
+        // the re-score, because the usage row is written once the optimize
+        // response has gone out.
+        onUsageChange?.();
       }
 
       toast.success(
@@ -1605,14 +1625,13 @@ export const ScanSection = ({
     }
     setIsComputingFinalScore(true);
     try {
-      const response = await fetch("/api/analyze", {
+      const response = await authedFetch("/api/analyze", {
         method: "POST",
         body: JSON.stringify({
           resume: resumeForScore,
           jd: form.jd,
           organization: form.organization,
           designation: form.designation,
-          userId: await getSessionUserId(),
           skipUsageTracking: true,
           experienceYears:
             baseResumeList.find((r) => r.id === selectedBaseResumeId)?.draft
@@ -1913,7 +1932,7 @@ export const ScanSection = ({
             {/* Two rings half a cycle apart, so a second ping is already on its
                 way out as the next one leaves the button — a radar sweep
                 rather than a single repeating blip. */}
-            {showCtaNudge ? (
+            {showCtaNudge && !optimizeWait.waiting ? (
               <>
                 <span
                   aria-hidden="true"
@@ -1926,24 +1945,32 @@ export const ScanSection = ({
               </>
             ) : null}
             <Button
-              className="relative w-full rounded-md"
+              className={cn("relative w-full rounded-md", optimizeWait.waiting && "tabular-nums")}
               onClick={() => createTailoredDocuments()}
               onMouseEnter={() => setCtaNudgeAcknowledged(true)}
               onFocus={() => setCtaNudgeAcknowledged(true)}
-              disabled={isGeneratingDocs || isAnalyzing || isUploading}
+              disabled={isGeneratingDocs || isAnalyzing || isUploading || optimizeWait.waiting}
             >
               {isGeneratingDocs ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : optimizeWait.waiting ? (
+                <Clock3 className="mr-2 h-4 w-4" />
               ) : (
                 <WandSparkles className="mr-2 h-4 w-4" />
               )}
               {isGeneratingDocs
                 ? generatingLabels[generatingLabelIndex]
-                : "Create tailored CV & Cover letter"}
+                : optimizeWait.waiting
+                  ? optimizeWaitLabel
+                  : "Create tailored CV & Cover letter"}
             </Button>
           </div>
           <p className="mt-2 text-center text-xs text-slate-500">
-            Generate optimized documents from this score.
+            {optimizeWait.blockedBy === "daily"
+              ? `You've used today's ${optimizationUsage?.dailyLimit} optimizations. They reset at midnight UTC.`
+              : optimizeWait.waiting
+                ? `A short break after ${optimizationUsage?.hourlyLimit} optimizations in an hour. This unlocks when it ends.`
+                : "Generate optimized documents from this score."}
           </p>
         </div>
       )}
@@ -2479,6 +2506,7 @@ export const ScanSection = ({
               </Button>
               <Button
                 className="w-full sm:w-auto"
+                disabled={optimizeWait.waiting}
                 onClick={() => {
                   setShowCareerWarning(false);
                   createTailoredDocuments(true);
@@ -2647,6 +2675,7 @@ export const ScanSection = ({
                 <Button
                   variant="outline"
                   className="w-full rounded-md sm:w-auto"
+                  disabled={optimizeWait.waiting}
                   onClick={() => {
                     setShowCareerKeywordPicker(false);
                     createTailoredDocuments(keywordPickerCareerChange, []);
@@ -2655,7 +2684,8 @@ export const ScanSection = ({
                   Optimize without keywords
                 </Button>
                 <Button
-                  className="w-full rounded-md sm:w-auto"
+                  className={cn("w-full rounded-md sm:w-auto", optimizeWait.waiting && "tabular-nums")}
+                  disabled={optimizeWait.waiting}
                   onClick={() => {
                     setShowCareerKeywordPicker(false);
                     createTailoredDocuments(
@@ -2664,10 +2694,16 @@ export const ScanSection = ({
                     );
                   }}
                 >
-                  <WandSparkles className="mr-2 h-4 w-4" />
-                  {careerSelectedKeywords.length
-                    ? `Add ${careerSelectedKeywords.length} & optimize`
-                    : "Optimize"}
+                  {optimizeWait.waiting ? (
+                    <Clock3 className="mr-2 h-4 w-4" />
+                  ) : (
+                    <WandSparkles className="mr-2 h-4 w-4" />
+                  )}
+                  {optimizeWait.waiting
+                    ? optimizeWaitLabel
+                    : careerSelectedKeywords.length
+                      ? `Add ${careerSelectedKeywords.length} & optimize`
+                      : "Optimize"}
                 </Button>
               </div>
             </div>

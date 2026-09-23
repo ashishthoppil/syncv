@@ -1,5 +1,5 @@
 import { buildMetadata } from "@/lib/seo/metadata";
-import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
+import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
 
 /**
  * noindex, for the same reason as /login: it is a form, not a page anyone
@@ -8,7 +8,7 @@ import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
  */
 export const metadata = buildMetadata({
   title: "Create Your Free Account",
-  description: `Create a free SynCV account and get ${FREE_PLAN_SCAN_LIMIT} resume scans, no card required.`,
+  description: `Create a free SynCV account and get ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "resume")}, no card required.`,
   path: "/sign-up",
   noIndex: true,
 });

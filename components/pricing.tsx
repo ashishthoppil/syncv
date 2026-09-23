@@ -1,81 +1,63 @@
 "use client";
 
 import { SectionHeading } from "@/components/marketing/section-heading";
+import {
+  BillingPeriodTabs,
+  ExpandableList,
+  PlanPrice,
+  usePricingRegion,
+} from "@/components/plan-billing";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Reveal } from "@/components/ui/reveal";
 import { Separator } from "@/components/ui/separator";
 import { TapTooltip } from "@/components/ui/tooltip";
-import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
+import {
+  ALL_PLANS,
+  BILLING_PERIOD_BY_KEY,
+  DEFAULT_BILLING_PERIOD,
+  FREE_PLAN_SCAN_LIMIT,
+  formatScanCount,
+} from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { CircleCheck, CircleHelp, CircleX } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 // Features phrased as "No …" are the ones a plan does not include.
 const isUnavailableFeature = (title: string) => title.startsWith("No ");
 
-const tooltipContent = {
-  scans: "Each scan gives role-specific feedback to improve your resume quickly.",
-  generation: "Generate targeted resume and cover letter drafts from each job description.",
-}; 
+// How many of the paid plan's features show before its "more" arrow, so its
+// card stands about as tall as Free's instead of towering over it.
+const PAID_VISIBLE_FEATURES = 4;
 
-const plans = [
-  {
-    name: "Free",
-    price: 0,
-    description:
-      "Try every feature with a handful of free scans. No card required.",
-    features: [
-      {
-        title: `${FREE_PLAN_SCAN_LIMIT} resume scans in total`,
-        tooltip: tooltipContent.scans,
-      },
-      { title: "Resume generation", tooltip: tooltipContent.generation },
-      { title: "Cover letter generation", tooltip: tooltipContent.generation },
-      { title: "No job tracking (Trial only)" },
-      { title: "No weekly scan refill" },
-      { title: "No access to remote jobs listing" },
-    ],
+// Prices and features come from lib/subscription-plans.js, the same config that
+// drives checkout; only the homepage's own framing lives here.
+const MARKETING_COPY: Record<
+  string,
+  { description: string; buttonText: string; isPopular?: boolean }
+> = {
+  free: {
+    description: `Try every feature with ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")}. No card required.`,
     buttonText: "Start for free",
-    href: "/sign-up",
   },
-  {
-    name: "Speed",
-    price: 849,
+  pro: {
     description:
-      "Built for fast job applications with essential optimization tools.",
-    features: [
-      { title: "12 resume scans every week", tooltip: tooltipContent.scans },
-      { title: "Resume generation", tooltip: tooltipContent.generation },
-      { title: "One click analysis and optimization" },
-      { title: "Apply to remote jobs" },
-      { title: "No job tracker" },
-      { title: "No cover letter generation" },
-    ],
-    buttonText: "Choose Speed Plan",
-    href: "/sign-up?plan=speed",
-  },
-  {
-    name: "Pro",
-    price: 999,
-    isRecommended: true,
-    description:
-      "Best value for serious applicants who need faster and fuller workflow support.",
-    features: [
-      { title: "50 resume scans every week", tooltip: tooltipContent.scans },
-      { title: "Instant resume generation", tooltip: tooltipContent.generation },
-      { title: "Cover letter generation", tooltip: tooltipContent.generation },
-      { title: "Job tracking" },
-      { title: "One click analysis and optimization" },
-      { title: "Apply to remote jobs" },
-    ],
-    buttonText: "Choose Pro Plan",
-    href: "/sign-up?plan=pro",
+      "Everything SynCV does, with unlimited scans.",
+    buttonText: "Get Pro",
     isPopular: true,
   },
-];
+};
+
+const plans = ALL_PLANS.map((plan) => ({ ...plan, ...MARKETING_COPY[plan.key] }));
 
 const Pricing = () => {
+  const [billingPeriod, setBillingPeriod] = useState<string>(DEFAULT_BILLING_PERIOD);
+  const { region } = usePricingRegion();
+  // The paid card wears the selected period's badge ("Most popular", "Best
+  // value"); weekly has none.
+  const periodBadge = BILLING_PERIOD_BY_KEY[billingPeriod]?.badge;
+
   return (
     <section id="pricing" className="w-full px-6 py-16 sm:py-24">
       <SectionHeading
@@ -85,23 +67,12 @@ const Pricing = () => {
             Start Free. <span className="sm:block">Upgrade When You&apos;re Ready.</span>
           </>
         }
-        description={`Every account starts with ${FREE_PLAN_SCAN_LIMIT} free scans and no card. Pick a plan when you're applying every week.`}
+        description={`Every account starts with ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")} and no card. Pick a plan when you're applying every week.`}
       />
-      {/* <Tabs
-        value={selectedBillingPeriod}
-        onValueChange={setSelectedBillingPeriod}
-        className="mt-8"
-      >
-        <TabsList className="h-11 px-1.5 rounded-full bg-primary/5">
-          <TabsTrigger value="monthly" className="py-1.5 rounded-full">
-            Monthly
-          </TabsTrigger>
-          <TabsTrigger value="yearly" className="py-1.5 rounded-full">
-            Yearly (Save {YEARLY_DISCOUNT}%)
-          </TabsTrigger>
-        </TabsList>
-      </Tabs> */}
-      <div className="mx-auto mt-12 grid max-w-screen-xl grid-cols-1 items-center gap-8 sm:mt-16 md:grid-cols-2 lg:grid-cols-3">
+      <Reveal className="mt-12 flex justify-center sm:mt-10">
+        <BillingPeriodTabs value={billingPeriod} onChange={setBillingPeriod} />
+      </Reveal>
+      <div className="mx-auto mt-12 grid max-w-4xl grid-cols-1 items-start gap-8 sm:mt-14 md:grid-cols-2">
         {plans.map((plan, index) => (
           <Reveal
             key={plan.name}
@@ -114,18 +85,13 @@ const Pricing = () => {
               }
             )}
           >
-            {plan.isPopular && (
+            {plan.isPopular && periodBadge ? (
               <Badge className="absolute right-1/2 top-0 -translate-y-1/2 translate-x-1/2 rounded-full bg-ink px-3 py-1 text-white shadow-sm hover:bg-ink">
-                Most Popular
+                {periodBadge}
               </Badge>
-            )}
+            ) : null}
             <h3 className="text-lg font-semibold text-ink">{plan.name}</h3>
-            <p className="mt-3 text-5xl font-bold tracking-tight text-ink">
-              {plan.price === 0 ? "Free" : `₹${plan.price}`}
-              <span className="ml-1.5 text-sm font-normal tracking-normal text-ink-soft">
-                {plan.price === 0 ? "to start" : "/month"}
-              </span>
-            </p>
+            <PlanPrice plan={plan} billingPeriod={billingPeriod} region={region} size="lg" />
             <p className="mt-4 text-[15px] leading-relaxed text-ink-soft">
               {plan.description}
             </p>
@@ -136,11 +102,28 @@ const Pricing = () => {
               className="mt-6 h-11 w-full text-base"
               asChild
             >
-              <Link href={plan.href}>{plan.buttonText}</Link>
+              <Link
+                href={
+                  plan.isFree
+                    ? "/sign-up"
+                    : `/sign-up?plan=${plan.key}&billing=${billingPeriod}`
+                }
+              >
+                {plan.buttonText}
+              </Link>
             </Button>
             <Separator className="my-8" />
-            <ul className="space-y-3 text-[15px]">
-              {plan.features.map((feature) => {
+            <ExpandableList
+              items={plan.features}
+              visibleCount={plan.isFree ? undefined : PAID_VISIBLE_FEATURES}
+              listClassName="space-y-3 text-[15px]"
+              revealGapClassName="pt-3"
+              hiddenFooter={
+                "fairUse" in plan && plan.fairUse ? (
+                  <p className="pt-5 text-xs leading-relaxed text-ink-soft">{plan.fairUse}</p>
+                ) : null
+              }
+              renderItem={(feature) => {
                 const unavailable = isUnavailableFeature(feature.title);
                 return (
                   <li
@@ -160,8 +143,8 @@ const Pricing = () => {
                     )}
                   </li>
                 );
-              })}
-            </ul>
+              }}
+            />
           </Reveal>
         ))}
       </div>

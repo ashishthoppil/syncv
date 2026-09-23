@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ResumeData } from "@/components/resume-templates/render";
+import { authedFetch } from "@/lib/authed-fetch";
 
 // ---- Types -----------------------------------------------------------------
 
@@ -201,7 +202,7 @@ export const AddEntryButton = ({
 );
 
 const callAssist = async (payload: Record<string, unknown>) => {
-  const response = await fetch("/api/cv-assist", {
+  const response = await authedFetch("/api/cv-assist", {
     method: "POST",
     body: JSON.stringify(payload),
   });

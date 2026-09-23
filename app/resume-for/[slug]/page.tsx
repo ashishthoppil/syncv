@@ -239,7 +239,7 @@ export default async function RolePage({ params }: Props) {
           <p className="mt-6 text-[15px] text-foreground/80">
             More on the tool:{" "}
             <Link href="/resume-tailor" className="font-medium underline underline-offset-4">
-              AI resume tailoring
+              job-specific resume tailoring
             </Link>{" "}
             and{" "}
             <Link

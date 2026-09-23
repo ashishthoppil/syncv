@@ -3,7 +3,6 @@ import { Reveal } from "@/components/ui/reveal";
 import { FAQ_POOL, type FaqKey } from "@/lib/content/faqs";
 import {
   BadgeDollarSign,
-  Bot,
   FileCheck2,
   Layers,
   PencilLine,
@@ -11,6 +10,7 @@ import {
   ScanSearch,
   ShieldCheck,
   Sparkles,
+  Target,
   Undo2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -27,7 +27,7 @@ import type { LucideIcon } from "lucide-react";
  * an answer a crawler cannot reach is an answer that only exists for clicks.
  */
 const HOMEPAGE_FAQS: { key: FaqKey; icon: LucideIcon }[] = [
-  { key: "whatIsAiResumeTailor", icon: Bot },
+  { key: "whatIsJobSpecificTailor", icon: Target },
   { key: "doesSyncvInvent", icon: ShieldCheck },
   { key: "multipleJobs", icon: Repeat2 },
   { key: "tailoringVsRewriting", icon: Layers },

@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
+import { authedFetch } from "@/lib/authed-fetch";
 import { inputClass, labelClass, SectionCard } from "@/components/dashboard/resume-form";
 
 const ATTACHMENT_BUCKET = "ticket-attachments";
@@ -96,23 +97,6 @@ type Ticket = {
 };
 
 type SectionUser = { id?: string; email?: string } | null;
-
-// Every support endpoint resolves the caller from this token rather than a
-// userId in the payload, so the header is not optional.
-const authedFetch = async (url: string, options: RequestInit = {}) => {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
-};
 
 export const HelpCenterSection = ({ user }: { user: SectionUser }) => {
   // null = not loaded yet, [] = loaded and empty. Keeps the empty state from

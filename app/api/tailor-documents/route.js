@@ -1,10 +1,20 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/server/auth";
+import {
+  chatCompletion,
+  countModelCalls,
+  HOURLY_MODEL_CALL_LIMITS,
+  LARGE_MODEL,
+  TOO_MANY_MODEL_CALLS_MESSAGE,
+} from "@/lib/server/openai";
 import {
   countFreeTrialScans,
   FREE_TRIAL_SCAN_LIMIT,
   getPlanForUser,
   getSupabaseAdminClient,
 } from "@/lib/server/subscriptions";
+import { FREE_PLAN_OPTIMIZATIONS_PER_SCAN } from "@/lib/subscription-plans";
+import { describeWait, getOptimizationAllowance } from "@/lib/server/optimization-allowance";
 import {
   isHumanLanguageEntry,
   isLanguageKeyword,
@@ -181,13 +191,6 @@ const extractLikelyOrganizations = (resume = "") => {
     .map((line) => line.trim())
     .filter((line) => line.length > 3 && line.length < 120 && orgRegex.test(line))
     .slice(0, 20);
-};
-
-const includesLineLoosely = (text = "", line = "") => {
-  const t = normalizeText(text);
-  const l = normalizeText(line);
-  if (!l) return true;
-  return t.includes(l);
 };
 
 // Resume headers often put the job title on the same line as the name
@@ -672,6 +675,69 @@ const reconcileExperienceObjects = (experience = [], baseline = []) => {
           : ensureStringArray(b.bullets),
     };
   });
+};
+
+// The base resume's fields are the facts; the model only re-angles bullets. Puts
+// each role's saved designation and company back where the model reworded them
+// — a title rewritten toward the JD is a claim the candidate never made. Roles
+// pair with the baseline by company, in order and one-to-one, so two roles at
+// the same employer (a promotion) each get their own title back. Only for a
+// structured baseline: text-parsed fields are too unreliable to overwrite with.
+const restoreFactualRoleFields = (experience = [], baseline = []) => {
+  const used = new Set();
+  return (Array.isArray(experience) ? experience : []).map((entry) => {
+    const key = normCompanyKey(entry?.company);
+    if (!key) return entry;
+    const index = baseline.findIndex((b, i) => {
+      if (used.has(i)) return false;
+      const bk = normCompanyKey(b.company);
+      return bk && (bk.includes(key) || key.includes(bk));
+    });
+    if (index === -1) return entry;
+    used.add(index);
+    const factual = baseline[index];
+    return {
+      ...entry,
+      designation: ensureString(factual.designation) || ensureString(entry.designation),
+      company: ensureString(factual.company),
+    };
+  });
+};
+
+// Every education entry in the base resume survives: one the model dropped goes
+// back in at its original position. Entries pair one-to-one by institution (or
+// qualification when there is none), leniently, since the model may fold the
+// institution into the qualification or shorten its name.
+const restoreMissingEducation = (education = [], baseline = []) => {
+  const output = Array.isArray(education) ? education : [];
+  const used = new Set();
+  const missing = [];
+  baseline.forEach((factual, index) => {
+    const key = normCompanyKey(factual.institution || factual.qualification);
+    if (!key) return;
+    const match = output.findIndex((entry, i) => {
+      if (used.has(i)) return false;
+      const institutionKey = normCompanyKey(entry?.institution);
+      const combinedKey = normCompanyKey(
+        `${ensureString(entry?.qualification)} ${ensureString(entry?.institution)}`
+      );
+      return combinedKey.includes(key) || (institutionKey && key.includes(institutionKey));
+    });
+    if (match === -1) missing.push({ index, factual });
+    else used.add(match);
+  });
+
+  const result = [...output];
+  missing.forEach(({ index, factual }) => {
+    result.splice(Math.min(index, result.length), 0, {
+      qualification: ensureString(factual.qualification),
+      institution: ensureString(factual.institution),
+      location: ensureString(factual.location),
+      duration: ensureString(factual.duration),
+      details: ensureStringArray(factual.details),
+    });
+  });
+  return result;
 };
 
 // Safety net: a role must never be hollowed out. If the model kept a role but
@@ -1607,61 +1673,46 @@ const parseProjectsFromSection = (sectionLines = []) => {
 
 
 const generateWithModel = async ({
-  apiKey,
+  userId,
+  purpose,
   prompt,
   maxTokens = 3500,
   systemPrompt,
   jsonMode = false,
 }) => {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      temperature: 0.2,
-      max_tokens: maxTokens,
-      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
-      messages: [
-        {
-          role: "system",
-          content:
-            systemPrompt ||
-            "You are an expert ATS resume writer with deep knowledge of recruiting, applicant tracking systems, and modern hiring practices. Produce truthful, factually grounded resumes and cover letters. Never invent employers, titles, dates, certifications, or accomplishments. Return plain text only - no markdown fences or commentary.",
-        },
-        { role: "user", content: prompt },
-      ],
-    }),
+  const content = await chatCompletion({
+    model: LARGE_MODEL,
+    temperature: 0.2,
+    maxTokens,
+    jsonMode,
+    system:
+      systemPrompt ||
+      "You are an expert ATS resume writer with deep knowledge of recruiting, applicant tracking systems, and modern hiring practices. Produce truthful, factually grounded resumes and cover letters. Never invent employers, titles, dates, certifications, or accomplishments. Return plain text only - no markdown fences or commentary.",
+    prompt,
+    userId,
+    purpose,
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
-  }
-
-  const payload = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
   if (!content) {
     throw new Error("OpenAI returned empty content.");
   }
 
-  return String(content).trim();
+  return content.trim();
 };
 
 export async function POST(req) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({
-        success: false,
-        message: "OPENAI_API_KEY is not set.",
-      });
+    // Who is optimizing comes from their session token, never the payload:
+    // plan access and the limits below are checked against this id.
+    const user = await getAuthenticatedUser(req);
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "Please log in to optimize your resume." },
+        { status: 401 }
+      );
     }
+    const userId = user.id;
 
     const {
-      userId = "",
       resume,
       jd,
       organization = "",
@@ -1691,6 +1742,9 @@ export async function POST(req) {
       // no link field and text-parsing drops links, so links are re-attached
       // deterministically from this.
       structuredProjects = [],
+      // The base resume's structured education. The text form puts the whole
+      // entry on one line, which the text parser can't split into fields.
+      structuredEducation = [],
     } = await req.json();
 
     if (!resume || !jd) {
@@ -1701,25 +1755,58 @@ export async function POST(req) {
     }
 
     let shouldGenerateCoverLetter = Boolean(includeCoverLetter);
-    if (userId) {
-      const supabase = getSupabaseAdminClient();
-      const activePlan = await getPlanForUser(supabase, userId);
-      if (activePlan) {
-        if (!activePlan.allowsCoverLetter) {
-          shouldGenerateCoverLetter = false;
-        }
-      } else {
-        // Free-trial users may optimize the result of a scan they already spent
-        // a free trial on — including a cover letter, so the trial covers every
-        // feature. Once the trial is fully exhausted, ask them to subscribe.
-        const freeTrialUsed = await countFreeTrialScans(supabase, userId);
-        if (freeTrialUsed < 1 || freeTrialUsed > FREE_TRIAL_SCAN_LIMIT) {
-          return NextResponse.json({
-            success: false,
-            message: "Please subscribe to a plan to optimize your resume.",
-          });
-        }
+    const supabase = getSupabaseAdminClient();
+    const activePlan = await getPlanForUser(supabase, userId);
+    if (activePlan) {
+      if (!activePlan.allowsCoverLetter) {
+        shouldGenerateCoverLetter = false;
       }
+      // Fair use on the paid plan: a 1-hour break after 10 in an hour, and a
+      // cap on the day. The dashboard header shows the same numbers and timer.
+      const allowance = await getOptimizationAllowance(supabase, userId);
+      if (allowance.blockedBy) {
+        const wait = describeWait(allowance.blockedUntil);
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              allowance.blockedBy === "daily"
+                ? `You've used all ${allowance.dailyLimit} optimizations for today. They reset in ${wait}.`
+                : `You've done ${allowance.hourlyLimit} optimizations in the last hour. Take a short break — you can optimize again in ${wait}.`,
+            optimizationUsage: allowance,
+          },
+          { status: 429 }
+        );
+      }
+    } else {
+      // Free-trial users may optimize the result of a scan they already spent
+      // a free trial on — including a cover letter, so the trial covers every
+      // feature. Once the trial is fully exhausted, ask them to subscribe.
+      const freeTrialUsed = await countFreeTrialScans(supabase, userId);
+      if (freeTrialUsed < 1 || freeTrialUsed > FREE_TRIAL_SCAN_LIMIT) {
+        return NextResponse.json({
+          success: false,
+          message: "Please subscribe to a plan to optimize your resume.",
+        });
+      }
+      // A few goes at each free scan (say, after changing the keyword picks),
+      // not an unlimited supply of the most expensive thing the app does.
+      const optimizationsUsed = await countModelCalls(supabase, userId, ["tailor_resume"]);
+      if (optimizationsUsed >= freeTrialUsed * FREE_PLAN_OPTIMIZATIONS_PER_SCAN) {
+        return NextResponse.json({
+          success: false,
+          message:
+            "You've used the optimizations included with your free scan. Please subscribe to a plan to optimize more resumes.",
+        });
+      }
+    }
+
+    const recentOptimizations = await countModelCalls(supabase, userId, ["tailor_resume"], 60);
+    if (recentOptimizations >= HOURLY_MODEL_CALL_LIMITS.tailor) {
+      return NextResponse.json(
+        { success: false, message: TOO_MANY_MODEL_CALLS_MESSAGE },
+        { status: 429 }
+      );
     }
 
     const safeMissing = Array.isArray(missingKeywords)
@@ -1800,8 +1887,23 @@ export async function POST(req) {
       : sanitizeExperienceEntries(
           parseExperienceFromRawResume(experienceSectionText || resume)
         );
-    const factualEducationBaseline = parseEducationFromSection(
-      extractSectionsFromText(resume).education || resume.split("\n")
+    const structuredEducationBaseline = (
+      Array.isArray(structuredEducation) ? structuredEducation : []
+    )
+      .map((entry) => ({
+        qualification: ensureString(entry?.qualification),
+        institution: ensureString(entry?.institution),
+        location: ensureString(entry?.location),
+        duration: ensureString(entry?.duration),
+        details: ensureStringArray(entry?.details),
+      }))
+      .filter((entry) => entry.qualification || entry.institution);
+    const factualEducationBaseline = (
+      structuredEducationBaseline.length
+        ? structuredEducationBaseline
+        : parseEducationFromSection(
+            extractSectionsFromText(resume).education || resume.split("\n")
+          )
     ).slice(0, 8);
     // Prefer the base resume's structured projects (they carry the link, which
     // text-parsing drops). Fall back to text-parsing for guest scans.
@@ -1919,7 +2021,8 @@ export async function POST(req) {
     ].join("\n");
 
     const optimizedResumeRaw = await generateWithModel({
-      apiKey,
+      userId,
+      purpose: "tailor_resume",
       prompt: resumePrompt,
       maxTokens: 3500,
       jsonMode: true,
@@ -1959,7 +2062,8 @@ export async function POST(req) {
       ].join("\n");
 
       const revised = await generateWithModel({
-        apiKey,
+        userId,
+        purpose: "tailor_keyword_revision",
         prompt: revisionPrompt,
         maxTokens: 3000,
         jsonMode: true,
@@ -1968,50 +2072,23 @@ export async function POST(req) {
       if (revisedData) resumeData = revisedData;
     }
 
-    const draftText = resumeObjectToText(resumeData);
-    const missingProtectedTitles = originalTitles.filter(
-      (title) => !includesLineLoosely(draftText, title)
-    );
-    const missingProtectedOrgs = originalOrganizations.filter(
-      (org) => !includesLineLoosely(draftText, org)
-    );
-
-    if (missingProtectedTitles.length || missingProtectedOrgs.length) {
-      const preservePrompt = [
-        "Restore the original factual history below into this resume draft.",
-        "",
-        "OUTPUT FORMAT:",
-        ...STRUCTURED_RESUME_SCHEMA_LINES,
-        "",
-        "Strict rules:",
-        "- Do NOT change any other employers, designations, education entries, certifications, or languages already present.",
-        "- Restore each missing item exactly as written, in the correct chronological order.",
-        "- Retain all keyword improvements from the current draft where they remain truthful.",
-        "- Every bullet starts with a strong action verb.",
-        `Restore these original titles exactly: ${missingProtectedTitles.join(" | ") || "None"}`,
-        `Restore these original organizations exactly: ${missingProtectedOrgs.join(" | ") || "None"}`,
-        "Return only the JSON object.",
-        "",
-        "Current resume draft:",
-        draftText.slice(0, 12000),
-      ].join("\n");
-
-      const preserved = await generateWithModel({
-        apiKey,
-        prompt: preservePrompt,
-        maxTokens: 3000,
-        jsonMode: true,
-      });
-      const preservedData = parseModelResumeObject(preserved);
-      if (preservedData) resumeData = preservedData;
-    }
-
     // Safety net: the model can collapse multiple roles into one (especially
     // when two roles share a title), silently dropping employers. Rebuild the
     // experience list deterministically from the factual baseline so every
-    // company survives with its bullets grouped under the right role.
-    if (factualExperienceBaseline.length >= 2) {
+    // company survives with its bullets grouped under the right role. With a
+    // single role it only steps in if the model dropped that role outright.
+    //
+    // Restoring happens here, field by field, rather than in another model
+    // pass: comparing resume text line by line can't tell a dropped role from a
+    // reformatted one ("Title at Company" vs "Title | Company").
+    if (factualExperienceBaseline.length) {
       resumeData.experience = reconcileExperienceObjects(
+        resumeData.experience,
+        factualExperienceBaseline
+      );
+    }
+    if (structuredBaseline.length) {
+      resumeData.experience = restoreFactualRoleFields(
         resumeData.experience,
         factualExperienceBaseline
       );
@@ -2138,8 +2215,16 @@ export async function POST(req) {
       resumeTokenSet
     );
 
-    // Safety net: keep education if the model dropped (or we filtered) it.
-    if (!resumeData.education.length && factualEducationBaseline.length) {
+    // Safety net: keep education the model dropped (or we filtered). With the
+    // base resume's structured entries, each one is checked; a text-parsed
+    // baseline is too loose to match entry by entry, so it only restores the
+    // section when nothing at all is left.
+    if (structuredEducationBaseline.length) {
+      resumeData.education = restoreMissingEducation(
+        resumeData.education,
+        structuredEducationBaseline
+      );
+    } else if (!resumeData.education.length && factualEducationBaseline.length) {
       resumeData.education = factualEducationBaseline.map((ed) => ({
         qualification: ensureString(ed.qualification),
         institution: ensureString(ed.institution),
@@ -2225,7 +2310,8 @@ export async function POST(req) {
       ].join("\n");
 
       const coverLetterRaw = await generateWithModel({
-        apiKey,
+        userId,
+        purpose: "cover_letter",
         prompt: coverLetterPrompt,
         maxTokens: 800,
       });

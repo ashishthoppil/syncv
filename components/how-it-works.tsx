@@ -1,6 +1,6 @@
 import { SectionHeading } from "@/components/marketing/section-heading";
 import { Reveal } from "@/components/ui/reveal";
-import { FREE_PLAN_SCAN_LIMIT } from "@/lib/subscription-plans";
+import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
 import { ClipboardPaste, FileDown, Upload } from "lucide-react";
 import Link from "next/link";
 
@@ -75,7 +75,7 @@ const HowItWorks = () => {
         </ol>
 
         <Reveal as="p" className="mt-10 text-center text-[15px] text-ink-soft">
-          {FREE_PLAN_SCAN_LIMIT} free scans, no card required. More detail on{" "}
+          {formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")}, no card required. More detail on{" "}
           <Link
             href="/resume-tailor"
             className="font-medium text-ink underline decoration-brand/50 decoration-2 underline-offset-4 transition-colors hover:decoration-brand"
