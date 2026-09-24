@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import { toast } from "react-toastify";
 import {
   Award,
@@ -29,6 +36,16 @@ import {
   ResumeTemplateId,
   ResumeTemplateThemeOverrides,
 } from "@/components/resume-templates/types";
+import {
+  AssistButtons,
+  SUMMARY_KEY,
+  assistKey,
+  readAssistField,
+  settledAssist,
+  useAssist,
+  writeAssistField,
+  type AssistHistory,
+} from "@/components/dashboard/cv-assist";
 import { authedFetch } from "@/lib/authed-fetch";
 
 type ResumeEditorProps = {
@@ -52,6 +69,14 @@ type ResumeEditorProps = {
    * the host can place the preview in its own pane. Defaults to true.
    */
   showPreview?: boolean;
+  /**
+   * Pass a ref if the host unmounts the editor while its data stays live (the
+   * optimize preview does, behind its Design tab and Cover letter view). The
+   * next mount then gets back the exact drafts — re-seeding from data drops
+   * empty rows, which would shift entry indexes — and keeps used Rephrase /
+   * Generate buttons used.
+   */
+  session?: MutableRefObject<ResumeEditorSession | null>;
 };
 
 type ExperienceDraft = {
@@ -89,6 +114,13 @@ type Drafts = {
   certifications: CertificationDraft[];
   languages: string[];
   additionalSections: AdditionalSectionDraft[];
+};
+
+export type ResumeEditorSession = {
+  // The data these drafts produced — only restored while the host still holds it.
+  data: ResumeData;
+  drafts: Drafts;
+  assist: AssistHistory;
 };
 
 const labelClass = "block text-[11px] font-semibold uppercase tracking-wide text-slate-500";
@@ -316,30 +348,49 @@ export const ResumeEditor = ({
   onCandidateNameChange,
   onDesignationChange,
   showPreview = true,
+  session,
 }: ResumeEditorProps) => {
-  const [drafts, setDrafts] = useState<Drafts>(() => seedFromData(data));
+  const [restored] = useState(() =>
+    session?.current?.data === data ? session.current : null
+  );
+  const [drafts, setDrafts] = useState<Drafts>(() => restored?.drafts ?? seedFromData(data));
   // Tracks the data identity we last seeded from / emitted, so an external data
-  // change re-seeds the editor, but our own onChange echoes don't.
-  const syncedRef = useRef<ResumeData>(data);
-
-  useEffect(() => {
-    if (data === syncedRef.current) return;
-    syncedRef.current = data;
-    setDrafts(seedFromData(data));
-  }, [data]);
+  // change re-seeds the editor, but our own onChange echoes don't. Also holds
+  // the drafts behind that data, current even before the re-render lands.
+  const syncedRef = useRef<{ data: ResumeData; drafts: Drafts }>({ data, drafts });
 
   const commit = (next: Drafts) => {
     setDrafts(next);
     const emitted = draftsToData(next);
-    syncedRef.current = emitted;
+    syncedRef.current = { data: emitted, drafts: next };
     onChange(emitted);
   };
 
+  const assist = useAssist(
+    {
+      read: (key) => readAssistField(syncedRef.current.drafts, key),
+      write: (key, text) => commit(writeAssistField(syncedRef.current.drafts, key, text)),
+    },
+    restored?.assist
+  );
+  const resetAssist = assist.reset;
+
+  useEffect(() => {
+    if (data === syncedRef.current.data) return;
+    const seeded = seedFromData(data);
+    syncedRef.current = { data, drafts: seeded };
+    setDrafts(seeded);
+    resetAssist();
+  }, [data, resetAssist]);
+
+  useEffect(() => {
+    if (session) {
+      session.current = { ...syncedRef.current, assist: settledAssist(assist.history) };
+    }
+  });
+
   const [skillInput, setSkillInput] = useState("");
   const [categorizing, setCategorizing] = useState(false);
-  const [generatingSummary, setGeneratingSummary] = useState(false);
-  const [rephrasingIndex, setRephrasingIndex] = useState<number | null>(null);
-  const [rephrasingProjectIndex, setRephrasingProjectIndex] = useState<number | null>(null);
 
   const previewHtml = useMemo(
     () =>
@@ -440,7 +491,7 @@ export const ResumeEditor = ({
     });
 
   // ---- Summary ----
-  const generateSummary = async () => {
+  const generateSummary = () => {
     const hasExperience = drafts.experiences.some(
       (entry) => entry.company.trim() || entry.text.trim()
     );
@@ -450,32 +501,32 @@ export const ResumeEditor = ({
       );
       return;
     }
-    setGeneratingSummary(true);
-    try {
-      const highlights = drafts.experiences
-        .filter((entry) => entry.company.trim() || entry.text.trim())
-        .map(
-          (entry) =>
-            `${entry.designation || ""} at ${entry.company || ""}: ${entry.text.replace(/\n/g, " ")}`
-        );
-      const skills = drafts.skillCategories
-        .filter((category) => category.items.length)
-        .map((category) => `${category.category}: ${category.items.join(", ")}`);
-      const result = await callAssist({
-        action: "generate-summary",
-        designation,
-        experienceYears: experienceYears || "",
-        skills,
-        experience: highlights,
-      });
-      if (result?.success && result.summary) commit({ ...drafts, summary: result.summary });
-      else toast.error(result?.message || "Could not generate a summary.");
-    } catch (error) {
-      console.error(error);
-      toast.error("Could not generate a summary right now.");
-    } finally {
-      setGeneratingSummary(false);
-    }
+    assist.run(SUMMARY_KEY, async () => {
+      try {
+        const highlights = drafts.experiences
+          .filter((entry) => entry.company.trim() || entry.text.trim())
+          .map(
+            (entry) =>
+              `${entry.designation || ""} at ${entry.company || ""}: ${entry.text.replace(/\n/g, " ")}`
+          );
+        const skills = drafts.skillCategories
+          .filter((category) => category.items.length)
+          .map((category) => `${category.category}: ${category.items.join(", ")}`);
+        const result = await callAssist({
+          action: "generate-summary",
+          designation,
+          experienceYears: experienceYears || "",
+          skills,
+          experience: highlights,
+        });
+        if (result?.success && result.summary) return result.summary as string;
+        toast.error(result?.message || "Could not generate a summary.");
+      } catch (error) {
+        console.error(error);
+        toast.error("Could not generate a summary right now.");
+      }
+      return null;
+    });
   };
 
   // ---- Experience ----
@@ -488,34 +539,35 @@ export const ResumeEditor = ({
     });
   const addExperience = () =>
     commit({ ...drafts, experiences: [...drafts.experiences, emptyExperience()] });
-  const removeExperience = (index: number) =>
+  const removeExperience = (index: number) => {
     commit({ ...drafts, experiences: drafts.experiences.filter((_, i) => i !== index) });
+    assist.removeEntry("experience", index);
+  };
 
-  const rephraseExperience = async (index: number) => {
+  const rephraseExperience = (index: number) => {
     const entry = drafts.experiences[index];
     if (!entry.text.trim()) {
       toast.info("Write a few lines about what you did first.");
       return;
     }
-    setRephrasingIndex(index);
-    try {
-      const result = await callAssist({
-        action: "rephrase-experience",
-        designation: entry.designation,
-        company: entry.company,
-        text: entry.text,
-      });
-      if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
-        updateExperience(index, { text: result.bullets.join("\n") });
-      } else {
+    assist.run(assistKey("experience", index), async () => {
+      try {
+        const result = await callAssist({
+          action: "rephrase-experience",
+          designation: entry.designation,
+          company: entry.company,
+          text: entry.text,
+        });
+        if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
+          return result.bullets.join("\n") as string;
+        }
         toast.error(result?.message || "Could not rephrase this experience.");
+      } catch (error) {
+        console.error(error);
+        toast.error("Could not rephrase this experience right now.");
       }
-    } catch (error) {
-      console.error(error);
-      toast.error("Could not rephrase this experience right now.");
-    } finally {
-      setRephrasingIndex(null);
-    }
+      return null;
+    });
   };
 
   // ---- Projects ----
@@ -525,34 +577,35 @@ export const ResumeEditor = ({
       projects: drafts.projects.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)),
     });
   const addProject = () => commit({ ...drafts, projects: [...drafts.projects, emptyProject()] });
-  const removeProject = (index: number) =>
+  const removeProject = (index: number) => {
     commit({ ...drafts, projects: drafts.projects.filter((_, i) => i !== index) });
+    assist.removeEntry("project", index);
+  };
 
-  const rephraseProject = async (index: number) => {
+  const rephraseProject = (index: number) => {
     const entry = drafts.projects[index];
     if (!entry.text.trim()) {
       toast.info("Write a few lines about the project first.");
       return;
     }
-    setRephrasingProjectIndex(index);
-    try {
-      const result = await callAssist({
-        action: "rephrase-experience",
-        designation: "Project contributor",
-        company: entry.name,
-        text: entry.text,
-      });
-      if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
-        updateProject(index, { text: result.bullets.join("\n") });
-      } else {
+    assist.run(assistKey("project", index), async () => {
+      try {
+        const result = await callAssist({
+          action: "rephrase-experience",
+          designation: "Project contributor",
+          company: entry.name,
+          text: entry.text,
+        });
+        if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
+          return result.bullets.join("\n") as string;
+        }
         toast.error(result?.message || "Could not rephrase this project.");
+      } catch (error) {
+        console.error(error);
+        toast.error("Could not rephrase this project right now.");
       }
-    } catch (error) {
-      console.error(error);
-      toast.error("Could not rephrase this project right now.");
-    } finally {
-      setRephrasingProjectIndex(null);
-    }
+      return null;
+    });
   };
 
   // ---- Education ----
@@ -779,22 +832,18 @@ export const ResumeEditor = ({
           <textarea
             className={`${inputClass} min-h-[110px] resize-y pb-10 leading-relaxed`}
             value={drafts.summary}
+            readOnly={assist.pending(SUMMARY_KEY)}
             onChange={(event) => commit({ ...drafts, summary: event.target.value })}
             placeholder="A short professional summary — or generate one from your details."
           />
-          <button
-            type="button"
-            onClick={generateSummary}
-            disabled={generatingSummary}
-            className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-          >
-            {generatingSummary ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            Generate summary
-          </button>
+          <AssistButtons
+            assist={assist}
+            field={SUMMARY_KEY}
+            icon={Sparkles}
+            label="Generate summary"
+            doneLabel="Generated"
+            onRun={generateSummary}
+          />
         </div>
       </SectionCard>
 
@@ -872,22 +921,18 @@ export const ResumeEditor = ({
                   <textarea
                     className={`${inputClass} min-h-[96px] resize-y pb-10 leading-relaxed`}
                     value={entry.text}
+                    readOnly={assist.pending(assistKey("experience", index))}
                     onChange={(event) => updateExperience(index, { text: event.target.value })}
                     placeholder="Describe your work here, then tap Rephrase to turn it into sharp, ATS-friendly bullet points."
                   />
-                  <button
-                    type="button"
-                    onClick={() => rephraseExperience(index)}
-                    disabled={rephrasingIndex === index}
-                    className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-                  >
-                    {rephrasingIndex === index ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Wand2 className="h-3.5 w-3.5" />
-                    )}
-                    Rephrase
-                  </button>
+                  <AssistButtons
+                    assist={assist}
+                    field={assistKey("experience", index)}
+                    icon={Wand2}
+                    label="Rephrase"
+                    doneLabel="Rephrased"
+                    onRun={() => rephraseExperience(index)}
+                  />
                 </div>
               </div>
             </div>
@@ -948,22 +993,18 @@ export const ResumeEditor = ({
                   <textarea
                     className={`${inputClass} min-h-[96px] resize-y pb-10 leading-relaxed`}
                     value={entry.text}
+                    readOnly={assist.pending(assistKey("project", index))}
                     onChange={(event) => updateProject(index, { text: event.target.value })}
                     placeholder="Describe the project, then tap Rephrase to turn it into sharp, ATS-friendly bullet points."
                   />
-                  <button
-                    type="button"
-                    onClick={() => rephraseProject(index)}
-                    disabled={rephrasingProjectIndex === index}
-                    className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-                  >
-                    {rephrasingProjectIndex === index ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <Wand2 className="h-3.5 w-3.5" />
-                    )}
-                    Rephrase
-                  </button>
+                  <AssistButtons
+                    assist={assist}
+                    field={assistKey("project", index)}
+                    icon={Wand2}
+                    label="Rephrase"
+                    doneLabel="Rephrased"
+                    onRun={() => rephraseProject(index)}
+                  />
                 </div>
               </div>
             </div>

@@ -16,8 +16,10 @@ import {
   SkillsCard,
   SummaryCard,
   stepHasContent,
+  useBaseResumeAssist,
   type BaseResumeDraft,
 } from "@/components/dashboard/resume-form";
+import type { Assist } from "@/components/dashboard/cv-assist";
 import { createBaseResume, DEFAULT_BASE_RESUME_NAME } from "@/lib/base-resume";
 
 type WizardUser = { id?: string; email?: string } | null;
@@ -26,7 +28,11 @@ type Step = {
   key: string;
   title: string;
   description: string;
-  render: (draft: BaseResumeDraft, update: (patch: Partial<BaseResumeDraft>) => void) => ReactNode;
+  render: (
+    draft: BaseResumeDraft,
+    update: (patch: Partial<BaseResumeDraft>) => void,
+    assist: Assist
+  ) => ReactNode;
   // A required step blocks Next until satisfied. A skippable step shows Skip.
   isComplete?: (draft: BaseResumeDraft) => boolean;
   skippable?: boolean;
@@ -44,7 +50,9 @@ const STEPS: Step[] = [
     key: "summary",
     title: "Professional summary",
     description: "A short summary of who you are — or generate one.",
-    render: (draft, update) => <SummaryCard draft={draft} update={update} />,
+    render: (draft, update, assist) => (
+      <SummaryCard draft={draft} update={update} assist={assist} />
+    ),
     isComplete: stepHasContent.summary,
   },
   {
@@ -63,10 +71,11 @@ const STEPS: Step[] = [
     key: "experience",
     title: "Work experience",
     description: "Your roles and what you did. You can skip this if it doesn't apply.",
-    render: (draft, update) => (
+    render: (draft, update, assist) => (
       <ExperienceCard
         value={draft.experiences}
         onChange={(next) => update({ experiences: next })}
+        assist={assist}
       />
     ),
     skippable: true,
@@ -75,8 +84,12 @@ const STEPS: Step[] = [
     key: "projects",
     title: "Projects",
     description: "Notable projects. Optional — skip if you have none.",
-    render: (draft, update) => (
-      <ProjectsCard value={draft.projects} onChange={(next) => update({ projects: next })} />
+    render: (draft, update, assist) => (
+      <ProjectsCard
+        value={draft.projects}
+        onChange={(next) => update({ projects: next })}
+        assist={assist}
+      />
     ),
     skippable: true,
   },
@@ -141,6 +154,9 @@ export const BaseResumeWizard = ({
   onComplete,
 }: BaseResumeWizardProps) => {
   const [draft, setDraft] = useState<BaseResumeDraft>(initialDraft);
+  // Lives here, not in the step cards, so a used Rephrase / Generate button
+  // stays used when the user steps away and comes back.
+  const assist = useBaseResumeAssist(draft, setDraft);
   const [stepIndex, setStepIndex] = useState(0);
   const [saving, setSaving] = useState(false);
 
@@ -228,7 +244,7 @@ export const BaseResumeWizard = ({
         <p className="text-sm text-slate-500">{step.description}</p>
       </div>
 
-      <div className="mb-6">{step.render(draft, update)}</div>
+      <div className="mb-6">{step.render(draft, update, assist)}</div>
 
       <div className="flex items-center justify-between gap-3">
         <Button

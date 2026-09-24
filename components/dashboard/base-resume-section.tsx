@@ -48,6 +48,7 @@ import {
   draftToResumeData,
   emptyBaseResumeDraft,
   extractedToDraft,
+  useBaseResumeAssist,
   type BaseResumeDraft,
   type ExtractedBaseResume,
 } from "@/components/dashboard/resume-form";
@@ -126,6 +127,8 @@ const BaseResumeEditor = ({
   const [recordId, setRecordId] = useState<string | null>(initial.id);
   const [name, setName] = useState(initial.name);
   const [draft, setDraft] = useState<BaseResumeDraft>(initial.draft);
+  // Held here so the Content/Design tab switch doesn't re-arm used buttons.
+  const assist = useBaseResumeAssist(draft, setDraft);
   const [selectedTemplate, setSelectedTemplate] = useState<ResumeTemplateId>(
     initial.template
   );
@@ -179,6 +182,8 @@ const BaseResumeEditor = ({
         return;
       }
       setDraft(extractedToDraft(result.baseResume as ExtractedBaseResume));
+      // Every field is new, so every button is available again.
+      assist.reset();
       toast.success("Resume extracted. Review each field, then save.");
     } catch (error) {
       console.error(error);
@@ -340,14 +345,16 @@ const BaseResumeEditor = ({
                   value={draft.skillCategories}
                   onChange={(next) => update({ skillCategories: next })}
                 />
-                <SummaryCard draft={draft} update={update} />
+                <SummaryCard draft={draft} update={update} assist={assist} />
                 <ExperienceCard
                   value={draft.experiences}
                   onChange={(next) => update({ experiences: next })}
+                  assist={assist}
                 />
                 <ProjectsCard
                   value={draft.projects}
                   onChange={(next) => update({ projects: next })}
+                  assist={assist}
                 />
                 <EducationCard
                   value={draft.educations}

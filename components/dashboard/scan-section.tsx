@@ -35,7 +35,10 @@ import {
   toSlugPart,
   type ResumeData,
 } from "@/components/resume-templates/render";
-import { ResumeEditor } from "@/components/dashboard/resume-editor";
+import {
+  ResumeEditor,
+  type ResumeEditorSession,
+} from "@/components/dashboard/resume-editor";
 import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
 import {
   type OptimizationUsage,
@@ -341,6 +344,9 @@ export const ScanSection = ({
   const [isComputingFinalScore, setIsComputingFinalScore] = useState(false);
   const [editableResumeText, setEditableResumeText] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+  // The Design tab and Cover letter view unmount the resume editor; this is
+  // how it comes back with its drafts and used Rephrase / Generate buttons.
+  const resumeEditorSession = useRef<ResumeEditorSession | null>(null);
   const [hasResumePreviewEdits, setHasResumePreviewEdits] = useState(false);
   // Name/designation shown on the optimized resume — seeded when the preview
   // opens, editable from the preview's contact section.
@@ -3066,6 +3072,7 @@ export const ScanSection = ({
                       resumeData ? (
                         <ResumeEditor
                           showPreview={false}
+                          session={resumeEditorSession}
                           data={resumeData}
                           onChange={(next) => {
                             setResumeData(next);

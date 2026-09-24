@@ -7,7 +7,13 @@
 //   - Create CV from scratch (kept internally)
 // Keeping the inputs here means the three surfaces never drift apart.
 
-import { useState, type ReactNode } from "react";
+import {
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import { toast } from "react-toastify";
 import {
   Award,
@@ -33,6 +39,15 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ResumeData } from "@/components/resume-templates/render";
+import {
+  AssistButtons,
+  SUMMARY_KEY,
+  assistKey,
+  readAssistField,
+  useAssist,
+  writeAssistField,
+  type Assist,
+} from "@/components/dashboard/cv-assist";
 import { authedFetch } from "@/lib/authed-fetch";
 
 // ---- Types -----------------------------------------------------------------
@@ -207,6 +222,21 @@ const callAssist = async (payload: Record<string, unknown>) => {
     body: JSON.stringify(payload),
   });
   return response.json();
+};
+
+// Called by whoever owns the draft (the wizard, the Base Resume editor) and
+// passed to SummaryCard / ExperienceCard / ProjectsCard, so a spent Rephrase or
+// Generate button stays spent while its card is unmounted.
+export const useBaseResumeAssist = (
+  draft: BaseResumeDraft,
+  setDraft: Dispatch<SetStateAction<BaseResumeDraft>>
+) => {
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  return useAssist({
+    read: (key) => readAssistField(draftRef.current, key),
+    write: (key, text) => setDraft((current) => writeAssistField(current, key, text)),
+  });
 };
 
 // ---- Converters ------------------------------------------------------------
@@ -819,13 +849,13 @@ export const SkillsCard = ({
 export const SummaryCard = ({
   draft,
   update,
+  assist,
 }: {
   draft: BaseResumeDraft;
   update: (patch: Partial<BaseResumeDraft>) => void;
+  assist: Assist;
 }) => {
-  const [generating, setGenerating] = useState(false);
-
-  const generateSummary = async () => {
+  const generateSummary = () => {
     const hasExperience = draft.experiences.some(
       (entry) => entry.company.trim() || entry.text.trim()
     );
@@ -835,32 +865,32 @@ export const SummaryCard = ({
       );
       return;
     }
-    setGenerating(true);
-    try {
-      const highlights = draft.experiences
-        .filter((entry) => entry.company.trim() || entry.text.trim())
-        .map(
-          (entry) =>
-            `${entry.designation || ""} at ${entry.company || ""}: ${entry.text.replace(
-              /\n/g,
-              " "
-            )}`
-        );
-      const result = await callAssist({
-        action: "generate-summary",
-        designation: draft.designation,
-        experienceYears: draft.experienceYears,
-        skills: draftToResumeData(draft).skills,
-        experience: highlights,
-      });
-      if (result?.success && result.summary) update({ summary: result.summary });
-      else toast.error(result?.message || "Could not generate a summary.");
-    } catch (error) {
-      console.error(error);
-      toast.error("Could not generate a summary right now.");
-    } finally {
-      setGenerating(false);
-    }
+    assist.run(SUMMARY_KEY, async () => {
+      try {
+        const highlights = draft.experiences
+          .filter((entry) => entry.company.trim() || entry.text.trim())
+          .map(
+            (entry) =>
+              `${entry.designation || ""} at ${entry.company || ""}: ${entry.text.replace(
+                /\n/g,
+                " "
+              )}`
+          );
+        const result = await callAssist({
+          action: "generate-summary",
+          designation: draft.designation,
+          experienceYears: draft.experienceYears,
+          skills: draftToResumeData(draft).skills,
+          experience: highlights,
+        });
+        if (result?.success && result.summary) return result.summary as string;
+        toast.error(result?.message || "Could not generate a summary.");
+      } catch (error) {
+        console.error(error);
+        toast.error("Could not generate a summary right now.");
+      }
+      return null;
+    });
   };
 
   return (
@@ -869,22 +899,18 @@ export const SummaryCard = ({
         <textarea
           className={`${inputClass} min-h-[110px] resize-y pb-10 leading-relaxed`}
           value={draft.summary}
+          readOnly={assist.pending(SUMMARY_KEY)}
           onChange={(event) => update({ summary: event.target.value })}
           placeholder="A short professional summary — or generate one from your details."
         />
-        <button
-          type="button"
-          onClick={generateSummary}
-          disabled={generating}
-          className="absolute bottom-2 right-2 mb-2 inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-        >
-          {generating ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Sparkles className="h-3.5 w-3.5" />
-          )}
-          Generate summary
-        </button>
+        <AssistButtons
+          assist={assist}
+          field={SUMMARY_KEY}
+          icon={Sparkles}
+          label="Generate summary"
+          doneLabel="Generated"
+          onRun={generateSummary}
+        />
       </div>
     </SectionCard>
   );
@@ -893,42 +919,44 @@ export const SummaryCard = ({
 export const ExperienceCard = ({
   value,
   onChange,
+  assist,
 }: {
   value: ExperienceDraft[];
   onChange: (next: ExperienceDraft[]) => void;
+  assist: Assist;
 }) => {
-  const [rephrasingIndex, setRephrasingIndex] = useState<number | null>(null);
-
   const updateEntry = (index: number, patch: Partial<ExperienceDraft>) =>
     onChange(value.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
   const addEntry = () => onChange([...value, emptyExperience()]);
-  const removeEntry = (index: number) => onChange(value.filter((_, i) => i !== index));
+  const removeEntry = (index: number) => {
+    onChange(value.filter((_, i) => i !== index));
+    assist.removeEntry("experience", index);
+  };
 
-  const rephrase = async (index: number) => {
+  const rephrase = (index: number) => {
     const entry = value[index];
     if (!entry.text.trim()) {
       toast.info("Write a few lines about what you did first.");
       return;
     }
-    setRephrasingIndex(index);
-    try {
-      const result = await callAssist({
-        action: "rephrase-experience",
-        designation: entry.designation,
-        company: entry.company,
-        text: entry.text,
-      });
-      if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
-        updateEntry(index, { text: result.bullets.join("\n") });
-      } else {
+    assist.run(assistKey("experience", index), async () => {
+      try {
+        const result = await callAssist({
+          action: "rephrase-experience",
+          designation: entry.designation,
+          company: entry.company,
+          text: entry.text,
+        });
+        if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
+          return result.bullets.join("\n") as string;
+        }
         toast.error(result?.message || "Could not rephrase this experience.");
+      } catch (error) {
+        console.error(error);
+        toast.error("Could not rephrase this experience right now.");
       }
-    } catch (error) {
-      console.error(error);
-      toast.error("Could not rephrase this experience right now.");
-    } finally {
-      setRephrasingIndex(null);
-    }
+      return null;
+    });
   };
 
   return (
@@ -1002,22 +1030,18 @@ export const ExperienceCard = ({
                 <textarea
                   className={`${inputClass} min-h-[96px] resize-y pb-10 leading-relaxed`}
                   value={entry.text}
+                  readOnly={assist.pending(assistKey("experience", index))}
                   onChange={(event) => updateEntry(index, { text: event.target.value })}
                   placeholder="Describe your work here, then tap Rephrase to turn it into sharp, ATS-friendly bullet points."
                 />
-                <button
-                  type="button"
-                  onClick={() => rephrase(index)}
-                  disabled={rephrasingIndex === index}
-                  className="absolute bottom-2 right-2 mb-2 inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-                >
-                  {rephrasingIndex === index ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Wand2 className="h-3.5 w-3.5" />
-                  )}
-                  Rephrase
-                </button>
+                <AssistButtons
+                  assist={assist}
+                  field={assistKey("experience", index)}
+                  icon={Wand2}
+                  label="Rephrase"
+                  doneLabel="Rephrased"
+                  onRun={() => rephrase(index)}
+                />
               </div>
             </div>
           </div>
@@ -1030,42 +1054,44 @@ export const ExperienceCard = ({
 export const ProjectsCard = ({
   value,
   onChange,
+  assist,
 }: {
   value: ProjectDraft[];
   onChange: (next: ProjectDraft[]) => void;
+  assist: Assist;
 }) => {
-  const [rephrasingIndex, setRephrasingIndex] = useState<number | null>(null);
-
   const updateEntry = (index: number, patch: Partial<ProjectDraft>) =>
     onChange(value.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
   const addEntry = () => onChange([...value, emptyProject()]);
-  const removeEntry = (index: number) => onChange(value.filter((_, i) => i !== index));
+  const removeEntry = (index: number) => {
+    onChange(value.filter((_, i) => i !== index));
+    assist.removeEntry("project", index);
+  };
 
-  const rephrase = async (index: number) => {
+  const rephrase = (index: number) => {
     const entry = value[index];
     if (!entry.text.trim()) {
       toast.info("Write a few lines about the project first.");
       return;
     }
-    setRephrasingIndex(index);
-    try {
-      const result = await callAssist({
-        action: "rephrase-experience",
-        designation: "Project contributor",
-        company: entry.name,
-        text: entry.text,
-      });
-      if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
-        updateEntry(index, { text: result.bullets.join("\n") });
-      } else {
+    assist.run(assistKey("project", index), async () => {
+      try {
+        const result = await callAssist({
+          action: "rephrase-experience",
+          designation: "Project contributor",
+          company: entry.name,
+          text: entry.text,
+        });
+        if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
+          return result.bullets.join("\n") as string;
+        }
         toast.error(result?.message || "Could not rephrase this project.");
+      } catch (error) {
+        console.error(error);
+        toast.error("Could not rephrase this project right now.");
       }
-    } catch (error) {
-      console.error(error);
-      toast.error("Could not rephrase this project right now.");
-    } finally {
-      setRephrasingIndex(null);
-    }
+      return null;
+    });
   };
 
   return (
@@ -1120,22 +1146,18 @@ export const ProjectsCard = ({
                 <textarea
                   className={`${inputClass} min-h-[96px] resize-y pb-10 leading-relaxed`}
                   value={entry.text}
+                  readOnly={assist.pending(assistKey("project", index))}
                   onChange={(event) => updateEntry(index, { text: event.target.value })}
                   placeholder="Describe the project, then tap Rephrase to turn it into sharp, ATS-friendly bullet points."
                 />
-                <button
-                  type="button"
-                  onClick={() => rephrase(index)}
-                  disabled={rephrasingIndex === index}
-                  className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
-                >
-                  {rephrasingIndex === index ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Wand2 className="h-3.5 w-3.5" />
-                  )}
-                  Rephrase
-                </button>
+                <AssistButtons
+                  assist={assist}
+                  field={assistKey("project", index)}
+                  icon={Wand2}
+                  label="Rephrase"
+                  doneLabel="Rephrased"
+                  onRun={() => rephrase(index)}
+                />
               </div>
             </div>
           </div>
