@@ -8,6 +8,7 @@
 // Keeping the inputs here means the three surfaces never drift apart.
 
 import {
+  useEffect,
   useRef,
   useState,
   type Dispatch,
@@ -18,6 +19,8 @@ import { toast } from "react-toastify";
 import {
   Award,
   Briefcase,
+  Camera,
+  ChevronDown,
   Dribbble,
   FileText,
   FolderGit2,
@@ -38,7 +41,11 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { ResumeData } from "@/components/resume-templates/render";
+import type {
+  ResumeData,
+  ResumePersonalDetails,
+} from "@/components/resume-templates/render";
+import type { ResumePersonalField } from "@/components/resume-templates/types";
 import {
   AssistButtons,
   SUMMARY_KEY,
@@ -49,6 +56,12 @@ import {
   type Assist,
 } from "@/components/dashboard/cv-assist";
 import { authedFetch } from "@/lib/authed-fetch";
+import {
+  RESUME_PHOTO_ACCEPT,
+  loadLegacyProfilePhotoPath,
+  uploadResumePhoto,
+  useResumePhotoUrl,
+} from "@/lib/resume-photo";
 
 // ---- Types -----------------------------------------------------------------
 
@@ -94,6 +107,12 @@ export type BaseResumeDraft = {
   certifications: CertificationDraft[];
   languages: string[];
   additionalSections: AdditionalSectionDraft[];
+  // Optional, and absent on resumes saved before it existed. Each template
+  // shows only the fields its regional convention expects.
+  personal?: ResumePersonalDetails;
+  // Storage path of the resume photo in the profile-photos bucket. Undefined
+  // on resumes saved before photos lived here; "" once explicitly removed.
+  photo?: string;
 };
 
 export const LINK_FIELDS: {
@@ -108,6 +127,23 @@ export const LINK_FIELDS: {
   { key: "behance", label: "Behance", placeholder: "behance.net/you", Icon: Palette },
   { key: "github", label: "Git", placeholder: "github.com/you", Icon: Github },
   { key: "other", label: "Other website", placeholder: "https://…", Icon: LinkIcon },
+];
+
+export const PERSONAL_DETAIL_FIELDS: {
+  key: ResumePersonalField;
+  label: string;
+  placeholder: string;
+}[] = [
+  { key: "nationality", label: "Nationality", placeholder: "Indian" },
+  { key: "dateOfBirth", label: "Date of birth", placeholder: "14/03/1992" },
+  {
+    key: "workAuthorization",
+    label: "Visa / work rights",
+    placeholder: "Residence visa (transferable)",
+  },
+  { key: "drivingLicence", label: "Driving licence", placeholder: "UAE, light vehicle" },
+  { key: "maritalStatus", label: "Marital status", placeholder: "Married" },
+  { key: "gender", label: "Gender", placeholder: "Female" },
 ];
 
 // ---- Factories -------------------------------------------------------------
@@ -299,6 +335,7 @@ export const draftToResumeData = (draft: BaseResumeDraft): ResumeData => ({
         : cert.title.trim()
     ),
   languages: draft.languages.map((language) => language.trim()).filter(Boolean),
+  personal: draft.personal,
   additionalSections: draft.additionalSections
     .filter((section) => section.title.trim() && splitLines(section.text).length)
     .map((section) => ({
@@ -637,95 +674,268 @@ export const stepHasContent = {
     ),
 };
 
+// ---- Photo -----------------------------------------------------------------
+
+export type ResumePhotoField = {
+  hasPhoto: boolean;
+  url: string;
+  uploading: boolean;
+  onSelect: (file: File) => void;
+  onRemove: () => void;
+};
+
+// Owns the photo for whoever holds the draft (the wizard, the Base Resume
+// editor). Uploads happen straight away so the preview can show the photo; the
+// path itself is saved with the rest of the resume.
+export const useResumePhotoField = (
+  userId: string | undefined,
+  draft: BaseResumeDraft,
+  update: (patch: Partial<BaseResumeDraft>) => void
+): ResumePhotoField => {
+  const [uploading, setUploading] = useState(false);
+  const url = useResumePhotoUrl(draft.photo);
+  const updateRef = useRef(update);
+  updateRef.current = update;
+
+  // Resumes saved before photos moved here carry no photo field — adopt the
+  // photo from the retired profile page, if there is one.
+  const needsLegacyPhoto = draft.photo === undefined;
+  useEffect(() => {
+    if (!needsLegacyPhoto || !userId) return;
+    let cancelled = false;
+    loadLegacyProfilePhotoPath(userId).then((path) => {
+      if (!cancelled && path) updateRef.current({ photo: path });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsLegacyPhoto, userId]);
+
+  const onSelect = async (file: File) => {
+    if (!userId) {
+      toast.error("Please log in again to add a photo.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const path = await uploadResumePhoto(userId, file);
+      updateRef.current({ photo: path });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't upload that photo.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return {
+    hasPhoto: Boolean(draft.photo),
+    url,
+    uploading,
+    onSelect,
+    onRemove: () => updateRef.current({ photo: "" }),
+  };
+};
+
+const PhotoField = ({ photo }: { photo: ResumePhotoField }) => (
+  <div className="mb-3 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+    <div className="flex h-[70px] w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white text-slate-300">
+      {photo.uploading ? (
+        <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+      ) : photo.url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photo.url} alt="Your resume photo" className="h-full w-full object-cover" />
+      ) : (
+        <User className="h-6 w-6" />
+      )}
+    </div>
+    <div className="min-w-0 flex-1">
+      <p className="text-xs font-semibold text-slate-700">
+        Photo <span className="font-normal text-slate-500">(optional)</span>
+      </p>
+      <p className="text-[11px] leading-snug text-slate-500">
+        Shown only on templates that use one: Europass, Middle East and Portrait. The US,
+        UK and Australian templates never show it.
+      </p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        <label
+          className={`inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 focus-within:ring-2 focus-within:ring-slate-900/20 ${
+            photo.uploading ? "pointer-events-none opacity-60" : ""
+          }`}
+        >
+          <Camera className="h-3.5 w-3.5" />
+          {photo.uploading ? "Uploading…" : photo.hasPhoto ? "Change photo" : "Upload photo"}
+          <input
+            type="file"
+            accept={RESUME_PHOTO_ACCEPT}
+            className="sr-only"
+            disabled={photo.uploading}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              // Reset so choosing the same file again still fires onChange.
+              event.target.value = "";
+              if (file) photo.onSelect(file);
+            }}
+          />
+        </label>
+        {photo.hasPhoto && !photo.uploading ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-7 rounded-md px-2 text-xs text-slate-600"
+            onClick={photo.onRemove}
+          >
+            Remove
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  </div>
+);
+
 // ---- Section cards ---------------------------------------------------------
 
 export const PersonalDetailsCard = ({
   draft,
   update,
+  photo,
 }: {
   draft: BaseResumeDraft;
   update: (patch: Partial<BaseResumeDraft>) => void;
-}) => (
-  <SectionCard icon={User} title="Personal details">
-    <div className="grid grid-cols-2 gap-2.5">
-      <div className="space-y-1">
-        <span className={labelClass}>Full name</span>
-        <input
-          className={inputClass}
-          value={draft.candidateName}
-          onChange={(event) => update({ candidateName: event.target.value })}
-          placeholder="Jane Doe"
-        />
-      </div>
-      <div className="space-y-1">
-        <span className={labelClass}>Professional title</span>
-        <input
-          className={inputClass}
-          value={draft.designation}
-          onChange={(event) => update({ designation: event.target.value })}
-          placeholder="Project Coordinator"
-        />
-      </div>
-      <div className="space-y-1">
-        <span className={labelClass}>
-          Experience (years) <span className="text-red-500">*</span>
-        </span>
-        <input
-          className={inputClass}
-          value={draft.experienceYears}
-          onChange={(event) => update({ experienceYears: event.target.value })}
-          inputMode="decimal"
-          placeholder="3"
-        />
-      </div>
-      <div className="space-y-1">
-        <span className={labelClass}>Location</span>
-        <input
-          className={inputClass}
-          value={draft.location}
-          onChange={(event) => update({ location: event.target.value })}
-          placeholder="City, Country"
-        />
-      </div>
-      <div className="space-y-1">
-        <span className={labelClass}>Email</span>
-        <input
-          className={inputClass}
-          value={draft.email}
-          onChange={(event) => update({ email: event.target.value })}
-          placeholder="jane@email.com"
-        />
-      </div>
-      <div className="space-y-1">
-        <span className={labelClass}>Phone</span>
-        <input
-          className={inputClass}
-          value={draft.phone}
-          onChange={(event) => update({ phone: event.target.value })}
-          placeholder="+1 555 0100"
-        />
-      </div>
-    </div>
-    <div className="mt-3 grid grid-cols-2 gap-2.5">
-      {LINK_FIELDS.map(({ key, label, placeholder, Icon }) => (
-        <div key={key} className="space-y-1">
-          <span className={labelClass}>{label}</span>
-          <div className="relative">
-            <Icon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              className={`${inputClass} pl-8`}
-              value={draft.links[key]}
-              onChange={(event) =>
-                update({ links: { ...draft.links, [key]: event.target.value } })
-              }
-              placeholder={placeholder}
-            />
-          </div>
+  // Omit to hide the photo control (e.g. where there's no signed-in user).
+  photo?: ResumePhotoField;
+}) => {
+  const personal = draft.personal || {};
+  const [showRegional, setShowRegional] = useState(() =>
+    PERSONAL_DETAIL_FIELDS.some(({ key }) => (personal[key] || "").trim())
+  );
+
+  return (
+    <SectionCard icon={User} title="Personal details">
+      {photo ? <PhotoField photo={photo} /> : null}
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="space-y-1">
+          <span className={labelClass}>Full name</span>
+          <input
+            className={inputClass}
+            value={draft.candidateName}
+            onChange={(event) => update({ candidateName: event.target.value })}
+            placeholder="Jane Doe"
+          />
         </div>
-      ))}
-    </div>
-  </SectionCard>
-);
+        <div className="space-y-1">
+          <span className={labelClass}>Professional title</span>
+          <input
+            className={inputClass}
+            value={draft.designation}
+            onChange={(event) => update({ designation: event.target.value })}
+            placeholder="Project Coordinator"
+          />
+        </div>
+        <div className="space-y-1">
+          <span className={labelClass}>
+            Experience (years) <span className="text-red-500">*</span>
+          </span>
+          <input
+            className={inputClass}
+            value={draft.experienceYears}
+            onChange={(event) => update({ experienceYears: event.target.value })}
+            inputMode="decimal"
+            placeholder="3"
+          />
+        </div>
+        <div className="space-y-1">
+          <span className={labelClass}>Location</span>
+          <input
+            className={inputClass}
+            value={draft.location}
+            onChange={(event) => update({ location: event.target.value })}
+            placeholder="City, Country"
+          />
+        </div>
+        <div className="space-y-1">
+          <span className={labelClass}>Email</span>
+          <input
+            className={inputClass}
+            value={draft.email}
+            onChange={(event) => update({ email: event.target.value })}
+            placeholder="jane@email.com"
+          />
+        </div>
+        <div className="space-y-1">
+          <span className={labelClass}>Phone</span>
+          <input
+            className={inputClass}
+            value={draft.phone}
+            onChange={(event) => update({ phone: event.target.value })}
+            placeholder="+1 555 0100"
+          />
+        </div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2.5">
+        {LINK_FIELDS.map(({ key, label, placeholder, Icon }) => (
+          <div key={key} className="space-y-1">
+            <span className={labelClass}>{label}</span>
+            <div className="relative">
+              <Icon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                className={`${inputClass} pl-8`}
+                value={draft.links[key]}
+                onChange={(event) =>
+                  update({ links: { ...draft.links, [key]: event.target.value } })
+                }
+                placeholder={placeholder}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/60">
+        <button
+          type="button"
+          onClick={() => setShowRegional((open) => !open)}
+          aria-expanded={showRegional}
+          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+        >
+          <span>
+            <span className="block text-xs font-semibold text-slate-700">Regional details</span>
+            <span className="block text-[11px] text-slate-500">
+              Optional — shown only on templates whose region expects them
+            </span>
+          </span>
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${
+              showRegional ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+        {showRegional ? (
+          <div className="border-t border-slate-200 px-3 pb-3 pt-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              {PERSONAL_DETAIL_FIELDS.map(({ key, label, placeholder }) => (
+                <div key={key} className="space-y-1">
+                  <span className={labelClass}>{label}</span>
+                  <input
+                    className={inputClass}
+                    value={personal[key] || ""}
+                    onChange={(event) =>
+                      update({ personal: { ...personal, [key]: event.target.value } })
+                    }
+                    placeholder={placeholder}
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="mt-2.5 text-[11px] leading-snug text-slate-500">
+              Each template shows only what employers in that region expect. The US, UK
+              and Australian templates never show your date of birth, nationality, gender
+              or marital status.
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </SectionCard>
+  );
+};
 
 export const SkillsCard = ({
   value,

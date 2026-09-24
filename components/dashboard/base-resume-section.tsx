@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   RESUME_FONT_OPTIONS,
+  getResumeTemplateConfig,
   resolveResumeTemplateTheme,
 } from "@/components/resume-templates/config";
 import { ResumeTemplatePicker } from "@/components/dashboard/template-picker";
@@ -49,9 +50,11 @@ import {
   emptyBaseResumeDraft,
   extractedToDraft,
   useBaseResumeAssist,
+  useResumePhotoField,
   type BaseResumeDraft,
   type ExtractedBaseResume,
 } from "@/components/dashboard/resume-form";
+import { loadLegacyProfilePhotoPath, resolveResumePhotoUrl } from "@/lib/resume-photo";
 import {
   createBaseResume,
   deleteBaseResume,
@@ -83,12 +86,14 @@ const buildPreviewHtml = (rec: {
   draft: BaseResumeDraft;
   template: ResumeTemplateId;
   overrides?: ResumeTemplateThemeOverrides;
+  photoUrl?: string;
 }) =>
   renderResumeFromData({
     data: draftToResumeData(rec.draft),
     templateId: rec.template,
     candidateName: rec.draft.candidateName.trim() || "Your Name",
     designation: rec.draft.designation,
+    photoUrl: rec.photoUrl,
     overrides: rec.overrides,
   });
 
@@ -147,10 +152,17 @@ const BaseResumeEditor = ({
 
   const update = (patch: Partial<BaseResumeDraft>) =>
     setDraft((current) => ({ ...current, ...patch }));
+  const photo = useResumePhotoField(user?.id, draft, update);
 
   const previewHtml = useMemo(
-    () => buildPreviewHtml({ draft, template: selectedTemplate, overrides }),
-    [draft, selectedTemplate, overrides]
+    () =>
+      buildPreviewHtml({
+        draft,
+        template: selectedTemplate,
+        overrides,
+        photoUrl: photo.url,
+      }),
+    [draft, selectedTemplate, overrides, photo.url]
   );
 
   const updateOverrides = (patch: ResumeTemplateThemeOverrides) =>
@@ -181,7 +193,12 @@ const BaseResumeEditor = ({
         toast.error(result.message || "Failed to read that resume.");
         return;
       }
-      setDraft(extractedToDraft(result.baseResume as ExtractedBaseResume));
+      // A file carries no photo or regional details — keep the ones entered here.
+      setDraft((current) => ({
+        ...extractedToDraft(result.baseResume as ExtractedBaseResume),
+        personal: current.personal,
+        photo: current.photo,
+      }));
       // Every field is new, so every button is available again.
       assist.reset();
       toast.success("Resume extracted. Review each field, then save.");
@@ -340,7 +357,7 @@ const BaseResumeEditor = ({
           <div className="max-h-[72vh] flex-1 space-y-4 overflow-auto border-t border-slate-200 p-4">
             {editorTab === "content" ? (
               <>
-                <PersonalDetailsCard draft={draft} update={update} />
+                <PersonalDetailsCard draft={draft} update={update} photo={photo} />
                 <SkillsCard
                   value={draft.skillCategories}
                   onChange={(next) => update({ skillCategories: next })}
@@ -486,6 +503,26 @@ const BaseResumeEditor = ({
                         }
                       />
                     </label>
+                    {getResumeTemplateConfig(selectedTemplate).layout.photo !== "none" ? (
+                      <label className="flex items-start gap-2 text-xs text-slate-600 sm:col-span-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                          checked={theme.showPhoto}
+                          onChange={(event) =>
+                            updateOverrides({ showPhoto: event.target.checked })
+                          }
+                        />
+                        <span>
+                          Show photo
+                          {!photo.hasPhoto ? (
+                            <span className="block text-[11px] text-slate-400">
+                              Add one under Personal details on the Content tab.
+                            </span>
+                          ) : null}
+                        </span>
+                      </label>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -538,7 +575,7 @@ const BaseResumeEditor = ({
 
       {previewOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/50 p-4 sm:p-8"
+          className="fixed inset-0 z-50 !mt-0 flex items-start justify-center overflow-auto bg-black/50 p-4 sm:p-8"
           onClick={() => setPreviewOpen(false)}
         >
           <div
@@ -716,8 +753,13 @@ export const BaseResumeSection = ({ user }: { user: SectionUser }) => {
     setBusyId(rec.id);
     setMenuId(null);
     try {
+      // Resumes saved before photos lived on the resume fall back to the
+      // retired profile-page photo, as the editor and Scan do.
+      const photoPath =
+        rec.draft.photo ?? (user?.id ? await loadLegacyProfilePhotoPath(user.id) : "");
+      const photoUrl = await resolveResumePhotoUrl(photoPath);
       await downloadPdfFromHtml(
-        buildPreviewHtml(rec),
+        buildPreviewHtml({ ...rec, photoUrl }),
         rec.draft.candidateName || rec.name
       );
     } catch (error) {

@@ -1,5 +1,12 @@
-import { resolveResumeTemplateTheme } from "./config";
-import { ResumeTemplateId, ResumeTemplateThemeOverrides } from "./types";
+import { getResumeTemplateConfig, resolveResumeTemplateTheme } from "./config";
+import type {
+  ResumePersonalField,
+  ResumeSectionKey,
+  ResumeTemplateId,
+  ResumeTemplateLayout,
+  ResumeTemplateTheme,
+  ResumeTemplateThemeOverrides,
+} from "./types";
 
 const escapeHtml = (value: string) =>
   value
@@ -473,6 +480,7 @@ const isEducationHeaderLine = (line: string) =>
 type EducationEntry = {
   qualification: string;
   institution: string;
+  location: string;
   duration: string;
   details: string[];
 };
@@ -485,6 +493,7 @@ const parseEducationHeader = (line: string): EducationEntry => {
   const entry: EducationEntry = {
     qualification: "",
     institution: "",
+    location: "",
     duration: "",
     details: [],
   };
@@ -1002,12 +1011,9 @@ const iconSvgForContactKind = (kind: ContactItem["kind"], color: string) => {
   return `${open}<g ${stroke}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></g></svg>`;
 };
 
-type ResumeRenderOptions = {
-  headingColor: string;
-  bodyColor: string;
-  sectionSpacing: number;
-  baseFontSize: number;
-  lineHeight: number;
+type RenderContext = {
+  theme: ResumeTemplateTheme;
+  layout: ResumeTemplateLayout;
   useContactIcons: boolean;
 };
 
@@ -1043,6 +1049,10 @@ export type ResumeEducationItem = {
   details?: string[];
 };
 export type ResumeAdditionalSection = { title?: string; items?: string[] };
+// Region-specific personal details (date of birth, nationality, visa status…).
+// Each template decides which of these belong on the page — see
+// headerDetails / sectionDetails in the template layout.
+export type ResumePersonalDetails = Partial<Record<ResumePersonalField, string>>;
 export type ResumeData = {
   contact?: ResumeContact;
   summary?: string;
@@ -1054,11 +1064,12 @@ export type ResumeData = {
   languages?: string[];
   references?: string[];
   additionalSections?: ResumeAdditionalSection[];
+  personal?: ResumePersonalDetails;
 };
 
 // The normalized, ready-to-render shape. Both the text path (parse → this) and
 // the data path (object → this) converge here so all section markup lives in
-// exactly one place: renderSectionsToHtml.
+// exactly one place: renderResumeDocument.
 type RenderedSections = {
   contactItems: ContactItem[];
   summaryText: string;
@@ -1070,6 +1081,7 @@ type RenderedSections = {
   languages: string[];
   references: string[];
   additionalSections: { title: string; items: string[] }[];
+  personal: ResumePersonalDetails;
 };
 
 const splitLanguageLines = (lines: string[] = []): string[] =>
@@ -1082,291 +1094,608 @@ const splitLanguageLines = (lines: string[] = []): string[] =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-// Single source of truth for all resume section markup. Given fully normalized
-// sections, emit the HTML body. Used by both renderResumeBodyFromText (legacy
-// text input) and renderResumeBodyFromData (structured object input).
-const renderSectionsToHtml = (
-  structured: RenderedSections,
-  options: ResumeRenderOptions
-): string => {
-  let html = "";
+// ---- Dates -----------------------------------------------------------------
 
-  if (structured.contactItems.length) {
-    const contactItems = structured.contactItems;
-    if (options.useContactIcons) {
-      html += `<div style="display:flex;flex-wrap:wrap;gap:8px 10px;margin:0 0 10px;">`;
-      contactItems.forEach((item) => {
-        const icon = iconSvgForContactKind(item.kind, options.bodyColor);
-        const text = `${icon}<span>${escapeHtml(item.label)}</span>`;
-        if (item.href) {
-          html += `<a href="${escapeHtml(
-            item.href
-          )}" style="display:inline-flex;align-items:center;gap:6px;font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};text-decoration:none;">${text}</a>`;
-        } else {
-          html += `<span style="display:inline-flex;align-items:center;gap:6px;font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};">${text}</span>`;
-        }
-      });
-      html += `</div>`;
-    } else {
-      const plainItems = contactItems.map((item) => {
-        const label = escapeHtml(item.label);
-        if (!item.href) return label;
-        return `<a href="${escapeHtml(
-          item.href
-        )}" style="color:${options.bodyColor};text-decoration:none;">${label}</a>`;
-      });
-      html += `<p style="font-size:${options.baseFontSize + 2}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;">${plainItems.join(
-        " | "
-      )}</p>`;
-    }
+const MONTH_NUMBERS: Record<string, string> = {
+  jan: "01",
+  feb: "02",
+  mar: "03",
+  apr: "04",
+  may: "05",
+  jun: "06",
+  jul: "07",
+  aug: "08",
+  sep: "09",
+  oct: "10",
+  nov: "11",
+  dec: "12",
+};
+const PRESENT_TOKEN_RE =
+  /^(present|current|currently|now|ongoing|to\s+date|till\s+date|today)$/i;
+
+// "Sep 2021" → "09/2021", "2019" → "2019", "Present" → "Current". Returns null
+// for anything it can't read with certainty, so the caller keeps the original.
+const toEuropassDate = (token: string): string | null => {
+  const value = token.trim();
+  if (PRESENT_TOKEN_RE.test(value)) return "Current";
+  if (/^(19|20)\d{2}$/.test(value)) return value;
+  const numeric = value.match(/^(\d{1,2})[/.](\d{4})$/);
+  if (numeric && Number(numeric[1]) >= 1 && Number(numeric[1]) <= 12) {
+    return `${numeric[1].padStart(2, "0")}/${numeric[2]}`;
   }
-
-  const sectionHeadingStyle = `font-size:12px;font-weight:700;margin:${options.sectionSpacing}px 0 6px;color:${options.headingColor};letter-spacing:.04em;text-transform:uppercase;`;
-
-  if (structured.summaryText) {
-    html += `<h3 style=\"${sectionHeadingStyle}\">SUMMARY</h3>`;
-    html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;\">${withInlineFormatting(
-      structured.summaryText
-    )}</p>`;
+  const named = value.match(/^([a-z]{3,9})\.?,?\s+((?:19|20)\d{2})$/i);
+  if (named) {
+    const month = MONTH_NUMBERS[named[1].slice(0, 3).toLowerCase()];
+    if (month) return `${month}/${named[2]}`;
   }
-
-  if (structured.skillCategories.length) {
-    html += `<h3 style=\"${sectionHeadingStyle}\">SKILLS</h3>`;
-    const hasLabels = structured.skillCategories.some((category) => category.label);
-    if (hasLabels) {
-      html += '<div style="margin:0 0 10px;">';
-      structured.skillCategories.forEach((category) => {
-        const labelHtml = category.label
-          ? `<strong>${escapeHtml(category.label)}:</strong> `
-          : "";
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;\">${labelHtml}${escapeHtml(
-          category.items.join(", ")
-        )}</p>`;
-      });
-      html += "</div>";
-    } else {
-      const inlineSkills = structured.skillCategories.flatMap((category) => category.items);
-      html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 10px;\">${escapeHtml(
-        inlineSkills.join(", ")
-      )}</p>`;
-    }
-  }
-
-  const renderSimpleSection = (
-    title: string,
-    sectionLines: string[] = [],
-    sectionOptions: { forceBullets?: boolean; treatAllAsBullets?: boolean } = {}
-  ) => {
-    if (!sectionLines.length) return;
-    html += `<h3 style=\"${sectionHeadingStyle}\">${title}</h3>`;
-    let bullets: string[] = [];
-    const flushBullets = () => {
-      const normalized = normalizeExperienceBullets(bullets);
-      if (normalized.length) {
-        html += '<div style="margin:6px 0 10px;">';
-        normalized.forEach((bullet) => {
-          html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 6px;\">• ${escapeHtml(
-            bullet
-          )}</p>`;
-        });
-        html += "</div>";
-      }
-      bullets = [];
-    };
-
-    sectionLines.forEach((line) => {
-      const cleanLine = stripMarkdownBold(line).trim();
-      const isBulletLine = /^[-*•]\s+/.test(cleanLine);
-      if (isBulletLine) {
-        bullets.push(cleanLine);
-        return;
-      }
-      const shouldForceBullet =
-        sectionOptions.forceBullets &&
-        (sectionOptions.treatAllAsBullets || !isRoleHeaderLine(cleanLine));
-      if (shouldForceBullet) {
-        bullets.push(cleanLine);
-        return;
-      }
-      if (sectionOptions.forceBullets && isRoleHeaderLine(cleanLine)) {
-        flushBullets();
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 6px;\"><strong>${escapeHtml(
-          cleanLine
-        )}</strong></p>`;
-        return;
-      }
-      flushBullets();
-      html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 6px;\">${escapeHtml(
-        cleanLine
-      )}</p>`;
-    });
-    flushBullets();
-  };
-
-  if (structured.experience.length) {
-    html += `<h3 style=\"${sectionHeadingStyle}\">EXPERIENCE</h3>`;
-    structured.experience.forEach((entry) => {
-      html += '<div style="margin:0 0 12px;">';
-      const titleText = entry.designation || entry.company;
-      html +=
-        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
-      html += `<span style=\"font-size:${options.baseFontSize + 1}px;font-weight:700;color:${options.headingColor};\">${escapeHtml(
-        titleText
-      )}</span>`;
-      if (entry.duration) {
-        html += `<span style=\"font-size:${options.baseFontSize}px;color:${options.bodyColor};white-space:nowrap;\">${escapeHtml(
-          entry.duration
-        )}</span>`;
-      }
-      html += "</div>";
-
-      let secondLineHtml = "";
-      if (entry.designation && entry.company) {
-        secondLineHtml = `<span style=\"font-weight:600;\">${escapeHtml(
-          entry.company
-        )}</span>`;
-        if (entry.location) {
-          secondLineHtml += `<span style=\"font-weight:400;\"> — ${escapeHtml(
-            entry.location
-          )}</span>`;
-        }
-      } else if (entry.location) {
-        secondLineHtml = escapeHtml(entry.location);
-      }
-      if (secondLineHtml) {
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:1px 0 5px;\">${secondLineHtml}</p>`;
-      }
-
-      const normalizedBullets = normalizeExperienceBullets(entry.bullets);
-      normalizedBullets.forEach((bullet) => {
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 5px;padding-left:14px;text-indent:-14px;\">• ${escapeHtml(
-          bullet
-        )}</p>`;
-      });
-
-      html += "</div>";
-    });
-  }
-
-  if (structured.projects.length) {
-    html += `<h3 style=\"${sectionHeadingStyle}\">PROJECTS</h3>`;
-    structured.projects.forEach((entry) => {
-      html += '<div style="margin:0 0 10px;">';
-      if (entry.name || entry.href) {
-        html +=
-          '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
-        html += `<span style=\"font-size:${options.baseFontSize + 1}px;font-weight:700;color:${options.headingColor};\">${escapeHtml(
-          entry.name
-        )}</span>`;
-        if (entry.href) {
-          html += `<a href=\"${escapeHtml(
-            entry.href
-          )}\" style=\"font-size:${options.baseFontSize}px;color:${options.bodyColor};text-decoration:underline;white-space:nowrap;\">${escapeHtml(
-            displayLabelForUrl(entry.href)
-          )}</a>`;
-        }
-        html += "</div>";
-      }
-      if (entry.meta) {
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:1px 0 4px;font-style:italic;\">${escapeHtml(
-          entry.meta
-        )}</p>`;
-      }
-      const normalizedBullets = normalizeExperienceBullets(entry.bullets);
-      normalizedBullets.forEach((bullet) => {
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;padding-left:14px;text-indent:-14px;\">• ${escapeHtml(
-          bullet
-        )}</p>`;
-      });
-      html += "</div>";
-    });
-  }
-
-  if (structured.education.length) {
-    html += `<h3 style=\"${sectionHeadingStyle}\">EDUCATION</h3>`;
-    structured.education.forEach((entry) => {
-      html += '<div style="margin:0 0 10px;">';
-      const titleText = entry.qualification || entry.institution;
-      html +=
-        '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">';
-      html += `<span style=\"font-size:${options.baseFontSize + 1}px;font-weight:700;color:${options.headingColor};\">${escapeHtml(
-        titleText
-      )}</span>`;
-      if (entry.duration) {
-        html += `<span style=\"font-size:${options.baseFontSize}px;color:${options.bodyColor};white-space:nowrap;\">${escapeHtml(
-          entry.duration
-        )}</span>`;
-      }
-      html += "</div>";
-      if (entry.qualification && entry.institution) {
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:1px 0 4px;\">${escapeHtml(
-          entry.institution
-        )}</p>`;
-      }
-      const normalizedDetails = normalizeExperienceBullets(entry.details);
-      normalizedDetails.forEach((detail) => {
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 4px;padding-left:14px;text-indent:-14px;\">• ${escapeHtml(
-          detail
-        )}</p>`;
-      });
-      html += "</div>";
-    });
-  }
-
-  const certificationItems = structured.certifications
-    .map(parseCertificationLine)
-    .filter((item): item is CertificationLine => item !== null);
-  if (certificationItems.length) {
-    html += `<h3 style=\"${sectionHeadingStyle}\">CERTIFICATIONS</h3>`;
-    html += '<div style="margin:6px 0 10px;">';
-    certificationItems.forEach((item) => {
-      if (item.kind === "heading") {
-        html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.headingColor};font-weight:700;margin:8px 0 4px;\">${escapeHtml(
-          item.text
-        )}</p>`;
-        return;
-      }
-      let inner = escapeHtml(item.text);
-      if (item.href) {
-        const linkLabel = item.label || "Credentials";
-        inner += ` — <a href=\"${escapeHtml(
-          item.href
-        )}\" style=\"color:${options.bodyColor};text-decoration:underline;\">${escapeHtml(
-          linkLabel
-        )}</a>`;
-      }
-      html += `<p style=\"font-size:${options.baseFontSize}px;line-height:${options.lineHeight};color:${options.bodyColor};margin:0 0 6px;padding-left:14px;text-indent:-14px;\">• ${inner}</p>`;
-    });
-    html += "</div>";
-  }
-
-  if (structured.languages.length) {
-    renderSimpleSection("LANGUAGES", structured.languages, {
-      forceBullets: true,
-      treatAllAsBullets: true,
-    });
-  }
-  if (structured.references.length) {
-    renderSimpleSection("REFERENCES", structured.references, {
-      forceBullets: true,
-      treatAllAsBullets: true,
-    });
-  }
-  structured.additionalSections.forEach((section) => {
-    if (!section.title || !section.items.length) return;
-    renderSimpleSection(section.title.toUpperCase(), section.items, {
-      forceBullets: true,
-      treatAllAsBullets: true,
-    });
-  });
-
-  return html || '<p style="font-size:13px;color:#64748b;">No content available.</p>';
+  return null;
 };
 
-const renderResumeBodyFromText = (
-  resumeText: string,
-  options: ResumeRenderOptions
+// Normalizes a free-text duration to the template's convention: an en dash
+// between the two ends everywhere, and Europass's bracketed MM/YYYY form.
+// Durations that don't look like a date range pass through unchanged.
+const formatDuration = (raw: string, style: ResumeTemplateLayout["dates"]) => {
+  const value = (raw || "").replace(/\s+/g, " ").trim();
+  if (!value) return "";
+  const parts = value
+    .replace(/\s+(?:to|till|until)\s+/gi, " – ")
+    .split(/\s*[-–—]\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const standard =
+    parts.length && parts.length <= 2
+      ? parts.map((part) => (PRESENT_TOKEN_RE.test(part) ? "Present" : part)).join(" – ")
+      : value;
+  if (style !== "europass") return standard;
+  const converted = parts.length <= 2 ? parts.map(toEuropassDate) : [];
+  const europass =
+    converted.length && converted.every(Boolean) ? converted.join(" – ") : standard;
+  return `[ ${europass} ]`;
+};
+
+// ---- Shared markup ---------------------------------------------------------
+
+const MUTED_TEXT_COLOR = "#64748b";
+const SEPARATOR_COLOR = "#94a3b8";
+const KEEP_TOGETHER = "break-inside:avoid;page-break-inside:avoid;";
+
+const textStyle = (ctx: RenderContext, extra = "") =>
+  `font-size:${ctx.theme.baseFontSize}px;line-height:${ctx.theme.lineHeight};color:${ctx.theme.bodyColor};margin:0;${extra}`;
+
+// A plain "|" between items: parsers read it as a delimiter, people as a
+// divider. The spaces are real text so the PDF's text layer reads "a | b | c".
+const separatorHtml = () =>
+  `<span style="color:${SEPARATOR_COLOR};margin:0 4px;"> | </span>`;
+
+// Side-by-side flex items (title ↔ dates, bullet ↔ text) are separated only by
+// layout, so plain-text PDF extraction would glue them ("EngineerSep 2021").
+// A trailing non-breaking space is invisible in the layout but keeps a real
+// space in the text layer.
+const TEXT_GAP = "&nbsp;";
+
+const renderInlineRow = (
+  parts: string[],
+  ctx: RenderContext,
+  align: "left" | "center",
+  marginTop = 8
+) =>
+  parts.length
+    ? `<p style="${textStyle(ctx, `margin:${marginTop}px 0 0;text-align:${align};`)}">${parts.join(
+        separatorHtml()
+      )}</p>`
+    : "";
+
+// Inline-block so a row wraps between items, never inside one ("Dubai, / UAE").
+const INLINE_ITEM = "display:inline-block;max-width:100%;";
+
+const labelledHtml = (label: string, valueHtml: string) =>
+  `<span style="${INLINE_ITEM}"><span style="font-weight:600;">${escapeHtml(label)}:</span> ${valueHtml}</span>`;
+
+// Real list items with a text bullet: every parser keeps "•" as the item
+// marker, and the flex row gives wrapped lines a clean hanging indent.
+const renderBulletsHtml = (itemsHtml: string[], ctx: RenderContext) =>
+  itemsHtml.length
+    ? `<ul style="list-style:none;margin:4px 0 0;padding:0;">${itemsHtml
+        .map(
+          (item) =>
+            `<li style="${textStyle(
+              ctx,
+              `display:flex;gap:4px;margin:0 0 3px;${KEEP_TOGETHER}`
+            )}"><span style="flex:none;color:${ctx.theme.accent};">•${TEXT_GAP}</span><span style="flex:1;min-width:0;">${item}</span></li>`
+        )
+        .join("")}</ul>`
+    : "";
+
+const renderBullets = (items: string[], ctx: RenderContext) =>
+  renderBulletsHtml(normalizeExperienceBullets(items).map(escapeHtml), ctx);
+
+const renderSectionHeading = (title: string, ctx: RenderContext) => {
+  const { theme, layout } = ctx;
+  const color = layout.headingTone === "accent" ? theme.accent : theme.headingColor;
+  const base = `margin:${theme.sectionSpacing}px 0 8px;font-size:${theme.baseFontSize}px;line-height:1.3;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${color};break-after:avoid;page-break-after:avoid;`;
+  const text = escapeHtml(title);
+  const line = (lineColor: string) =>
+    `<span aria-hidden="true" style="flex:1;height:1px;background:${lineColor};"></span>`;
+
+  switch (layout.heading) {
+    case "bar":
+      return `<h2 style="${base}border-left:3px solid ${theme.accent};padding:1px 0 1px 9px;">${text}</h2>`;
+    case "caps":
+      return `<h2 style="${base}font-size:${theme.baseFontSize - 1}px;letter-spacing:.14em;padding-bottom:5px;border-bottom:1px solid ${theme.mutedAccent};">${text}</h2>`;
+    case "line":
+      return `<h2 style="${base}display:flex;align-items:center;gap:10px;"><span>${text}</span>${line(
+        theme.accent
+      )}</h2>`;
+    case "centered":
+      return `<h2 style="${base}display:flex;align-items:center;gap:14px;letter-spacing:.18em;">${line(
+        theme.accent
+      )}<span>${text}</span>${line(theme.accent)}</h2>`;
+    default: {
+      const ruleColor = layout.headingTone === "accent" ? theme.mutedAccent : theme.accent;
+      return `<h2 style="${base}padding-bottom:4px;border-bottom:1px solid ${ruleColor};">${text}</h2>`;
+    }
+  }
+};
+
+type EntryHeaderParts = {
+  title: string;
+  subtitle?: string;
+  // Pre-escaped HTML for the right-hand side of each row.
+  asideHtml?: string;
+  subAsideHtml?: string;
+};
+
+// Title left + dates right, then organisation left + location right — the
+// layout recruiters scan fastest, and it reads in the same order as text.
+const renderEntryHeader = (ctx: RenderContext, parts: EntryHeaderParts) => {
+  const { theme } = ctx;
+  let html = `<div style="${KEEP_TOGETHER}">`;
+  html += `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">`;
+  html += `<h3 style="margin:0;font-size:${theme.baseFontSize + 1}px;line-height:1.35;font-weight:700;color:${theme.headingColor};">${escapeHtml(
+    parts.title
+  )}${parts.asideHtml ? TEXT_GAP : ""}</h3>`;
+  if (parts.asideHtml) {
+    html += `<span style="flex:none;font-size:${theme.baseFontSize}px;color:${theme.bodyColor};white-space:nowrap;">${parts.asideHtml}</span>`;
+  }
+  html += "</div>";
+  if (parts.subtitle || parts.subAsideHtml) {
+    html += `<div style="${textStyle(
+      ctx,
+      "display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-top:1px;"
+    )}">`;
+    html += `<span style="font-weight:600;">${escapeHtml(parts.subtitle || "")}${
+      parts.subAsideHtml ? TEXT_GAP : ""
+    }</span>`;
+    if (parts.subAsideHtml) {
+      html += `<span style="flex:none;max-width:45%;text-align:right;color:${MUTED_TEXT_COLOR};">${parts.subAsideHtml}</span>`;
+    }
+    html += "</div>";
+  }
+  return `${html}</div>`;
+};
+
+// Europass order: the bracketed dates lead the title, the organisation and
+// place follow on their own line.
+const renderEuropassEntryHeader = (
+  ctx: RenderContext,
+  parts: { title: string; dates: string; subtitle: string; location: string }
 ) => {
+  const { theme } = ctx;
+  let html = `<div style="${KEEP_TOGETHER}">`;
+  html += `<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;">`;
+  if (parts.dates) {
+    html += `<span style="flex:none;font-size:${theme.baseFontSize - 1}px;color:${MUTED_TEXT_COLOR};white-space:nowrap;">${escapeHtml(
+      parts.dates
+    )}${TEXT_GAP}</span>`;
+  }
+  html += `<h3 style="margin:0;font-size:${theme.baseFontSize + 1}px;line-height:1.35;font-weight:700;color:${theme.headingColor};">${escapeHtml(
+    parts.title
+  )}</h3>`;
+  html += "</div>";
+  const place = [parts.subtitle, parts.location].filter(Boolean);
+  if (place.length) {
+    html += `<p style="${textStyle(ctx, "margin-top:1px;")}">${
+      parts.subtitle ? `<span style="font-weight:600;">${escapeHtml(parts.subtitle)}</span>` : ""
+    }${parts.subtitle && parts.location ? " – " : ""}${escapeHtml(parts.location)}</p>`;
+  }
+  return `${html}</div>`;
+};
+
+const renderTimedEntryHeader = (
+  ctx: RenderContext,
+  entry: { title: string; subtitle: string; duration: string; location: string }
+) => {
+  const dates = formatDuration(entry.duration, ctx.layout.dates);
+  if (ctx.layout.entry === "europass") {
+    return renderEuropassEntryHeader(ctx, {
+      title: entry.title,
+      dates,
+      subtitle: entry.subtitle,
+      location: entry.location,
+    });
+  }
+  return renderEntryHeader(ctx, {
+    title: entry.title,
+    subtitle: entry.subtitle,
+    asideHtml: dates ? escapeHtml(dates) : "",
+    subAsideHtml: entry.location ? escapeHtml(entry.location) : "",
+  });
+};
+
+// ---- Header ----------------------------------------------------------------
+
+const EUROPASS_CONTACT_LABELS: Record<ContactItem["kind"], string> = {
+  email: "Email address",
+  phone: "Phone number",
+  location: "Address",
+  linkedin: "LinkedIn",
+  github: "Website",
+  behance: "Website",
+  link: "Website",
+};
+
+const contactItemHtml = (item: ContactItem, labelled: boolean) => {
+  const label = escapeHtml(item.label);
+  const valueHtml = item.href
+    ? `<a href="${escapeHtml(item.href)}" style="color:inherit;text-decoration:none;">${label}</a>`
+    : label;
+  return labelled
+    ? labelledHtml(EUROPASS_CONTACT_LABELS[item.kind], valueHtml)
+    : `<span style="${INLINE_ITEM}">${valueHtml}</span>`;
+};
+
+const renderContact = (
+  items: ContactItem[],
+  ctx: RenderContext,
+  align: "left" | "center",
+  marginTop = 8
+) => {
+  if (!items.length) return "";
+  const { theme, layout } = ctx;
+  if (layout.contact === "icons" && ctx.useContactIcons) {
+    const itemStyle = `display:inline-flex;align-items:center;gap:6px;font-size:${theme.baseFontSize}px;line-height:${theme.lineHeight};color:${theme.bodyColor};text-decoration:none;`;
+    const row = items
+      .map((item) => {
+        const inner = `${iconSvgForContactKind(item.kind, theme.accent)}<span>${escapeHtml(
+          item.label
+        )}${TEXT_GAP}</span>`;
+        return item.href
+          ? `<a href="${escapeHtml(item.href)}" style="${itemStyle}">${inner}</a>`
+          : `<span style="${itemStyle}">${inner}</span>`;
+      })
+      .join("");
+    return `<div style="display:flex;flex-wrap:wrap;justify-content:${
+      align === "center" ? "center" : "flex-start"
+    };gap:4px 12px;margin:10px 0 0;">${row}</div>`;
+  }
+  return renderInlineRow(
+    items.map((item) => contactItemHtml(item, layout.contact === "labelled")),
+    ctx,
+    align,
+    marginTop
+  );
+};
+
+const personalItemsHtml = (
+  personal: ResumePersonalDetails,
+  specs: ResumeTemplateLayout["headerDetails"]
+) =>
+  specs
+    .map((spec) => ({ spec, value: (personal[spec.field] || "").trim() }))
+    .filter(({ value }) => value)
+    .map(({ spec, value }) => labelledHtml(spec.label, escapeHtml(value)));
+
+const renderHeader = (
+  structured: RenderedSections,
+  ctx: RenderContext,
+  meta: { candidateName: string; designation?: string; photoUrl?: string }
+) => {
+  const { theme, layout } = ctx;
+  const align = layout.header === "center" ? "center" : "left";
+  const nameStyle = `margin:0;font-size:${Math.round(
+    theme.baseFontSize * 2.15
+  )}px;line-height:1.15;font-weight:700;color:${theme.headingColor};${
+    layout.nameCase === "upper"
+      ? "text-transform:uppercase;letter-spacing:.1em;"
+      : "letter-spacing:-.01em;"
+  }`;
+  const nameHtml = `<h1 style="${nameStyle}">${escapeHtml(meta.candidateName)}</h1>`;
+  const designationHtml = meta.designation
+    ? `<p style="margin:5px 0 0;font-size:${theme.baseFontSize + 2}px;line-height:1.35;font-weight:600;color:${theme.accent};">${escapeHtml(
+        meta.designation
+      )}</p>`
+    : "";
+  const detailItems = personalItemsHtml(structured.personal, layout.headerDetails);
+  const photoHtml =
+    layout.photo !== "none" && theme.showPhoto && meta.photoUrl
+      ? `<img src="${escapeHtml(meta.photoUrl)}" alt="Profile photo" style="display:block;flex:none;width:92px;height:115px;object-fit:cover;border-radius:6px;border:1px solid ${theme.mutedAccent};" />`
+      : "";
+  const frame = layout.headerRule
+    ? `border-bottom:2px solid ${theme.accent};padding-bottom:14px;`
+    : "padding-bottom:4px;";
+
+  if (layout.header === "europass") {
+    // Europass leads with the personal information, then the contact lines.
+    const text = `${nameHtml}${designationHtml}${renderInlineRow(
+      detailItems,
+      ctx,
+      "left"
+    )}${renderContact(structured.contactItems, ctx, "left", detailItems.length ? 4 : 8)}`;
+    return photoHtml
+      ? `<header style="${frame}display:flex;gap:18px;align-items:flex-start;">${photoHtml}<div style="flex:1;min-width:0;">${text}</div></header>`
+      : `<header style="${frame}">${text}</header>`;
+  }
+
+  const text = `${nameHtml}${designationHtml}${renderContact(
+    structured.contactItems,
+    ctx,
+    align
+  )}${renderInlineRow(detailItems, ctx, align, 4)}`;
+  if (layout.header === "split" && photoHtml) {
+    return `<header style="${frame}display:flex;gap:20px;align-items:flex-start;justify-content:space-between;"><div style="flex:1;min-width:0;">${text}</div>${photoHtml}</header>`;
+  }
+  return `<header style="${frame}text-align:${align};">${text}</header>`;
+};
+
+// ---- Sections ----------------------------------------------------------------
+
+const NATIVE_LANGUAGE_RE = /\b(native|mother\s*tongue|first\s+language)\b/i;
+const CEFR_LEVEL_RE = /\b[ABC][12]\b/;
+
+const splitLanguageLevel = (item: string) => {
+  const clean = stripMarkdownBold(item).trim();
+  const paren = clean.match(/^(.+?)\s*\((.+)\)\s*$/);
+  if (paren) return { name: paren[1].trim(), level: paren[2].trim() };
+  const separated = clean.match(/^(.+?)\s*[-–—:|]\s*(.+)$/);
+  if (separated) return { name: separated[1].trim(), level: separated[2].trim() };
+  return { name: clean, level: "" };
+};
+
+// Europass language block: mother tongue(s) first, then other languages with
+// the level the candidate gave — plus the CEFR key when levels use it.
+const renderEuropassLanguages = (languages: string[], ctx: RenderContext) => {
+  const natives: string[] = [];
+  const others: { name: string; level: string }[] = [];
+  languages.forEach((item) => {
+    const { name, level } = splitLanguageLevel(item);
+    if (!name) return;
+    if (NATIVE_LANGUAGE_RE.test(item)) natives.push(name);
+    else others.push({ name, level });
+  });
+  let html = "";
+  if (natives.length) {
+    html += `<p style="${textStyle(ctx)}">${labelledHtml(
+      "Mother tongue(s)",
+      escapeHtml(natives.join(", "))
+    )}</p>`;
+  }
+  if (others.length) {
+    if (natives.length) {
+      html += `<p style="${textStyle(ctx, "margin-top:6px;font-weight:600;")}">Other language(s):</p>`;
+    }
+    html += renderBulletsHtml(
+      others.map(({ name, level }) =>
+        level
+          ? `<span style="font-weight:600;">${escapeHtml(name)}</span> – ${escapeHtml(level)}`
+          : `<span style="font-weight:600;">${escapeHtml(name)}</span>`
+      ),
+      ctx
+    );
+  }
+  if (languages.some((item) => CEFR_LEVEL_RE.test(item))) {
+    html += `<p style="${textStyle(
+      ctx,
+      `margin-top:4px;font-size:${ctx.theme.baseFontSize - 2}px;color:${MUTED_TEXT_COLOR};`
+    )}">Levels: A1 and A2: Basic user; B1 and B2: Independent user; C1 and C2: Proficient user</p>`;
+  }
+  return html;
+};
+
+const renderCertifications = (lines: string[], ctx: RenderContext) => {
+  const items = lines
+    .map(parseCertificationLine)
+    .filter((item): item is CertificationLine => item !== null);
+  let html = "";
+  let pending: string[] = [];
+  const flush = () => {
+    html += renderBulletsHtml(pending, ctx);
+    pending = [];
+  };
+  items.forEach((item) => {
+    if (item.kind === "heading") {
+      flush();
+      html += `<p style="${textStyle(
+        ctx,
+        `margin:8px 0 2px;font-weight:700;color:${ctx.theme.headingColor};`
+      )}">${escapeHtml(item.text)}</p>`;
+      return;
+    }
+    let inner = escapeHtml(item.text);
+    if (item.href) {
+      inner += ` — <a href="${escapeHtml(item.href)}" style="color:inherit;text-decoration:underline;">${escapeHtml(
+        item.label || "Credentials"
+      )}</a>`;
+    }
+    pending.push(inner);
+  });
+  flush();
+  return html;
+};
+
+const renderSection = (
+  key: ResumeSectionKey,
+  s: RenderedSections,
+  ctx: RenderContext
+): string => {
+  const { theme, layout } = ctx;
+  const heading = () => renderSectionHeading(layout.headings[key], ctx);
+
+  switch (key) {
+    case "summary":
+      return s.summaryText
+        ? `${heading()}<p style="${textStyle(ctx)}">${withInlineFormatting(s.summaryText)}</p>`
+        : "";
+
+    case "skills": {
+      if (!s.skillCategories.length) return "";
+      const hasLabels = s.skillCategories.some((category) => category.label);
+      if (!hasLabels) {
+        const inline = s.skillCategories.flatMap((category) => category.items);
+        return `${heading()}<p style="${textStyle(ctx)}">${escapeHtml(inline.join(", "))}</p>`;
+      }
+      return `${heading()}${s.skillCategories
+        .map(
+          (category) =>
+            `<p style="${textStyle(ctx, "margin:0 0 3px;")}">${
+              category.label
+                ? `<strong style="font-weight:700;color:${theme.headingColor};">${escapeHtml(
+                    category.label
+                  )}:</strong> `
+                : ""
+            }${escapeHtml(category.items.join(", "))}</p>`
+        )
+        .join("")}`;
+    }
+
+    case "experience":
+      if (!s.experience.length) return "";
+      return `${heading()}${s.experience
+        .map(
+          (entry) =>
+            `<div style="margin:0 0 11px;">${renderTimedEntryHeader(ctx, {
+              title: entry.designation || entry.company,
+              subtitle: entry.designation ? entry.company : "",
+              duration: entry.duration,
+              location: entry.location,
+            })}${renderBullets(entry.bullets, ctx)}</div>`
+        )
+        .join("")}`;
+
+    case "projects":
+      if (!s.projects.length) return "";
+      return `${heading()}${s.projects
+        .map((entry) => {
+          let html = '<div style="margin:0 0 10px;">';
+          if (entry.name || entry.href) {
+            html += renderEntryHeader(ctx, {
+              title: entry.name,
+              asideHtml: entry.href
+                ? `<a href="${escapeHtml(entry.href)}" style="color:inherit;text-decoration:underline;">${escapeHtml(
+                    displayLabelForUrl(entry.href)
+                  )}</a>`
+                : "",
+            });
+          }
+          if (entry.meta) {
+            html += `<p style="${textStyle(ctx, "margin-top:1px;font-style:italic;")}">${escapeHtml(
+              entry.meta
+            )}</p>`;
+          }
+          return `${html}${renderBullets(entry.bullets, ctx)}</div>`;
+        })
+        .join("")}`;
+
+    case "education":
+      if (!s.education.length) return "";
+      return `${heading()}${s.education
+        .map(
+          (entry) =>
+            `<div style="margin:0 0 10px;">${renderTimedEntryHeader(ctx, {
+              title: entry.qualification || entry.institution,
+              subtitle: entry.qualification ? entry.institution : "",
+              duration: entry.duration,
+              location: entry.location,
+            })}${renderBullets(entry.details, ctx)}</div>`
+        )
+        .join("")}`;
+
+    case "certifications": {
+      const body = renderCertifications(s.certifications, ctx);
+      return body ? `${heading()}${body}` : "";
+    }
+
+    case "languages":
+      if (!s.languages.length) return "";
+      if (layout.languages === "europass") {
+        return `${heading()}${renderEuropassLanguages(s.languages, ctx)}`;
+      }
+      return `${heading()}${renderInlineRow(
+        s.languages
+          .map((item) => stripMarkdownBold(item).trim())
+          .filter(Boolean)
+          .map((item) => `<span style="${INLINE_ITEM}">${escapeHtml(item)}</span>`),
+        ctx,
+        "left",
+        0
+      )}`;
+
+    case "personal": {
+      const items = personalItemsHtml(s.personal, layout.sectionDetails);
+      if (!items.length) return "";
+      return `${heading()}<div style="display:flex;flex-wrap:wrap;column-gap:24px;row-gap:3px;">${items
+        .map(
+          (item) =>
+            `<p style="${textStyle(ctx, "width:calc(50% - 12px);")}">${item}</p>`
+        )
+        .join("")}</div>`;
+    }
+
+    case "additional":
+      return s.additionalSections
+        .filter((section) => section.title && section.items.length)
+        .map(
+          (section) =>
+            `${renderSectionHeading(section.title, ctx)}${renderBullets(section.items, ctx)}`
+        )
+        .join("");
+
+    case "references":
+      if (s.references.length) return `${heading()}${renderBullets(s.references, ctx)}`;
+      return layout.referencesFallback
+        ? `${heading()}<p style="${textStyle(ctx, "font-style:italic;")}">${escapeHtml(
+            layout.referencesFallback
+          )}</p>`
+        : "";
+
+    default:
+      return "";
+  }
+};
+
+// Single source of truth for resume markup: the template's header, then its
+// sections in the order its convention dictates. Used by both the legacy text
+// input and the structured object input.
+const renderResumeDocument = (
+  structured: RenderedSections,
+  options: {
+    templateId: ResumeTemplateId;
+    overrides?: ResumeTemplateThemeOverrides;
+    candidateName: string;
+    designation?: string;
+    photoUrl?: string;
+    useContactIcons: boolean;
+  }
+) => {
+  const config = getResumeTemplateConfig(options.templateId);
+  const theme = resolveResumeTemplateTheme(options.templateId, options.overrides);
+  const ctx: RenderContext = {
+    theme,
+    layout: config.layout,
+    useContactIcons: options.useContactIcons,
+  };
+  const body = config.layout.sections.map((key) => renderSection(key, structured, ctx)).join("");
+  // The PDF route prints A4 by default; a later @page rule wins, so US
+  // templates carry their own Letter page size inside the document.
+  const pageCss = config.layout.page === "letter" ? "<style>@page { size: letter; }</style>" : "";
+
+  return `<div style="font-family:${theme.fontFamily};background:#fff;color:${theme.bodyColor};padding:24px;">${pageCss}${renderHeader(
+    structured,
+    ctx,
+    options
+  )}${body || `<p style="${textStyle(ctx, `margin-top:16px;color:${MUTED_TEXT_COLOR};`)}">No content available.</p>`}</div>`;
+};
+
+const sectionsFromText = (resumeText: string): RenderedSections => {
   const lines = resumeText
     .split("\n")
     .map((line) => line.trim())
@@ -1408,7 +1737,7 @@ const renderResumeBodyFromText = (
     ? summarySectionLines
     : preludeWithoutPersonal.filter((line) => !isRoleHeaderLine(line));
 
-  const structured: RenderedSections = {
+  return {
     contactItems: personalLines.length
       ? extractContactItems(personalLines, knownProfileLinks)
       : [],
@@ -1419,82 +1748,12 @@ const renderResumeBodyFromText = (
     education: parseEducationEntries(sections.education || []),
     certifications: sections.certifications || [],
     languages: splitLanguageLines(sections.languages || []),
-    references: sections.references || [],
+    references: (sections.references || []).map((line) =>
+      stripMarkdownBold(line).replace(/^[-*•]\s+/, "").trim()
+    ),
     additionalSections: [],
+    personal: {},
   };
-
-  return renderSectionsToHtml(structured, options);
-};
-
-const bodyOptionsFromTheme = (
-  theme: ReturnType<typeof resolveResumeTemplateTheme>,
-  useContactIcons: boolean
-): ResumeRenderOptions => ({
-  headingColor: theme.headingColor,
-  bodyColor: theme.bodyColor,
-  sectionSpacing: theme.sectionSpacing,
-  baseFontSize: theme.baseFontSize,
-  lineHeight: theme.lineHeight,
-  useContactIcons,
-});
-
-// Wraps a rendered section body in the themed document shell (name header,
-// photo, accent bands). Shared by the text and data render entry points.
-const assembleResumeDocument = (
-  body: string,
-  theme: ReturnType<typeof resolveResumeTemplateTheme>,
-  candidateName: string,
-  designation?: string,
-  photoUrl?: string
-) => {
-  const safeName = escapeHtml(candidateName);
-  const safeDesignation = escapeHtml(designation || "");
-  const imageBlock =
-    theme.showPhoto && photoUrl
-      ? `<div style=\"display:flex;justify-content:flex-end;\"><img src=\"${photoUrl}\" alt=\"Profile\" style=\"width:92px;height:92px;object-fit:cover;border-radius:8px;border:1px solid ${theme.mutedAccent};\" /></div>`
-      : "";
-
-  const headerBand =
-    theme.headerStyle === "band"
-      ? `<div style=\"background:${theme.accent};height:12px;margin-bottom:14px;border-radius:3px;\"></div>`
-      : "";
-
-  const headerUnderline =
-    theme.headerStyle === "underline"
-      ? `<div style=\"border-bottom:2px solid ${theme.accent};padding-bottom:10px;margin-bottom:14px;\">`
-      : "";
-
-  const headerUnderlineEnd = theme.headerStyle === "underline" ? "</div>" : "";
-
-  const splitHeader =
-    theme.headerStyle === "split"
-      ? `<div style=\"display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start;border-bottom:2px solid ${theme.accent};padding-bottom:10px;margin-bottom:14px;\"><div>`
-      : "";
-
-  const splitHeaderEnd = theme.headerStyle === "split" ? `</div>${imageBlock}</div>` : "";
-
-  const headingMarkup =
-    theme.headerStyle === "split"
-      ? `${splitHeader}<h2 style=\"font-size:36px;line-height:1.1;font-weight:800;margin:0;color:${theme.headingColor};\">${safeName}</h2>${
-          safeDesignation
-            ? `<p style=\"margin:8px 0 0;font-size:${theme.baseFontSize + 1}px;font-weight:700;color:${theme.bodyColor};\">${safeDesignation}</p>`
-            : ""
-        }${splitHeaderEnd}`
-      : `${headerUnderline}<h2 style=\"font-size:36px;line-height:1.1;font-weight:800;margin:0;color:${theme.headingColor};\">${safeName}</h2>${
-          safeDesignation
-            ? `<p style=\"margin:8px 0 0;font-size:${theme.baseFontSize + 1}px;font-weight:700;color:${theme.bodyColor};\">${safeDesignation}</p>`
-            : ""
-        }${headerUnderlineEnd}`;
-
-  return `
-    <div style="font-family:${theme.fontFamily};background:#fff;padding:24px;">
-      ${headerBand}
-      ${theme.headerStyle === "band" ? headingMarkup.replace(headerUnderline, "").replace(headerUnderlineEnd, "") : headingMarkup}
-      ${theme.headerStyle === "band" && theme.showPhoto ? imageBlock : ""}
-      ${body}
-      <div style="margin-top:14px;height:4px;background:${theme.mutedAccent};border-radius:999px;"></div>
-    </div>
-  `;
 };
 
 export const renderResumeHtml = ({
@@ -1513,18 +1772,16 @@ export const renderResumeHtml = ({
   photoUrl?: string;
   overrides?: ResumeTemplateThemeOverrides;
   useContactIcons?: boolean;
-}) => {
-  const theme = resolveResumeTemplateTheme(templateId, overrides);
-  const body = renderResumeBodyFromText(
-    resumeText,
-    bodyOptionsFromTheme(theme, useContactIcons)
-  );
-  return assembleResumeDocument(body, theme, candidateName, designation, photoUrl);
-};
+}) =>
+  renderResumeDocument(sectionsFromText(resumeText), {
+    templateId,
+    overrides,
+    candidateName,
+    designation,
+    photoUrl,
+    useContactIcons,
+  });
 
-// Data-first body renderer: builds the normalized section shape straight from
-// the structured ResumeData object (no text parsing) and emits HTML via the
-// shared renderSectionsToHtml.
 // Normalize a user-entered link into a clickable href, adding https:// to bare
 // domains (e.g. "dribbble.com/you" -> "https://dribbble.com/you").
 const contactHrefFromUrl = (url: string): string => {
@@ -1569,49 +1826,54 @@ const buildContactItemsFromData = (contact: ResumeContact): ContactItem[] => {
   return items;
 };
 
-const renderResumeBodyFromData = (
-  data: ResumeData,
-  options: ResumeRenderOptions
-): string => {
-  const structured: RenderedSections = {
-    contactItems: data.contact ? buildContactItemsFromData(data.contact) : [],
-    summaryText: (data.summary || "").trim(),
-    // Structured skills are intentional user/AI input — keep them as-is (the
-    // filler filter is only for cleaning up messy parsed text).
-    skillCategories: parseSkillCategories(data.skills || [], { filterFiller: false }),
-    experience: (data.experience || []).map((entry) => ({
-      designation: entry.designation || "",
-      company: entry.company || "",
-      location: entry.location || "",
-      duration: entry.duration || "",
-      bullets: entry.responsibilities || [],
-    })),
-    projects: (data.projects || []).map((entry) => ({
-      name: entry.name || "",
-      meta: entry.meta || "",
-      href: entry.link || "",
-      bullets: entry.responsibilities || [],
-    })),
-    education: (data.education || []).map((entry) => ({
-      qualification: entry.qualification || "",
-      // The renderer shows institution on its own line; fold the location in.
-      institution: [entry.institution, entry.location].filter(Boolean).join(", "),
-      duration: entry.duration || "",
-      details: entry.details || [],
-    })),
-    certifications: data.certifications || [],
-    languages: data.languages || [],
-    references: data.references || [],
-    additionalSections: (data.additionalSections || [])
-      .map((section) => ({
-        title: (section.title || "").trim(),
-        items: (section.items || []).map((item) => item.trim()).filter(Boolean),
-      }))
-      .filter((section) => section.title && section.items.length),
-  };
-
-  return renderSectionsToHtml(structured, options);
+const trimPersonalDetails = (personal: ResumePersonalDetails = {}) => {
+  const trimmed: ResumePersonalDetails = {};
+  (Object.keys(personal) as ResumePersonalField[]).forEach((field) => {
+    const value = String(personal[field] || "").trim();
+    if (value) trimmed[field] = value;
+  });
+  return trimmed;
 };
+
+// Data-first path: builds the normalized section shape straight from the
+// structured ResumeData object (no text parsing).
+const sectionsFromData = (data: ResumeData): RenderedSections => ({
+  contactItems: data.contact ? buildContactItemsFromData(data.contact) : [],
+  summaryText: (data.summary || "").trim(),
+  // Structured skills are intentional user/AI input — keep them as-is (the
+  // filler filter is only for cleaning up messy parsed text).
+  skillCategories: parseSkillCategories(data.skills || [], { filterFiller: false }),
+  experience: (data.experience || []).map((entry) => ({
+    designation: entry.designation || "",
+    company: entry.company || "",
+    location: entry.location || "",
+    duration: entry.duration || "",
+    bullets: entry.responsibilities || [],
+  })),
+  projects: (data.projects || []).map((entry) => ({
+    name: entry.name || "",
+    meta: entry.meta || "",
+    href: entry.link || "",
+    bullets: entry.responsibilities || [],
+  })),
+  education: (data.education || []).map((entry) => ({
+    qualification: entry.qualification || "",
+    institution: entry.institution || "",
+    location: entry.location || "",
+    duration: entry.duration || "",
+    details: entry.details || [],
+  })),
+  certifications: data.certifications || [],
+  languages: data.languages || [],
+  references: (data.references || []).map((item) => item.trim()).filter(Boolean),
+  additionalSections: (data.additionalSections || [])
+    .map((section) => ({
+      title: (section.title || "").trim(),
+      items: (section.items || []).map((item) => item.trim()).filter(Boolean),
+    }))
+    .filter((section) => section.title && section.items.length),
+  personal: trimPersonalDetails(data.personal),
+});
 
 export const renderResumeFromData = ({
   data,
@@ -1629,14 +1891,15 @@ export const renderResumeFromData = ({
   photoUrl?: string;
   overrides?: ResumeTemplateThemeOverrides;
   useContactIcons?: boolean;
-}) => {
-  const theme = resolveResumeTemplateTheme(templateId, overrides);
-  const body = renderResumeBodyFromData(
-    data,
-    bodyOptionsFromTheme(theme, useContactIcons)
-  );
-  return assembleResumeDocument(body, theme, candidateName, designation, photoUrl);
-};
+}) =>
+  renderResumeDocument(sectionsFromData(data), {
+    templateId,
+    overrides,
+    candidateName,
+    designation,
+    photoUrl,
+    useContactIcons,
+  });
 
 // Plain-text projection of the structured resume — used client-side for the
 // analyzer re-evaluation and as a download fallback. Mirrors the server's
@@ -1761,11 +2024,18 @@ export const highlightKeywordsInHtml = (
 
   const matcher = new RegExp(`(?:${patterns.join("|")})`, "gi");
 
+  let insideStyle = false;
   return html
     .split(/(<[^>]*>)/)
     .map((segment, index) => {
-      // Odd indices are tags — leave them untouched.
-      if (index % 2 === 1 || !segment) return segment;
+      // Odd indices are tags — leave them untouched, noting when a template's
+      // <style> block opens or closes so its CSS is never highlighted.
+      if (index % 2 === 1) {
+        if (/^<style\b/i.test(segment)) insideStyle = true;
+        else if (/^<\/style>/i.test(segment)) insideStyle = false;
+        return segment;
+      }
+      if (!segment || insideStyle) return segment;
       return segment.replace(
         matcher,
         (match) => `<mark style="${KEYWORD_HIGHLIGHT_STYLE}">${match}</mark>`

@@ -17,7 +17,9 @@ import {
   SummaryCard,
   stepHasContent,
   useBaseResumeAssist,
+  useResumePhotoField,
   type BaseResumeDraft,
+  type ResumePhotoField,
 } from "@/components/dashboard/resume-form";
 import type { Assist } from "@/components/dashboard/cv-assist";
 import { createBaseResume, DEFAULT_BASE_RESUME_NAME } from "@/lib/base-resume";
@@ -31,7 +33,8 @@ type Step = {
   render: (
     draft: BaseResumeDraft,
     update: (patch: Partial<BaseResumeDraft>) => void,
-    assist: Assist
+    assist: Assist,
+    photo: ResumePhotoField
   ) => ReactNode;
   // A required step blocks Next until satisfied. A skippable step shows Skip.
   isComplete?: (draft: BaseResumeDraft) => boolean;
@@ -43,7 +46,9 @@ const STEPS: Step[] = [
     key: "personal",
     title: "Personal & contact",
     description: "Your name, title, contact details, and profile links.",
-    render: (draft, update) => <PersonalDetailsCard draft={draft} update={update} />,
+    render: (draft, update, _assist, photo) => (
+      <PersonalDetailsCard draft={draft} update={update} photo={photo} />
+    ),
     isComplete: stepHasContent.personal,
   },
   {
@@ -162,6 +167,7 @@ export const BaseResumeWizard = ({
 
   const update = (patch: Partial<BaseResumeDraft>) =>
     setDraft((current) => ({ ...current, ...patch }));
+  const photo = useResumePhotoField(user?.id, draft, update);
 
   // Only show the "Additional sections" step in the manual path if the user
   // actually added one — the upload path always shows it so extracted sections
@@ -244,7 +250,7 @@ export const BaseResumeWizard = ({
         <p className="text-sm text-slate-500">{step.description}</p>
       </div>
 
-      <div className="mb-6">{step.render(draft, update, assist)}</div>
+      <div className="mb-6">{step.render(draft, update, assist, photo)}</div>
 
       <div className="flex items-center justify-between gap-3">
         <Button

@@ -30,6 +30,7 @@ import {
   Trash2,
 } from "lucide-react";
 import swal from "sweetalert";
+import { resolveResumePhotoUrl } from "@/lib/resume-photo";
 
 const STATUS_STYLES: Record<string, string> = {
   Applied: "border-blue-200 bg-blue-50 text-blue-700",
@@ -70,6 +71,7 @@ type Job = {
     overrides?: ResumeTemplateThemeOverrides | null;
     candidateName?: string;
     designation?: string;
+    photoPath?: string;
   } | null;
   created_at: string;
   updated_at: string;
@@ -229,6 +231,8 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
     try {
       // Reproduce the EXACT optimized resume the user downloaded — same renderer
       // (structured object when available), template, and overrides.
+      const photoUrl =
+        type === "resume" ? await resolveResumePhotoUrl(payload?.photoPath) : "";
       const html =
         type === "resume"
           ? payload?.resumeData
@@ -237,6 +241,7 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                 templateId: (payload.template || "classic-blue") as ResumeTemplateId,
                 candidateName: payloadCandidate,
                 designation: payload.designation || job.designation || "",
+                photoUrl,
                 overrides: payload.overrides || undefined,
               })
             : renderResumeHtml({
@@ -244,6 +249,7 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                 templateId: (payload?.template || "classic-blue") as ResumeTemplateId,
                 candidateName: payloadCandidate,
                 designation: payload?.designation || job.designation || "",
+                photoUrl,
                 overrides: payload?.overrides || undefined,
               })
           : renderCoverLetterHtml(coverText);

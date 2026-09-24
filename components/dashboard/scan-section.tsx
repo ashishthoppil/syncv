@@ -16,6 +16,7 @@ import {
   contactFromDraft,
   type BaseResumeRecord,
 } from "@/lib/base-resume";
+import { useResumePhotoUrl } from "@/lib/resume-photo";
 import { toast } from "react-toastify";
 import { supabase } from "@/lib/supabaseClient";
 import { authedFetch } from "@/lib/authed-fetch";
@@ -251,8 +252,13 @@ const GUEST_STAGE_KEY = "syncv_guest_trial_stage";
 // bottom edge as a sheet, full-bleed and rounded only at the top, and reverts to
 // a centred card from `sm` up. `dvh` rather than `vh` so the sheet resizes with
 // the iOS URL bar instead of hiding its footer underneath it.
+//
+// `!mt-0` because these backdrops render as direct children of the section's
+// `space-y-8`, which hands every later sibling a 2rem top margin — and a margin
+// on a `fixed inset-0` box shifts it down, leaving a strip of page undimmed at
+// the top of the viewport.
 const DIALOG_BACKDROP =
-  "fixed inset-0 flex items-end justify-center bg-slate-900/60 sm:items-center sm:p-4";
+  "fixed inset-0 !mt-0 flex items-end justify-center bg-slate-900/60 sm:items-center sm:p-4";
 const DIALOG_PANEL =
   "w-full max-h-[92dvh] touch-scroll overflow-y-auto rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl";
 
@@ -577,6 +583,24 @@ export const ScanSection = ({
       ? `Daily limit reached · resets in ${optimizeWait.countdown}`
       : `Optimize again in ${optimizeWait.countdown}`;
   const selectedTemplateConfig = getResumeTemplateConfig(selectedTemplate);
+  // Regional personal details (date of birth, visa status…) live on the base
+  // resume and never pass through tailoring — attach them for rendering so the
+  // templates that expect them (Europass, Middle East…) can show them.
+  const selectedBaseDraft = baseResumeList.find(
+    (record) => record.id === selectedBaseResumeId
+  )?.draft;
+  const basePersonalDetails = selectedBaseDraft?.personal;
+  // The photo also comes from the base resume. Resumes saved before photos
+  // lived there (no photo field at all) fall back to the old profile photo.
+  const basePhotoUrl = useResumePhotoUrl(selectedBaseDraft?.photo);
+  const resumePhotoUrl =
+    selectedBaseDraft && selectedBaseDraft.photo !== undefined
+      ? basePhotoUrl
+      : profilePhotoUrl;
+  const renderableResumeData =
+    resumeData && basePersonalDetails && !resumeData.personal
+      ? { ...resumeData, personal: basePersonalDetails }
+      : resumeData;
   const selectedTemplateTheme = resolveResumeTemplateTheme(
     selectedTemplate,
     templateOverrides[selectedTemplate]
@@ -1168,13 +1192,13 @@ export const ScanSection = ({
       // derived text only when no object is present (old/guest cached docs).
       const html =
         type === "cv"
-          ? resumeData
+          ? renderableResumeData
             ? renderResumeFromData({
-                data: resumeData,
+                data: renderableResumeData,
                 templateId: selectedTemplate,
                 candidateName,
                 designation: previewDesignation,
-                photoUrl: profilePhotoUrl,
+                photoUrl: resumePhotoUrl,
                 overrides: templateOverrides[selectedTemplate],
                 useContactIcons: !guestTrial,
               })
@@ -1183,7 +1207,7 @@ export const ScanSection = ({
                 templateId: selectedTemplate,
                 candidateName,
                 designation: previewDesignation,
-                photoUrl: profilePhotoUrl,
+                photoUrl: resumePhotoUrl,
                 overrides: templateOverrides[selectedTemplate],
                 useContactIcons: !guestTrial,
               })
@@ -1228,12 +1252,14 @@ export const ScanSection = ({
             id: scanJobId,
             resumeTemplateId: selectedTemplate,
             generatedResumePayload: {
-              resumeData: resumeData || null,
+              resumeData: renderableResumeData || null,
               resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
               template: selectedTemplate,
               overrides: templateOverrides[selectedTemplate] || null,
               candidateName,
               designation: previewDesignation,
+              // The storage path, not the signed URL — that expires.
+              photoPath: selectedBaseDraft?.photo || "",
             },
           }),
         })
@@ -2802,9 +2828,11 @@ export const ScanSection = ({
       {previewOpen && tailoredDocs && (
         // The preview is the app's main workspace, so on a phone it takes the
         // whole screen — edge to edge, no backdrop gutter, no rounded corners —
-        // the way a pushed screen would in a native app.
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 sm:p-4">
-          <div className="flex h-full max-h-none w-full max-w-6xl flex-col overflow-hidden bg-white pt-safe shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:pt-0">
+        // the way a pushed screen would in a native app. From `sm` up it fills
+        // the viewport inside one even gutter, so the editor and preview get
+        // all the room there is. `!mt-0`: see DIALOG_BACKDROP.
+        <div className="fixed inset-0 z-50 !mt-0 flex items-center justify-center bg-slate-900/60 sm:p-8">
+          <div className="flex h-full w-full flex-col overflow-hidden bg-white pt-safe shadow-2xl sm:rounded-2xl sm:pt-0">
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -3090,7 +3118,7 @@ export const ScanSection = ({
                             setPreviewDesignation(value);
                             setHasResumePreviewEdits(true);
                           }}
-                          photoUrl={profilePhotoUrl}
+                          photoUrl={resumePhotoUrl}
                           overrides={templateOverrides[selectedTemplate]}
                           useContactIcons={!guestTrial}
                         />
@@ -3233,19 +3261,28 @@ export const ScanSection = ({
                               }
                             />
                           </label>
-                          {/* <label className="flex items-center gap-2 text-xs text-slate-600">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300"
-                              checked={selectedTemplateTheme.showPhoto}
-                              onChange={(event) =>
-                                updateTemplateOverrides({
-                                  showPhoto: event.target.checked,
-                                })
-                              }
-                            />
-                            Show profile photo
-                          </label> */}
+                          {selectedTemplateConfig.layout.photo !== "none" ? (
+                            <label className="flex items-start gap-2 text-xs text-slate-600 sm:col-span-2">
+                              <input
+                                type="checkbox"
+                                className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                                checked={selectedTemplateTheme.showPhoto}
+                                onChange={(event) =>
+                                  updateTemplateOverrides({
+                                    showPhoto: event.target.checked,
+                                  })
+                                }
+                              />
+                              <span>
+                                Show photo
+                                {!resumePhotoUrl ? (
+                                  <span className="block text-[11px] text-slate-400">
+                                    Add one under Personal details in your base resume.
+                                  </span>
+                                ) : null}
+                              </span>
+                            </label>
+                          ) : null}
                         </div>
                       </div>
                       </div>
@@ -3312,13 +3349,13 @@ export const ScanSection = ({
                           // downloadPdf() renders its own HTML, so the PDF is
                           // never highlighted.
                           __html: highlightKeywordsInHtml(
-                            resumeData
+                            renderableResumeData
                               ? renderResumeFromData({
-                                  data: resumeData,
+                                  data: renderableResumeData,
                                   templateId: selectedTemplate,
                                   candidateName: previewCandidateName,
                                   designation: previewDesignation,
-                                  photoUrl: profilePhotoUrl,
+                                  photoUrl: resumePhotoUrl,
                                   overrides: templateOverrides[selectedTemplate],
                                   useContactIcons: !guestTrial,
                                 })
@@ -3328,7 +3365,7 @@ export const ScanSection = ({
                                   templateId: selectedTemplate,
                                   candidateName: previewCandidateName,
                                   designation: previewDesignation,
-                                  photoUrl: profilePhotoUrl,
+                                  photoUrl: resumePhotoUrl,
                                   overrides: templateOverrides[selectedTemplate],
                                   useContactIcons: !guestTrial,
                                 }),
