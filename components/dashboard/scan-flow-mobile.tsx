@@ -26,6 +26,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  Files,
   Folder,
   Globe,
   GraduationCap,
@@ -163,7 +164,10 @@ type PreviewControl = {
    * The resume editor — one section of it, or all of it. Built by the host so
    * both layouts share one editor and its drafts.
    */
-  renderEditor: (section?: ResumeEditorSection) => ReactNode;
+  renderEditor: (
+    section?: ResumeEditorSection,
+    onNotice?: (tone: "info" | "error", message: string) => void
+  ) => ReactNode;
   /** False for documents with no structured data: one text field, no sections. */
   editorHasSections: boolean;
   /** The colour / font / spacing controls, likewise shared. */
@@ -202,6 +206,12 @@ export type MobileScanFlowProps = {
   /** Starts optimizing — the host may stop to ask about a role mismatch. */
   onOptimize: () => void;
   isGeneratingDocs: boolean;
+  /**
+   * The last thing that failed. The flow shows no toasts, so this is shown in
+   * the pinned action bar, above the button that failed.
+   */
+  alert: string | null;
+  onDismissAlert: () => void;
 
   keywordPicker: KeywordPickerControl;
   preview: PreviewControl;
@@ -218,6 +228,10 @@ type FlowStep = "details" | "scan" | "results" | "keywords" | "optimizing" | "op
 // here as literal classes rather than in the Tailwind theme.
 const CARD =
   "rounded-xl border border-slate-200/70 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_6px_20px_-12px_rgba(15,23,42,0.12)]";
+
+// The "Resume to tailor" field that leads the Job Details form.
+const RESUME_FIELD =
+  "flex min-h-[64px] w-full items-center gap-3 rounded-xl border border-[#E4E0FB] bg-[#F6F4FF] px-4 py-3";
 
 const PRIMARY_BUTTON =
   "inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-[15px] font-medium text-primary-foreground shadow-sm transition active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50 motion-reduce:active:scale-100";
@@ -493,23 +507,52 @@ const StepHeading = ({
   </div>
 );
 
-const TipBox = ({
-  title,
-  children,
-  className,
+/**
+ * The flow's replacement for toasts: a message pinned where the user is
+ * looking — above the action that failed, or beside the sheet's Done button.
+ */
+const InlineNotice = ({
+  tone,
+  message,
+  onDismiss,
 }: {
-  title: string;
-  children: ReactNode;
-  className?: string;
-}) => (
-  <div className={cn("flex gap-3 rounded-xl p-3.5", className)}>
-    <Lightbulb className="h-[22px] w-[22px] shrink-0 text-[#6A53FD]" strokeWidth={1.75} />
-    <div className="min-w-0">
-      <p className="text-[15px] font-semibold leading-snug text-[#5B45E6]">{title}</p>
-      <p className="mt-1 text-[13px] leading-relaxed text-slate-500">{children}</p>
+  tone: "info" | "error";
+  message: string;
+  onDismiss: () => void;
+}) => {
+  const error = tone === "error";
+  const Icon = error ? CircleAlert : Info;
+  return (
+    <div
+      role={error ? "alert" : "status"}
+      className={cn(
+        "mb-2.5 flex items-start gap-2 rounded-lg border py-2 pl-3 pr-1.5",
+        error ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"
+      )}
+    >
+      <Icon className={cn("mt-px h-4 w-4 shrink-0", error ? "text-red-600" : "text-amber-600")} />
+      <p
+        className={cn(
+          "min-w-0 flex-1 text-[13px] leading-snug",
+          error ? "text-red-700" : "text-amber-900"
+        )}
+      >
+        {message}
+      </p>
+      <button
+        type="button"
+        aria-label="Dismiss"
+        onClick={onDismiss}
+        className={cn(
+          "-my-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition",
+          error ? "text-red-400 active:bg-red-100" : "text-amber-500 active:bg-amber-100"
+        )}
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
-  </div>
-);
+  );
+};
 
 const IconBadge = ({ icon: Icon, className }: { icon: LucideIcon; className: string }) => (
   <span
@@ -1632,6 +1675,72 @@ const DownloadButton = ({
   );
 };
 
+// "12 Sep 2025". Fixed month names, so it reads the same in every locale
+// (and en-GB's "Sept" never creeps in).
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const formatUpdatedOn = (iso: string) => {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? null
+    : `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+};
+
+const BaseResumeOption = ({
+  record,
+  selected,
+  onSelect,
+}: {
+  record: BaseResumeRecord;
+  selected: boolean;
+  onSelect: () => void;
+}) => {
+  const updated = formatUpdatedOn(record.updatedAt);
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition",
+          selected
+            ? "border-[#8B7FF9] bg-[#F7F5FF]"
+            : "border-slate-200/80 bg-white active:bg-slate-50"
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+            !selected && "bg-slate-100/80"
+          )}
+        >
+          <FileText className="h-5 w-5 text-slate-800" strokeWidth={1.8} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-medium leading-snug text-slate-900">
+            {record.name}
+          </span>
+          {updated ? (
+            <span className="mt-0.5 block text-[13px] leading-snug text-slate-500">
+              Last updated on {updated}
+            </span>
+          ) : null}
+        </span>
+        {selected ? (
+          <span
+            aria-hidden
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#5B45E6] text-white"
+          >
+            <Check className="h-3.5 w-3.5" strokeWidth={3} />
+          </span>
+        ) : (
+          <span aria-hidden className="h-6 w-6 shrink-0 rounded-full border-2 border-slate-300" />
+        )}
+      </button>
+    </li>
+  );
+};
+
 const SECONDARY_BUTTON =
   "flex h-12 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 text-[15px] font-medium text-slate-900 shadow-sm transition active:bg-slate-50";
 
@@ -1658,6 +1767,8 @@ export const MobileScanFlow = ({
   optimizeWait,
   onOptimize,
   isGeneratingDocs,
+  alert,
+  onDismissAlert,
   keywordPicker,
   preview,
 }: MobileScanFlowProps) => {
@@ -1672,6 +1783,12 @@ export const MobileScanFlow = ({
   // The section the editor sheet has drilled into; null shows the list.
   const [editorSection, setEditorSection] = useState<ResumeEditorSection | null>(null);
   const [templateSheetOpen, setTemplateSheetOpen] = useState(false);
+  const [baseSheetOpen, setBaseSheetOpen] = useState(false);
+  // A message from the editor's Rephrase / Generate buttons.
+  const [editorNotice, setEditorNotice] = useState<{
+    tone: "info" | "error";
+    message: string;
+  } | null>(null);
   const [designerOpen, setDesignerOpen] = useState(false);
   const [finalBreakdownOpen, setFinalBreakdownOpen] = useState(false);
   // 1 fits the page to the screen; shared by the resume and the letter.
@@ -1726,6 +1843,7 @@ export const MobileScanFlow = ({
     // A sheet belongs to the step it was opened on.
     setEditorSheetOpen(false);
     setTemplateSheetOpen(false);
+    setBaseSheetOpen(false);
   }, [step]);
 
   // Tapping Next with gaps in the form: the button sits at the bottom of the
@@ -1755,6 +1873,7 @@ export const MobileScanFlow = ({
     if (!tourShowing) return;
     setEditorSheetOpen(false);
     setTemplateSheetOpen(false);
+    setBaseSheetOpen(false);
   }, [tourShowing]);
   const openEditorSheet = () => {
     if (tourShowing) return;
@@ -1765,16 +1884,31 @@ export const MobileScanFlow = ({
     if (tourShowing) return;
     setTemplateSheetOpen(true);
   };
-  // Picking a template closes the sheet a beat later, once the check has
-  // registered, so the new look is on screen straight away.
-  const templateCloseTimer = useRef<number | null>(null);
+  const openBaseSheet = () => {
+    if (tourShowing) return;
+    setBaseSheetOpen(true);
+  };
+  const manageBaseResumes = () => {
+    setBaseSheetOpen(false);
+    onManageBaseResumes();
+  };
+  // Picking in a sheet closes it a beat later, once the check has registered,
+  // so the choice is on screen straight away.
+  const sheetCloseTimer = useRef<number | null>(null);
   useEffect(() => () => {
-    if (templateCloseTimer.current) window.clearTimeout(templateCloseTimer.current);
+    if (sheetCloseTimer.current) window.clearTimeout(sheetCloseTimer.current);
   }, []);
+  const closeSoon = (close: () => void) => {
+    if (sheetCloseTimer.current) window.clearTimeout(sheetCloseTimer.current);
+    sheetCloseTimer.current = window.setTimeout(close, 220);
+  };
   const chooseTemplate = (id: ResumeTemplateId) => {
     if (id !== preview.templateId) preview.onTemplateChange(id);
-    if (templateCloseTimer.current) window.clearTimeout(templateCloseTimer.current);
-    templateCloseTimer.current = window.setTimeout(() => setTemplateSheetOpen(false), 220);
+    closeSoon(() => setTemplateSheetOpen(false));
+  };
+  const chooseBaseResume = (record: BaseResumeRecord) => {
+    if (record.id !== selectedBaseResumeId) onSelectBaseResume(record);
+    closeSoon(() => setBaseSheetOpen(false));
   };
 
   // Leaving the optimized step goes through the host's download check; where
@@ -1793,7 +1927,25 @@ export const MobileScanFlow = ({
     else if (target === "new") onResetRef.current();
   }, [preview.open]);
 
+  const alertBanner = alert ? (
+    <InlineNotice tone="error" message={alert} onDismiss={onDismissAlert} />
+  ) : null;
+
+  // Editor messages go stale once acted on ("write a few lines first"), so
+  // they clear after a few seconds, and with the section they belonged to.
+  useEffect(() => {
+    if (!editorNotice) return;
+    const id = window.setTimeout(() => setEditorNotice(null), 6000);
+    return () => window.clearTimeout(id);
+  }, [editorNotice]);
+  useEffect(() => {
+    setEditorNotice(null);
+  }, [editorSection, editorSheetOpen]);
+  const showEditorNotice = (tone: "info" | "error", message: string) =>
+    setEditorNotice({ tone, message });
+
   const leavePreview = (target: "details" | "results" | "new") => {
+    onDismissAlert();
     exitTargetRef.current = target;
     preview.onRequestExit(target === "new" ? "new" : "back");
   };
@@ -1814,6 +1966,8 @@ export const MobileScanFlow = ({
 
   const jumpTo = (index: number) => {
     if (!canJump(index)) return;
+    // An error belongs to the screen it was shown on.
+    onDismissAlert();
     if (step === "optimized") {
       leavePreview(index === 0 ? "details" : "results");
       return;
@@ -1829,6 +1983,7 @@ export const MobileScanFlow = ({
   // ---- Steps ---------------------------------------------------------------
 
   const renderDetails = () => {
+    const currentBaseResume = baseResumes.find((record) => record.id === selectedBaseResumeId);
     const jdLength = form.jd.length;
     const overWindow = jdLength > JD_SCAN_WINDOW;
     const fieldError = (field: FormField, label: string) =>
@@ -1858,6 +2013,51 @@ export const MobileScanFlow = ({
         </div>
 
         <div data-tour="scan-form" className={cn(CARD, "space-y-4 p-4")}>
+          {/* The resume this job is scanned against — the scan's first input,
+              so it leads the form. Tapping it opens the picker sheet. */}
+          {baseResumeLoading ? (
+            <div className={cn(RESUME_FIELD, "text-slate-500")}>
+              <Loader2 className="h-[22px] w-[22px] shrink-0 animate-spin" />
+              <span className="text-sm">Loading your base resume…</span>
+            </div>
+          ) : baseResumes.length === 0 ? (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <div className="min-w-0 text-sm text-amber-900">
+                <p className="font-semibold">No base resume yet</p>
+                <p className="mt-0.5 leading-relaxed">
+                  Set up your base resume first — every scan is tailored from it.
+                </p>
+                <button
+                  type="button"
+                  onClick={onManageBaseResumes}
+                  className="mt-3 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+                >
+                  Set up base resume
+                </button>
+              </div>
+            </div>
+          ) : currentBaseResume ? (
+            <button
+              type="button"
+              onClick={openBaseSheet}
+              aria-haspopup="dialog"
+              aria-expanded={baseSheetOpen}
+              className={cn(RESUME_FIELD, "text-left transition active:bg-[#EFEBFF]")}
+            >
+              <FileText className="h-[22px] w-[22px] shrink-0 text-slate-800" strokeWidth={1.8} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] leading-snug text-slate-500">
+                  Resume to tailor
+                </span>
+                <span className="mt-0.5 block truncate text-base font-semibold leading-snug text-slate-900">
+                  {currentBaseResume.name}
+                </span>
+              </span>
+              <ChevronDown className="h-5 w-5 shrink-0 text-slate-500" />
+            </button>
+          ) : null}
+
           {(
             [
               {
@@ -1923,79 +2123,12 @@ export const MobileScanFlow = ({
               {overWindow ? " · only the first 6000 are scanned" : ""}
             </p>
           </div>
-
-          {baseResumeLoading ? (
-            <p className="flex items-center gap-2 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading your base resume…
-            </p>
-          ) : baseResumes.length === 0 ? (
-            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
-              <div className="min-w-0 text-sm text-amber-900">
-                <p className="font-semibold">No base resume yet</p>
-                <p className="mt-0.5 leading-relaxed">
-                  Set up your base resume first — every scan is tailored from it.
-                </p>
-                <button
-                  type="button"
-                  onClick={onManageBaseResumes}
-                  className="mt-3 inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
-                >
-                  Set up base resume
-                </button>
-              </div>
-            </div>
-          ) : baseResumes.length > 1 ? (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <label
-                  htmlFor="mobile-scan-base-resume"
-                  className="block text-sm font-medium text-slate-800"
-                >
-                  Base resume
-                </label>
-                <button
-                  type="button"
-                  onClick={onManageBaseResumes}
-                  className="text-sm font-medium text-slate-500 underline-offset-2 active:underline"
-                >
-                  Manage
-                </button>
-              </div>
-              <div className="relative">
-                {/* Native select on purpose: the OS picker beats any custom
-                    dropdown on a phone. */}
-                <select
-                  id="mobile-scan-base-resume"
-                  value={selectedBaseResumeId}
-                  onChange={(event) => {
-                    const record = baseResumes.find((item) => item.id === event.target.value);
-                    if (record) onSelectBaseResume(record);
-                  }}
-                  className={cn(fieldClass(false), "h-11 appearance-none pr-10")}
-                >
-                  {baseResumes.map((record) => (
-                    <option key={record.id} value={record.id}>
-                      {record.name}
-                      {record.isDefault ? " (default)" : ""}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-              </div>
-              <p className="text-[13px] text-slate-400">The job description is compared to this resume.</p>
-            </div>
-          ) : null}
-
-          <TipBox title="Pro tip" className="bg-[#F4F4FE]">
-            Paste the full job description for more accurate results. We&apos;ll match your
-            resume against key skills, requirements, and experience.
-          </TipBox>
         </div>
 
         {/* Pinned like every other step's action — a long job description
             would otherwise push it a screen or more below the fold. */}
         <ActionBar>
+          {alertBanner}
           <button
             type="button"
             onClick={onAnalyze}
@@ -2005,6 +2138,34 @@ export const MobileScanFlow = ({
             Next <ArrowRight className="h-5 w-5" />
           </button>
         </ActionBar>
+
+        <BottomSheet
+          open={baseSheetOpen}
+          onOpenChange={setBaseSheetOpen}
+          title="Select a base resume"
+          description="Choose the resume you want to use for this scan."
+        >
+          <ul className="space-y-2.5">
+            {baseResumes.map((record) => (
+              <BaseResumeOption
+                key={record.id}
+                record={record}
+                selected={record.id === selectedBaseResumeId}
+                onSelect={() => chooseBaseResume(record)}
+              />
+            ))}
+          </ul>
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={manageBaseResumes}
+              className={cn(SECONDARY_BUTTON, "w-full")}
+            >
+              <Files className="h-[18px] w-[18px] shrink-0" strokeWidth={1.9} />
+              Manage Resumes
+            </button>
+          </div>
+        </BottomSheet>
       </div>
     );
   };
@@ -2031,11 +2192,6 @@ export const MobileScanFlow = ({
           index={run.index}
           elapsed={run.elapsed}
         />
-        <TipBox title="Did you know?" className="bg-[#EEEFFD]">
-          {isScan
-            ? "We analyze your resume against every important keyword, skill and requirement in the job description to give you actionable suggestions."
-            : "Your roles, companies and dates come straight from your base resume — only the wording is tuned to this job, using the keywords you chose."}
-        </TipBox>
       </div>
     );
   };
@@ -2160,6 +2316,7 @@ export const MobileScanFlow = ({
         ) : null}
 
         <ActionBar>
+          {alertBanner}
           {optimizeWait.waiting ? (
             <p className="mb-2 text-center text-xs leading-snug text-slate-500">
               {optimizeWait.note}
@@ -2298,6 +2455,7 @@ export const MobileScanFlow = ({
         </p>
 
         <ActionBar>
+          {alertBanner}
           {optimizeWait.waiting ? (
             <p className="mb-2 text-center text-xs leading-snug text-slate-500">
               {optimizeWait.note}
@@ -2478,6 +2636,7 @@ export const MobileScanFlow = ({
         )}
 
         <ActionBar>
+          {alertBanner}
           <div className="grid grid-cols-[1.6fr_1fr] gap-3">
             <DownloadButton
               view={preview.view}
@@ -2525,20 +2684,29 @@ export const MobileScanFlow = ({
           }
           footer={
             openSection || !preview.editorHasSections ? (
-              <button
-                type="button"
-                onClick={() => setEditorSheetOpen(false)}
-                className={PRIMARY_BUTTON}
-              >
-                Done
-              </button>
+              <>
+                {editorNotice ? (
+                  <InlineNotice
+                    tone={editorNotice.tone}
+                    message={editorNotice.message}
+                    onDismiss={() => setEditorNotice(null)}
+                  />
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setEditorSheetOpen(false)}
+                  className={PRIMARY_BUTTON}
+                >
+                  Done
+                </button>
+              </>
             ) : null
           }
         >
           {!preview.editorHasSections ? (
-            preview.renderEditor()
+            preview.renderEditor(undefined, showEditorNotice)
           ) : openSection ? (
-            preview.renderEditor(openSection.key)
+            preview.renderEditor(openSection.key, showEditorNotice)
           ) : (
             <ul className="space-y-2">
               {EDITOR_SECTIONS.map(({ key, title, detail, icon: Icon }) => (

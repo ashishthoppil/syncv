@@ -435,6 +435,31 @@ export const ScanSection = ({
   const summaryPanelRef = useRef<HTMLDivElement | null>(null);
   // The section switch waiting on the "leave without downloading?" confirm.
   const leaveProceedRef = useRef<(() => void) | null>(null);
+  // The phone flow shows no toasts. Success is the next screen appearing, so
+  // those are dropped; failures land here and show in the flow's pinned
+  // action bar, right above the button that failed. Desktop still toasts.
+  const [mobileAlert, setMobileAlert] = useState<string | null>(null);
+  const mobileFlow = isMobileLayout && !guestTrial;
+  // Read at call time: most messages are sent after an await.
+  const mobileFlowRef = useRef(mobileFlow);
+  useEffect(() => {
+    mobileFlowRef.current = mobileFlow;
+  }, [mobileFlow]);
+  const notify = {
+    success: (message: string) => {
+      if (!mobileFlowRef.current) toast.success(message);
+    },
+    info: (message: string) => {
+      if (!mobileFlowRef.current) toast.info(message);
+    },
+    warn: (message: string) => {
+      if (!mobileFlowRef.current) toast.warn(message);
+    },
+    error: (message: string) => {
+      if (mobileFlowRef.current) setMobileAlert(message);
+      else toast.error(message);
+    },
+  };
   // The first-run tour walks through this section. It needs to know when a scan
   // and an optimization finish, and the preview steps need the pane they point
   // at to actually be the one on screen. Outside the dashboard (the guest scan
@@ -744,8 +769,10 @@ export const ScanSection = ({
   };
 
   const analyzeResume = async () => {
+    setMobileAlert(null);
     if (!validateForm()) {
-      toast.error("Please complete all required fields.");
+      // The phone form marks each missing field and scrolls to the first.
+      if (!mobileFlowRef.current) toast.error("Please complete all required fields.");
       return;
     }
 
@@ -763,7 +790,7 @@ export const ScanSection = ({
         return;
       }
       if (!sessionUserId && !guestTrial) {
-        toast.error("Please log in to save scan results.");
+        notify.error("Please log in to save scan results.");
         setIsAnalyzing(false);
         return;
       }
@@ -826,26 +853,26 @@ export const ScanSection = ({
             const saveData = await saveResponse.json();
             if (saveData.success) {
               setScanJobId(saveData.data?.id || null);
-              toast.success("Scan completed and saved to job tracker!");
+              notify.success("Scan completed and saved to job tracker!");
             } else {
               setScanJobId(null);
-              toast.success("Scan completed! (Could not save to tracker)");
+              notify.success("Scan completed! (Could not save to tracker)");
             }
           } catch (saveError) {
             console.error("Error saving to job tracker:", saveError);
             setScanJobId(null);
-            toast.success("Scan completed! (Could not save to tracker)");
+            notify.success("Scan completed! (Could not save to tracker)");
           }
         } else {
           setScanJobId(null);
-          toast.success("Scan completed!");
+          notify.success("Scan completed!");
         }
       } else {
-        toast.error(data.message || "Unable to analyze the resume right now.");
+        notify.error(data.message || "Unable to analyze the resume right now.");
       }
     } catch (error) {
       console.error(error);
-      toast.error("Unexpected error while analyzing.");
+      notify.error("Unexpected error while analyzing.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -858,6 +885,7 @@ export const ScanSection = ({
     }
     setForm(initialFormState);
     setFormErrors({});
+    setMobileAlert(null);
     setScanSource(SCAN_SOURCE_MANUAL);
     setRemoteJob(null);
     setDownloadedDocs({ cv: false, cover: false });
@@ -1203,7 +1231,7 @@ export const ScanSection = ({
         throw new Error(result.message || "Failed to persist generated docs.");
       }
       if (result.partial) {
-        toast.warn(
+        notify.warn(
           result.partialMessage ||
             "Score updated, but generated document storage is partially unavailable. Run latest DB migration."
         );
@@ -1217,7 +1245,7 @@ export const ScanSection = ({
         });
         const fallbackResult = await fallbackResponse.json();
         if (fallbackResult.success) {
-          toast.warn(
+          notify.warn(
             "Optimized score updated. Generated documents could not be saved for tracker downloads."
           );
         }
@@ -1230,6 +1258,7 @@ export const ScanSection = ({
   const downloadPdf = async (type: "cv" | "cover") => {
     if (!tailoredDocs) return;
     if (type === "cover" && !shouldAllowCoverLetter) return;
+    setMobileAlert(null);
     setDownloadingType(type);
     try {
       const candidateName =
@@ -1314,7 +1343,7 @@ export const ScanSection = ({
           .then((res) => res.json())
           .then((res) => {
             if (res?.partial) {
-              toast.warn(
+              notify.warn(
                 res.partialMessage ||
                   "Downloaded — but couldn't save it to Job Tracker. Run the latest database migration."
               );
@@ -1326,7 +1355,7 @@ export const ScanSection = ({
       }
     } catch (error) {
       console.error(error);
-      toast.error("Unable to download PDF right now.");
+      notify.error("Unable to download PDF right now.");
     } finally {
       setDownloadingType(null);
     }
@@ -1400,13 +1429,14 @@ export const ScanSection = ({
     selectedCareerKeywords?: string[]
   ) => {
     if (!result) {
-      toast.error("Run a scan first.");
+      notify.error("Run a scan first.");
       return;
     }
     if (optimizeWait.waiting) {
-      toast.info(optimizeWaitLabel);
+      notify.info(optimizeWaitLabel);
       return;
     }
+    setMobileAlert(null);
 
     // Role-mismatch warning and the keyword picker both open below the tour
     // overlay, so get it off the screen for the rest of this flow.
@@ -1507,7 +1537,7 @@ export const ScanSection = ({
       const data = await response.json();
 
       if (!data.success) {
-        toast.error(data.message || "Unable to generate tailored documents.");
+        notify.error(data.message || "Unable to generate tailored documents.");
         // A fair-use refusal starts the header's break timer; refresh it.
         if (!guestTrial) onUsageChange?.();
         return;
@@ -1574,14 +1604,14 @@ export const ScanSection = ({
         onUsageChange?.();
       }
 
-      toast.success(
+      notify.success(
         shouldAllowCoverLetter
           ? "Tailored CV and cover letter are ready."
           : "Tailored CV is ready."
       );
     } catch (error) {
       console.error(error);
-      toast.error("Unexpected error while generating tailored documents.");
+      notify.error("Unexpected error while generating tailored documents.");
     } finally {
       setIsGeneratingDocs(false);
       // If generation failed there is no preview to point at, so bring the
@@ -1721,8 +1751,9 @@ export const ScanSection = ({
     const resumeForScore = resumeData
       ? resumeDataToText(resumeData)
       : editableResumeText;
+    setMobileAlert(null);
     if (!resumeForScore.trim() || !form.jd.trim()) {
-      toast.error("Edited resume or JD is missing.");
+      notify.error("Edited resume or JD is missing.");
       return;
     }
     setIsComputingFinalScore(true);
@@ -1761,13 +1792,13 @@ export const ScanSection = ({
             console.error("Failed to persist re-evaluated score:", persistError)
           );
         }
-        toast.success("Score updated for your edits.");
+        notify.success("Score updated for your edits.");
       } else {
-        toast.error(data.message || "Unable to re-evaluate resume.");
+        notify.error(data.message || "Unable to re-evaluate resume.");
       }
     } catch (error) {
       console.error("Unable to recompute score for edited resume:", error);
-      toast.error("Unable to re-evaluate resume right now.");
+      notify.error("Unable to re-evaluate resume right now.");
     } finally {
       setIsComputingFinalScore(false);
     }
@@ -1933,7 +1964,7 @@ export const ScanSection = ({
     <div
       ref={summaryPanelRef}
       data-tour="scan-summary"
-      className="scroll-mt-[calc(1.5rem+env(safe-area-inset-top))] rounded-lg shadow-xl bg-slate-50 p-4 xl:h-[34rem] xl:overflow-y-scroll"
+      className="scroll-mt-[calc(1.5rem+env(safe-area-inset-top))] rounded-lg shadow-xl bg-white p-4 xl:h-[34rem] xl:overflow-y-scroll"
     >
       <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold text-slate-900">Scan summary</h2>
@@ -2255,10 +2286,14 @@ export const ScanSection = ({
 
   // The phone flow edits one section at a time; the desktop preview shows
   // them all. Both share the one editor session, so drafts carry across.
-  const renderResumeContentEditor = (sections?: ResumeEditorSection[]) =>
+  const renderResumeContentEditor = (
+    sections?: ResumeEditorSection[],
+    onNotice?: (tone: "info" | "error", message: string) => void
+  ) =>
     resumeData ? (
       <ResumeEditor
         sections={sections}
+        onNotice={onNotice}
         showPreview={false}
         session={resumeEditorSession}
         data={resumeData}
@@ -2470,7 +2505,7 @@ export const ScanSection = ({
               onClick={() => {
                 setShowCareerWarning(false);
                 tourSignal("scan:idle");
-                toast.info("No changes were made. Try scanning against a closer role.");
+                notify.info("No changes were made. Try scanning against a closer role.");
               }}
             >
               No
@@ -2582,6 +2617,8 @@ export const ScanSection = ({
           }}
           onOptimize={() => createTailoredDocuments()}
           isGeneratingDocs={isGeneratingDocs}
+          alert={mobileAlert}
+          onDismissAlert={() => setMobileAlert(null)}
           keywordPicker={{
             open: showCareerKeywordPicker,
             selectable: selectableKeywords,
@@ -2612,8 +2649,8 @@ export const ScanSection = ({
             resumeHtml: previewOpen ? renderPreviewResumeHtml() : "",
             coverLetterHtml:
               previewOpen && tailoredDocs ? renderCoverLetterHtml(tailoredDocs.coverLetter) : "",
-            renderEditor: (section) =>
-              renderResumeContentEditor(section ? [section] : undefined),
+            renderEditor: (section, onNotice) =>
+              renderResumeContentEditor(section ? [section] : undefined, onNotice),
             editorHasSections: resumeData !== null,
             designer: templateDesigner,
             templateId: selectedTemplate,

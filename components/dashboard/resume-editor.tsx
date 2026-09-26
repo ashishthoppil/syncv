@@ -82,6 +82,11 @@ type ResumeEditorProps = {
    * edits one section at a time. Omit for the whole editor.
    */
   sections?: ResumeEditorSection[];
+  /**
+   * Where the editor's messages go — an assist that failed, or one that needs
+   * more input first. Toasts when omitted; the phone flow shows them inline.
+   */
+  onNotice?: (tone: "info" | "error", message: string) => void;
 };
 
 export type ResumeEditorSection =
@@ -366,7 +371,14 @@ export const ResumeEditor = ({
   showPreview = true,
   session,
   sections,
+  onNotice,
 }: ResumeEditorProps) => {
+  const notify = (tone: "info" | "error", message: string) => {
+    if (onNotice) onNotice(tone, message);
+    else if (tone === "error") toast.error(message);
+    else toast.info(message);
+  };
+
   const [restored] = useState(() =>
     session?.current?.data === data ? session.current : null
   );
@@ -513,7 +525,8 @@ export const ResumeEditor = ({
       (entry) => entry.company.trim() || entry.text.trim()
     );
     if (!(designation || "").trim() || drafts.skillCategories.length === 0 || !hasExperience) {
-      toast.info(
+      notify(
+        "info",
         "Add a target title, work experience, and a few skills first to generate a summary."
       );
       return;
@@ -537,10 +550,10 @@ export const ResumeEditor = ({
           experience: highlights,
         });
         if (result?.success && result.summary) return result.summary as string;
-        toast.error(result?.message || "Could not generate a summary.");
+        notify("error", result?.message || "Could not generate a summary.");
       } catch (error) {
         console.error(error);
-        toast.error("Could not generate a summary right now.");
+        notify("error", "Could not generate a summary right now.");
       }
       return null;
     });
@@ -564,7 +577,7 @@ export const ResumeEditor = ({
   const rephraseExperience = (index: number) => {
     const entry = drafts.experiences[index];
     if (!entry.text.trim()) {
-      toast.info("Write a few lines about what you did first.");
+      notify("info", "Write a few lines about what you did first.");
       return;
     }
     assist.run(assistKey("experience", index), async () => {
@@ -578,10 +591,10 @@ export const ResumeEditor = ({
         if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
           return result.bullets.join("\n") as string;
         }
-        toast.error(result?.message || "Could not rephrase this experience.");
+        notify("error", result?.message || "Could not rephrase this experience.");
       } catch (error) {
         console.error(error);
-        toast.error("Could not rephrase this experience right now.");
+        notify("error", "Could not rephrase this experience right now.");
       }
       return null;
     });
@@ -602,7 +615,7 @@ export const ResumeEditor = ({
   const rephraseProject = (index: number) => {
     const entry = drafts.projects[index];
     if (!entry.text.trim()) {
-      toast.info("Write a few lines about the project first.");
+      notify("info", "Write a few lines about the project first.");
       return;
     }
     assist.run(assistKey("project", index), async () => {
@@ -616,10 +629,10 @@ export const ResumeEditor = ({
         if (result?.success && Array.isArray(result.bullets) && result.bullets.length) {
           return result.bullets.join("\n") as string;
         }
-        toast.error(result?.message || "Could not rephrase this project.");
+        notify("error", result?.message || "Could not rephrase this project.");
       } catch (error) {
         console.error(error);
-        toast.error("Could not rephrase this project right now.");
+        notify("error", "Could not rephrase this project right now.");
       }
       return null;
     });
