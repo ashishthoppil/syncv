@@ -86,7 +86,7 @@ const SAMPLE_RESUME: ResumeData = {
 // fit whatever width the responsive grid cell gives us.
 const PAGE_WIDTH = 794;
 
-const TemplateThumbnail = ({ templateId }: { templateId: ResumeTemplateId }) => {
+export const TemplateThumbnail = ({ templateId }: { templateId: ResumeTemplateId }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0);
 

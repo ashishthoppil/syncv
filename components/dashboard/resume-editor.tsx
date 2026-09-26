@@ -77,7 +77,23 @@ type ResumeEditorProps = {
    * Generate buttons used.
    */
   session?: MutableRefObject<ResumeEditorSession | null>;
+  /**
+   * Render only these sections, in the editor's own order — the phone flow
+   * edits one section at a time. Omit for the whole editor.
+   */
+  sections?: ResumeEditorSection[];
 };
+
+export type ResumeEditorSection =
+  | "contact"
+  | "skills"
+  | "summary"
+  | "experience"
+  | "projects"
+  | "education"
+  | "certifications"
+  | "languages"
+  | "additional";
 
 type ExperienceDraft = {
   designation: string;
@@ -349,6 +365,7 @@ export const ResumeEditor = ({
   onDesignationChange,
   showPreview = true,
   session,
+  sections,
 }: ResumeEditorProps) => {
   const [restored] = useState(() =>
     session?.current?.data === data ? session.current : null
@@ -663,307 +680,470 @@ export const ResumeEditor = ({
       additionalSections: drafts.additionalSections.filter((_, i) => i !== index),
     });
 
+  const shows = (section: ResumeEditorSection) => !sections || sections.includes(section);
+
   const fields = (
     <div className="space-y-4">
       {/* Contact information */}
-      <SectionCard
-        icon={UserRound}
-        title="Contact information"
-        action={addEntryButton("Add link", addContactLink)}
-      >
-        <div className="grid grid-cols-2 gap-2">
-          {onCandidateNameChange ? (
-            <div className="space-y-1">
-              <span className={labelClass}>Full name</span>
-              <input
-                className={inputClass}
-                value={candidateName}
-                onChange={(event) => onCandidateNameChange(event.target.value)}
-                placeholder="Jane Doe"
-              />
-            </div>
-          ) : null}
-          {onDesignationChange ? (
-            <div className="space-y-1">
-              <span className={labelClass}>Designation</span>
-              <input
-                className={inputClass}
-                value={designation || ""}
-                onChange={(event) => onDesignationChange(event.target.value)}
-                placeholder="Product Designer"
-              />
-            </div>
-          ) : null}
-          <div className="space-y-1">
-            <span className={labelClass}>Email</span>
-            <input
-              className={inputClass}
-              type="email"
-              value={drafts.contact.email}
-              onChange={(event) => updateContact({ email: event.target.value })}
-              placeholder="you@example.com"
-            />
-          </div>
-          <div className="space-y-1">
-            <span className={labelClass}>Phone</span>
-            <input
-              className={inputClass}
-              value={drafts.contact.phone}
-              onChange={(event) => updateContact({ phone: event.target.value })}
-              placeholder="+1 555 000 0000"
-            />
-          </div>
-          <div className="col-span-2 space-y-1">
-            <span className={labelClass}>Location</span>
-            <input
-              className={inputClass}
-              value={drafts.contact.location}
-              onChange={(event) => updateContact({ location: event.target.value })}
-              placeholder="City, Country"
-            />
-          </div>
-        </div>
-        <div className="mt-3 space-y-2">
-          <p className={labelClass}>Links (LinkedIn, portfolio, GitHub…)</p>
-          {drafts.contact.links.length === 0 ? (
-            <button
-              type="button"
-              onClick={addContactLink}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-500 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add LinkedIn, GitHub or a portfolio link
-            </button>
-          ) : null}
-          {drafts.contact.links.map((link, index) => (
-            <div key={index} className="flex items-end gap-2">
-              <div className="grid flex-1 grid-cols-[1fr_2fr] gap-2">
-                <div className="space-y-1">
-                  <span className={labelClass}>Label</span>
-                  <input
-                    className={inputClass}
-                    value={link.label}
-                    onChange={(event) => updateContactLink(index, { label: event.target.value })}
-                    placeholder="LinkedIn"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <span className={labelClass}>URL</span>
-                  <input
-                    className={inputClass}
-                    value={link.url}
-                    onChange={(event) => updateContactLink(index, { url: event.target.value })}
-                    placeholder="https://linkedin.com/in/you"
-                  />
-                </div>
+      {shows("contact") ? (
+        <SectionCard
+          icon={UserRound}
+          title="Contact information"
+          action={addEntryButton("Add link", addContactLink)}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            {onCandidateNameChange ? (
+              <div className="space-y-1">
+                <span className={labelClass}>Full name</span>
+                <input
+                  className={inputClass}
+                  value={candidateName}
+                  onChange={(event) => onCandidateNameChange(event.target.value)}
+                  placeholder="Jane Doe"
+                />
               </div>
+            ) : null}
+            {onDesignationChange ? (
+              <div className="space-y-1">
+                <span className={labelClass}>Designation</span>
+                <input
+                  className={inputClass}
+                  value={designation || ""}
+                  onChange={(event) => onDesignationChange(event.target.value)}
+                  placeholder="Product Designer"
+                />
+              </div>
+            ) : null}
+            <div className="space-y-1">
+              <span className={labelClass}>Email</span>
+              <input
+                className={inputClass}
+                type="email"
+                value={drafts.contact.email}
+                onChange={(event) => updateContact({ email: event.target.value })}
+                placeholder="you@example.com"
+              />
+            </div>
+            <div className="space-y-1">
+              <span className={labelClass}>Phone</span>
+              <input
+                className={inputClass}
+                value={drafts.contact.phone}
+                onChange={(event) => updateContact({ phone: event.target.value })}
+                placeholder="+1 555 000 0000"
+              />
+            </div>
+            <div className="col-span-2 space-y-1">
+              <span className={labelClass}>Location</span>
+              <input
+                className={inputClass}
+                value={drafts.contact.location}
+                onChange={(event) => updateContact({ location: event.target.value })}
+                placeholder="City, Country"
+              />
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            <p className={labelClass}>Links (LinkedIn, portfolio, GitHub…)</p>
+            {drafts.contact.links.length === 0 ? (
               <button
                 type="button"
-                aria-label="Remove link"
-                className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                onClick={() => removeContactLink(index)}
+                onClick={addContactLink}
+                className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-500 hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700"
               >
-                <Trash2 className="h-4 w-4" />
+                <Plus className="h-3.5 w-3.5" />
+                Add LinkedIn, GitHub or a portfolio link
               </button>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+            ) : null}
+            {drafts.contact.links.map((link, index) => (
+              <div key={index} className="flex items-end gap-2">
+                <div className="grid flex-1 grid-cols-[1fr_2fr] gap-2">
+                  <div className="space-y-1">
+                    <span className={labelClass}>Label</span>
+                    <input
+                      className={inputClass}
+                      value={link.label}
+                      onChange={(event) => updateContactLink(index, { label: event.target.value })}
+                      placeholder="LinkedIn"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className={labelClass}>URL</span>
+                    <input
+                      className={inputClass}
+                      value={link.url}
+                      onChange={(event) => updateContactLink(index, { url: event.target.value })}
+                      placeholder="https://linkedin.com/in/you"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Remove link"
+                  className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                  onClick={() => removeContactLink(index)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
 
       {/* Skills */}
-      <SectionCard icon={Wrench} title="Skills">
-        <div className="relative">
-          <input
-            className={`${inputClass} pr-9`}
-            value={skillInput}
-            onChange={(event) => setSkillInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                handleAddSkill();
-              }
-            }}
-            placeholder="Type a skill and press Enter (e.g. React) — we'll categorize it"
-          />
-          {categorizing ? (
-            <Loader2 className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />
-          ) : (
-            <Plus className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
-          )}
-        </div>
-        {drafts.skillCategories.length > 0 ? (
-          <div className="mt-3 space-y-2.5">
-            {drafts.skillCategories.map((category, index) => (
-              <div key={`${category.category}-${index}`}>
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {category.category}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {category.items.map((skill) => (
-                    <span
-                      key={skill}
-                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 py-1 pl-2.5 pr-1 text-xs text-slate-700"
-                    >
-                      {skill}
-                      <button
-                        type="button"
-                        aria-label={`Remove ${skill}`}
-                        className="flex h-4 w-4 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700"
-                        onClick={() => removeSkill(category.category, skill)}
+      {shows("skills") ? (
+        <SectionCard icon={Wrench} title="Skills">
+          <div className="relative">
+            <input
+              className={`${inputClass} pr-9`}
+              value={skillInput}
+              onChange={(event) => setSkillInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleAddSkill();
+                }
+              }}
+              placeholder="Type a skill and press Enter (e.g. React) — we'll categorize it"
+            />
+            {categorizing ? (
+              <Loader2 className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />
+            ) : (
+              <Plus className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300" />
+            )}
+          </div>
+          {drafts.skillCategories.length > 0 ? (
+            <div className="mt-3 space-y-2.5">
+              {drafts.skillCategories.map((category, index) => (
+                <div key={`${category.category}-${index}`}>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    {category.category}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {category.items.map((skill) => (
+                      <span
+                        key={skill}
+                        className="inline-flex items-center gap-1 rounded-full bg-slate-100 py-1 pl-2.5 pr-1 text-xs text-slate-700"
                       >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
+                        {skill}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${skill}`}
+                          className="flex h-4 w-4 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                          onClick={() => removeSkill(category.category, skill)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-400">
+              No skills yet. Add them one at a time — each is sorted into a category.
+            </p>
+          )}
+        </SectionCard>
+      ) : null}
+
+      {/* Summary */}
+      {shows("summary") ? (
+        <SectionCard icon={FileText} title="Summary">
+          <div className="relative">
+            <textarea
+              className={`${inputClass} min-h-[110px] resize-y pb-10 leading-relaxed`}
+              value={drafts.summary}
+              readOnly={assist.pending(SUMMARY_KEY)}
+              onChange={(event) => commit({ ...drafts, summary: event.target.value })}
+              placeholder="A short professional summary — or generate one from your details."
+            />
+            <AssistButtons
+              assist={assist}
+              field={SUMMARY_KEY}
+              icon={Sparkles}
+              label="Generate summary"
+              doneLabel="Generated"
+              onRun={generateSummary}
+            />
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {/* Experience */}
+      {shows("experience") ? (
+        <SectionCard
+          icon={Briefcase}
+          title="Experience"
+          action={addEntryButton("Add role", addExperience)}
+        >
+          <div className="space-y-3">
+            {drafts.experiences.map((entry, index) => (
+              <div
+                key={index}
+                className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/60 p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="grid flex-1 grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className={labelClass}>Designation</span>
+                      <input
+                        className={inputClass}
+                        value={entry.designation}
+                        onChange={(event) =>
+                          updateExperience(index, { designation: event.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className={labelClass}>Company</span>
+                      <input
+                        className={inputClass}
+                        value={entry.company}
+                        onChange={(event) =>
+                          updateExperience(index, { company: event.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className={labelClass}>Location</span>
+                      <input
+                        className={inputClass}
+                        value={entry.location}
+                        onChange={(event) =>
+                          updateExperience(index, { location: event.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className={labelClass}>Duration</span>
+                      <input
+                        className={inputClass}
+                        value={entry.duration}
+                        onChange={(event) =>
+                          updateExperience(index, { duration: event.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                  {drafts.experiences.length > 1 ? (
+                    <button
+                      type="button"
+                      aria-label="Remove role"
+                      className="mt-5 rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                      onClick={() => removeExperience(index)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <span className={labelClass}>
+                    What did you do at this company? (add at least 2-3 lines)
+                  </span>
+                  <div className="relative">
+                    <textarea
+                      className={`${inputClass} min-h-[96px] resize-y pb-10 leading-relaxed`}
+                      value={entry.text}
+                      readOnly={assist.pending(assistKey("experience", index))}
+                      onChange={(event) => updateExperience(index, { text: event.target.value })}
+                      placeholder="Describe your work here, then tap Rephrase to turn it into sharp, ATS-friendly bullet points."
+                    />
+                    <AssistButtons
+                      assist={assist}
+                      field={assistKey("experience", index)}
+                      icon={Wand2}
+                      label="Rephrase"
+                      doneLabel="Rephrased"
+                      onRun={() => rephraseExperience(index)}
+                    />
+                  </div>
                 </div>
               </div>
             ))}
           </div>
-        ) : (
-          <p className="mt-2 text-xs text-slate-400">
-            No skills yet. Add them one at a time — each is sorted into a category.
-          </p>
-        )}
-      </SectionCard>
+        </SectionCard>
+      ) : null}
 
-      {/* Summary */}
-      <SectionCard icon={FileText} title="Summary">
-        <div className="relative">
-          <textarea
-            className={`${inputClass} min-h-[110px] resize-y pb-10 leading-relaxed`}
-            value={drafts.summary}
-            readOnly={assist.pending(SUMMARY_KEY)}
-            onChange={(event) => commit({ ...drafts, summary: event.target.value })}
-            placeholder="A short professional summary — or generate one from your details."
-          />
-          <AssistButtons
-            assist={assist}
-            field={SUMMARY_KEY}
-            icon={Sparkles}
-            label="Generate summary"
-            doneLabel="Generated"
-            onRun={generateSummary}
-          />
-        </div>
-      </SectionCard>
-
-      {/* Experience */}
-      <SectionCard
-        icon={Briefcase}
-        title="Experience"
-        action={addEntryButton("Add role", addExperience)}
-      >
-        <div className="space-y-3">
-          {drafts.experiences.map((entry, index) => (
-            <div
-              key={index}
-              className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/60 p-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="grid flex-1 grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <span className={labelClass}>Designation</span>
-                    <input
-                      className={inputClass}
-                      value={entry.designation}
-                      onChange={(event) =>
-                        updateExperience(index, { designation: event.target.value })
-                      }
-                    />
+      {/* Projects */}
+      {shows("projects") ? (
+        <SectionCard
+          icon={FolderGit2}
+          title="Projects"
+          action={addEntryButton("Add project", addProject)}
+        >
+          <div className="space-y-3">
+            {drafts.projects.length === 0 ? (
+              <p className="text-xs text-slate-400">No projects yet. Add one if relevant.</p>
+            ) : null}
+            {drafts.projects.map((entry, index) => (
+              <div
+                key={index}
+                className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/60 p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="grid flex-1 grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className={labelClass}>Project name</span>
+                      <input
+                        className={inputClass}
+                        value={entry.name}
+                        onChange={(event) => updateProject(index, { name: event.target.value })}
+                        placeholder="Portfolio website"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className={labelClass}>Link</span>
+                      <input
+                        className={inputClass}
+                        value={entry.link}
+                        onChange={(event) => updateProject(index, { link: event.target.value })}
+                        placeholder="github.com/you/project"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <span className={labelClass}>Company</span>
-                    <input
-                      className={inputClass}
-                      value={entry.company}
-                      onChange={(event) =>
-                        updateExperience(index, { company: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className={labelClass}>Location</span>
-                    <input
-                      className={inputClass}
-                      value={entry.location}
-                      onChange={(event) =>
-                        updateExperience(index, { location: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className={labelClass}>Duration</span>
-                    <input
-                      className={inputClass}
-                      value={entry.duration}
-                      onChange={(event) =>
-                        updateExperience(index, { duration: event.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                {drafts.experiences.length > 1 ? (
                   <button
                     type="button"
-                    aria-label="Remove role"
+                    aria-label="Remove project"
                     className="mt-5 rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                    onClick={() => removeExperience(index)}
+                    onClick={() => removeProject(index)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-                ) : null}
+                </div>
+                <div className="space-y-1">
+                  <span className={labelClass}>
+                    What was this project about? (add at least 2-3 lines)
+                  </span>
+                  <div className="relative">
+                    <textarea
+                      className={`${inputClass} min-h-[96px] resize-y pb-10 leading-relaxed`}
+                      value={entry.text}
+                      readOnly={assist.pending(assistKey("project", index))}
+                      onChange={(event) => updateProject(index, { text: event.target.value })}
+                      placeholder="Describe the project, then tap Rephrase to turn it into sharp, ATS-friendly bullet points."
+                    />
+                    <AssistButtons
+                      assist={assist}
+                      field={assistKey("project", index)}
+                      icon={Wand2}
+                      label="Rephrase"
+                      doneLabel="Rephrased"
+                      onRun={() => rephraseProject(index)}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="space-y-1">
-                <span className={labelClass}>
-                  What did you do at this company? (add at least 2-3 lines)
-                </span>
-                <div className="relative">
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {/* Education */}
+      {shows("education") ? (
+        <SectionCard
+          icon={GraduationCap}
+          title="Education"
+          action={addEntryButton("Add education", addEducation)}
+        >
+          <div className="space-y-3">
+            {drafts.educations.map((entry, index) => (
+              <div
+                key={index}
+                className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/60 p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="grid flex-1 grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className={labelClass}>Qualification</span>
+                      <input
+                        className={inputClass}
+                        value={entry.qualification}
+                        onChange={(event) =>
+                          updateEducation(index, { qualification: event.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className={labelClass}>Institution</span>
+                      <input
+                        className={inputClass}
+                        value={entry.institution}
+                        onChange={(event) =>
+                          updateEducation(index, { institution: event.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className={labelClass}>Location</span>
+                      <input
+                        className={inputClass}
+                        value={entry.location}
+                        onChange={(event) =>
+                          updateEducation(index, { location: event.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <span className={labelClass}>Duration</span>
+                      <input
+                        className={inputClass}
+                        value={entry.duration}
+                        onChange={(event) =>
+                          updateEducation(index, { duration: event.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                  {drafts.educations.length > 1 ? (
+                    <button
+                      type="button"
+                      aria-label="Remove education"
+                      className="mt-5 rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                      onClick={() => removeEducation(index)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+                <div className="space-y-1">
+                  <span className={labelClass}>Details (one per line, optional)</span>
                   <textarea
-                    className={`${inputClass} min-h-[96px] resize-y pb-10 leading-relaxed`}
-                    value={entry.text}
-                    readOnly={assist.pending(assistKey("experience", index))}
-                    onChange={(event) => updateExperience(index, { text: event.target.value })}
-                    placeholder="Describe your work here, then tap Rephrase to turn it into sharp, ATS-friendly bullet points."
-                  />
-                  <AssistButtons
-                    assist={assist}
-                    field={assistKey("experience", index)}
-                    icon={Wand2}
-                    label="Rephrase"
-                    doneLabel="Rephrased"
-                    onRun={() => rephraseExperience(index)}
+                    className={`${inputClass} resize-y leading-relaxed`}
+                    rows={2}
+                    value={entry.details}
+                    onChange={(event) => updateEducation(index, { details: event.target.value })}
                   />
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
 
-      {/* Projects */}
-      <SectionCard
-        icon={FolderGit2}
-        title="Projects"
-        action={addEntryButton("Add project", addProject)}
-      >
-        <div className="space-y-3">
-          {drafts.projects.length === 0 ? (
-            <p className="text-xs text-slate-400">No projects yet. Add one if relevant.</p>
-          ) : null}
-          {drafts.projects.map((entry, index) => (
-            <div
-              key={index}
-              className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/60 p-3"
-            >
-              <div className="flex items-start justify-between gap-2">
+      {/* Certifications */}
+      {shows("certifications") ? (
+        <SectionCard
+          icon={Award}
+          title="Certifications"
+          action={addEntryButton("Add certification", addCertification)}
+        >
+          <div className="space-y-2.5">
+            {drafts.certifications.length === 0 ? (
+              <p className="text-xs text-slate-400">No certifications yet.</p>
+            ) : null}
+            {drafts.certifications.map((entry, index) => (
+              <div key={index} className="flex items-end gap-2">
                 <div className="grid flex-1 grid-cols-2 gap-2">
                   <div className="space-y-1">
-                    <span className={labelClass}>Project name</span>
+                    <span className={labelClass}>Title</span>
                     <input
                       className={inputClass}
-                      value={entry.name}
-                      onChange={(event) => updateProject(index, { name: event.target.value })}
-                      placeholder="Portfolio website"
+                      value={entry.title}
+                      onChange={(event) => updateCertification(index, { title: event.target.value })}
+                      placeholder="Google Project Management"
                     />
                   </div>
                   <div className="space-y-1">
@@ -971,253 +1151,110 @@ export const ResumeEditor = ({
                     <input
                       className={inputClass}
                       value={entry.link}
-                      onChange={(event) => updateProject(index, { link: event.target.value })}
-                      placeholder="github.com/you/project"
+                      onChange={(event) => updateCertification(index, { link: event.target.value })}
+                      placeholder="https://credential…"
                     />
                   </div>
                 </div>
                 <button
                   type="button"
-                  aria-label="Remove project"
-                  className="mt-5 rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                  onClick={() => removeProject(index)}
+                  aria-label="Remove certification"
+                  className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                  onClick={() => removeCertification(index)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
-              <div className="space-y-1">
-                <span className={labelClass}>
-                  What was this project about? (add at least 2-3 lines)
-                </span>
-                <div className="relative">
-                  <textarea
-                    className={`${inputClass} min-h-[96px] resize-y pb-10 leading-relaxed`}
-                    value={entry.text}
-                    readOnly={assist.pending(assistKey("project", index))}
-                    onChange={(event) => updateProject(index, { text: event.target.value })}
-                    placeholder="Describe the project, then tap Rephrase to turn it into sharp, ATS-friendly bullet points."
-                  />
-                  <AssistButtons
-                    assist={assist}
-                    field={assistKey("project", index)}
-                    icon={Wand2}
-                    label="Rephrase"
-                    doneLabel="Rephrased"
-                    onRun={() => rephraseProject(index)}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
 
-      {/* Education */}
-      <SectionCard
-        icon={GraduationCap}
-        title="Education"
-        action={addEntryButton("Add education", addEducation)}
-      >
-        <div className="space-y-3">
-          {drafts.educations.map((entry, index) => (
-            <div
-              key={index}
-              className="space-y-2.5 rounded-lg border border-slate-200 bg-slate-50/60 p-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="grid flex-1 grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <span className={labelClass}>Qualification</span>
+      {/* Languages */}
+      {shows("languages") ? (
+        <SectionCard
+          icon={LanguagesIcon}
+          title="Languages"
+          action={addEntryButton("Add language", addLanguage)}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            {drafts.languages.length === 0 ? (
+              <p className="col-span-2 text-xs text-slate-400">No languages yet.</p>
+            ) : null}
+            {drafts.languages.map((language, index) => (
+              <div key={index} className="flex items-center gap-1.5">
+                <input
+                  className={inputClass}
+                  value={language}
+                  onChange={(event) => updateLanguage(index, event.target.value)}
+                  placeholder="English"
+                />
+                <button
+                  type="button"
+                  aria-label="Remove language"
+                  className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                  onClick={() => removeLanguage(index)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
+
+      {/* Additional sections — awards, publications, speaking, volunteering… */}
+      {shows("additional") ? (
+        <SectionCard
+          icon={Layers}
+          title="Additional sections"
+          action={addEntryButton("Add section", addAdditionalSection)}
+        >
+          <div className="space-y-3">
+            {drafts.additionalSections.length === 0 ? (
+              <p className="text-xs text-slate-400">
+                No additional sections (awards, publications, volunteering…) yet.
+              </p>
+            ) : null}
+            {drafts.additionalSections.map((section, index) => (
+              <div key={index} className="rounded-lg border border-slate-100 p-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 space-y-1">
+                    <span className={labelClass}>Section title</span>
                     <input
                       className={inputClass}
-                      value={entry.qualification}
+                      value={section.title}
                       onChange={(event) =>
-                        updateEducation(index, { qualification: event.target.value })
+                        updateAdditionalSection(index, { title: event.target.value })
                       }
+                      placeholder="Awards & Recognition"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <span className={labelClass}>Institution</span>
-                    <input
-                      className={inputClass}
-                      value={entry.institution}
-                      onChange={(event) =>
-                        updateEducation(index, { institution: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className={labelClass}>Location</span>
-                    <input
-                      className={inputClass}
-                      value={entry.location}
-                      onChange={(event) =>
-                        updateEducation(index, { location: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <span className={labelClass}>Duration</span>
-                    <input
-                      className={inputClass}
-                      value={entry.duration}
-                      onChange={(event) =>
-                        updateEducation(index, { duration: event.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-                {drafts.educations.length > 1 ? (
                   <button
                     type="button"
-                    aria-label="Remove education"
-                    className="mt-5 rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                    onClick={() => removeEducation(index)}
+                    aria-label="Remove section"
+                    className="mt-4 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                    onClick={() => removeAdditionalSection(index)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
-                ) : null}
-              </div>
-              <div className="space-y-1">
-                <span className={labelClass}>Details (one per line, optional)</span>
-                <textarea
-                  className={`${inputClass} resize-y leading-relaxed`}
-                  rows={2}
-                  value={entry.details}
-                  onChange={(event) => updateEducation(index, { details: event.target.value })}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      {/* Certifications */}
-      <SectionCard
-        icon={Award}
-        title="Certifications"
-        action={addEntryButton("Add certification", addCertification)}
-      >
-        <div className="space-y-2.5">
-          {drafts.certifications.length === 0 ? (
-            <p className="text-xs text-slate-400">No certifications yet.</p>
-          ) : null}
-          {drafts.certifications.map((entry, index) => (
-            <div key={index} className="flex items-end gap-2">
-              <div className="grid flex-1 grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <span className={labelClass}>Title</span>
-                  <input
-                    className={inputClass}
-                    value={entry.title}
-                    onChange={(event) => updateCertification(index, { title: event.target.value })}
-                    placeholder="Google Project Management"
-                  />
                 </div>
-                <div className="space-y-1">
-                  <span className={labelClass}>Link</span>
-                  <input
-                    className={inputClass}
-                    value={entry.link}
-                    onChange={(event) => updateCertification(index, { link: event.target.value })}
-                    placeholder="https://credential…"
-                  />
-                </div>
-              </div>
-              <button
-                type="button"
-                aria-label="Remove certification"
-                className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                onClick={() => removeCertification(index)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      {/* Languages */}
-      <SectionCard
-        icon={LanguagesIcon}
-        title="Languages"
-        action={addEntryButton("Add language", addLanguage)}
-      >
-        <div className="grid grid-cols-2 gap-2">
-          {drafts.languages.length === 0 ? (
-            <p className="col-span-2 text-xs text-slate-400">No languages yet.</p>
-          ) : null}
-          {drafts.languages.map((language, index) => (
-            <div key={index} className="flex items-center gap-1.5">
-              <input
-                className={inputClass}
-                value={language}
-                onChange={(event) => updateLanguage(index, event.target.value)}
-                placeholder="English"
-              />
-              <button
-                type="button"
-                aria-label="Remove language"
-                className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                onClick={() => removeLanguage(index)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
-
-      {/* Additional sections — awards, publications, speaking, volunteering… */}
-      <SectionCard
-        icon={Layers}
-        title="Additional sections"
-        action={addEntryButton("Add section", addAdditionalSection)}
-      >
-        <div className="space-y-3">
-          {drafts.additionalSections.length === 0 ? (
-            <p className="text-xs text-slate-400">
-              No additional sections (awards, publications, volunteering…) yet.
-            </p>
-          ) : null}
-          {drafts.additionalSections.map((section, index) => (
-            <div key={index} className="rounded-lg border border-slate-100 p-2.5">
-              <div className="flex items-center gap-2">
-                <div className="flex-1 space-y-1">
-                  <span className={labelClass}>Section title</span>
-                  <input
-                    className={inputClass}
-                    value={section.title}
+                <div className="mt-2 space-y-1">
+                  <span className={labelClass}>Items (one per line)</span>
+                  <textarea
+                    className={`${inputClass} min-h-[72px] resize-y leading-relaxed`}
+                    value={section.text}
                     onChange={(event) =>
-                      updateAdditionalSection(index, { title: event.target.value })
+                      updateAdditionalSection(index, { text: event.target.value })
                     }
-                    placeholder="Awards & Recognition"
+                    placeholder={"AMA Marketer of the Year — finalist (2024)\nEffie Awards — Silver (2023)"}
                   />
                 </div>
-                <button
-                  type="button"
-                  aria-label="Remove section"
-                  className="mt-4 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
-                  onClick={() => removeAdditionalSection(index)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
               </div>
-              <div className="mt-2 space-y-1">
-                <span className={labelClass}>Items (one per line)</span>
-                <textarea
-                  className={`${inputClass} min-h-[72px] resize-y leading-relaxed`}
-                  value={section.text}
-                  onChange={(event) =>
-                    updateAdditionalSection(index, { text: event.target.value })
-                  }
-                  placeholder={"AMA Marketer of the Year — finalist (2024)\nEffie Awards — Silver (2023)"}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </SectionCard>
+            ))}
+          </div>
+        </SectionCard>
+      ) : null}
     </div>
   );
 

@@ -38,6 +38,7 @@ import {
 } from "@/components/resume-templates/render";
 import {
   ResumeEditor,
+  type ResumeEditorSection,
   type ResumeEditorSession,
 } from "@/components/dashboard/resume-editor";
 import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
@@ -46,6 +47,11 @@ import {
   useOptimizationWait,
 } from "@/components/dashboard/optimization-meter";
 import { useProductTour } from "@/components/onboarding/product-tour";
+import {
+  MobileScanFlow,
+  useIsMobileScanLayout,
+  type MobileExitIntent,
+} from "@/components/dashboard/scan-flow-mobile";
 import {
   ResumeTemplateId,
   ResumeTemplateThemeOverrides,
@@ -220,6 +226,13 @@ type ScanSectionProps = {
   } | null;
   /** Lets the host drop the prefill once it has been applied. */
   onPrefillConsumed?: () => void;
+  /**
+   * Lets the host check with this section before switching away. On phones
+   * the optimized documents sit inline with the tab bar still in reach, so a
+   * section switch would silently throw them away. The guard returns true when
+   * it has taken over — it shows its own confirm and calls `proceed` itself.
+   */
+  registerLeaveGuard?: (guard: ((proceed: () => void) => boolean) | null) => void;
 };
 
 /** Just enough of a Remote Jobs posting to navigate back to it. */
@@ -241,8 +254,37 @@ const DOC_LABELS: Record<TailoredDocType, string> = {
  * What the user is trying to do when we interrupt to ask about downloads.
  * "close" dismisses the preview; "apply" leaves for the job posting. Both
  * discard the generated documents, which is why either is worth a confirm.
+ * The phone flow adds "back" (to an earlier step), "new" (a fresh scan) and
+ * "leave" (another dashboard section), which discard them the same way.
  */
-type PendingExit = "close" | "apply";
+type PendingExit = "close" | MobileExitIntent | "leave";
+
+const EXIT_COPY: Record<PendingExit, { title: string; detail: string }> = {
+  close: {
+    title: "Close without downloading?",
+    detail: "This preview can't be reopened, and the documents are not saved anywhere else.",
+  },
+  apply: {
+    title: "Ready to apply?",
+    detail:
+      "You'll need them to apply, and this preview can't be reopened once you leave it.",
+  },
+  back: {
+    title: "Go back without downloading?",
+    detail:
+      "Your tailored documents can't be reopened once you go back, and they are not saved anywhere else.",
+  },
+  new: {
+    title: "Start a new scan?",
+    detail:
+      "Your tailored documents can't be reopened once you start over, and they are not saved anywhere else.",
+  },
+  leave: {
+    title: "Leave without downloading?",
+    detail:
+      "Your tailored documents can't be reopened once you leave, and they are not saved anywhere else.",
+  },
+};
 
 type GuestTrialStage = "none" | "analyzed" | "optimized";
 
@@ -291,8 +333,12 @@ export const ScanSection = ({
   optimizationUsage = null,
   prefill = null,
   onPrefillConsumed,
+  registerLeaveGuard,
 }: ScanSectionProps = {}) => {
   const router = useRouter();
+  // Phones get the step-by-step flow in scan-flow-mobile.tsx; everything
+  // below keeps driving it, only the rendering at the end differs.
+  const isMobileLayout = useIsMobileScanLayout();
   const [form, setForm] = useState(initialFormState);
   const [result, setResult] = useState<ScanSummary | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
@@ -387,6 +433,8 @@ export const ScanSection = ({
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const summaryPanelRef = useRef<HTMLDivElement | null>(null);
+  // The section switch waiting on the "leave without downloading?" confirm.
+  const leaveProceedRef = useRef<(() => void) | null>(null);
   // The first-run tour walks through this section. It needs to know when a scan
   // and an optimization finish, and the preview steps need the pane they point
   // at to actually be the one on screen. Outside the dashboard (the guest scan
@@ -1325,6 +1373,28 @@ export const ScanSection = ({
     setPendingExit(intent);
   };
 
+  // A section switch is one more exit. In practice it only happens on phones:
+  // the desktop preview is a modal over the sidebar, while the phone flow keeps
+  // the tab bar in reach. With nothing outstanding the preview just closes (so
+  // the tour hears about it) and the switch goes ahead unasked.
+  const hasPendingDownloads = pendingDownloads.length > 0;
+  useEffect(() => {
+    if (!registerLeaveGuard) return;
+    registerLeaveGuard((proceed) => {
+      if (!previewOpen) return false;
+      if (!hasPendingDownloads) {
+        setPendingExit(null);
+        setPreviewOpen(false);
+        tourSignal("scan:preview-closed");
+        return false;
+      }
+      leaveProceedRef.current = proceed;
+      setPendingExit("leave");
+      return true;
+    });
+    return () => registerLeaveGuard(null);
+  }, [registerLeaveGuard, previewOpen, hasPendingDownloads, tourSignal]);
+
   const createTailoredDocuments = async (
     careerChangeApproved = false,
     selectedCareerKeywords?: string[]
@@ -2152,6 +2222,414 @@ export const ScanSection = ({
     </div>
   );
 
+
+  // ---- Shared by the desktop preview and the phone flow ----------------------
+
+  // Highlight added keywords in the PREVIEW only — downloadPdf() renders its
+  // own HTML, so the PDF is never highlighted.
+  const renderPreviewResumeHtml = () => {
+    if (!tailoredDocs) return "";
+    return highlightKeywordsInHtml(
+      renderableResumeData
+        ? renderResumeFromData({
+            data: renderableResumeData,
+            templateId: selectedTemplate,
+            candidateName: previewCandidateName,
+            designation: previewDesignation,
+            photoUrl: resumePhotoUrl,
+            overrides: templateOverrides[selectedTemplate],
+            useContactIcons: !guestTrial,
+          })
+        : renderResumeHtml({
+            resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
+            templateId: selectedTemplate,
+            candidateName: previewCandidateName,
+            designation: previewDesignation,
+            photoUrl: resumePhotoUrl,
+            overrides: templateOverrides[selectedTemplate],
+            useContactIcons: !guestTrial,
+          }),
+      tailoredDocs.incorporatedKeywords || []
+    );
+  };
+
+  // The phone flow edits one section at a time; the desktop preview shows
+  // them all. Both share the one editor session, so drafts carry across.
+  const renderResumeContentEditor = (sections?: ResumeEditorSection[]) =>
+    resumeData ? (
+      <ResumeEditor
+        sections={sections}
+        showPreview={false}
+        session={resumeEditorSession}
+        data={resumeData}
+        onChange={(next) => {
+          setResumeData(next);
+          setEditableResumeText(resumeDataToText(next));
+          setHasResumePreviewEdits(true);
+        }}
+        templateId={selectedTemplate}
+        candidateName={previewCandidateName}
+        designation={previewDesignation}
+        onCandidateNameChange={(value) => {
+          setPreviewCandidateName(value);
+          setHasResumePreviewEdits(true);
+        }}
+        onDesignationChange={(value) => {
+          setPreviewDesignation(value);
+          setHasResumePreviewEdits(true);
+        }}
+        photoUrl={resumePhotoUrl}
+        overrides={templateOverrides[selectedTemplate]}
+        useContactIcons={!guestTrial}
+      />
+    ) : (
+      <textarea
+        className="min-h-[440px] w-full rounded-md border border-slate-200 bg-white p-3 text-sm leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+        value={editableResumeText}
+        onChange={(event) => {
+          setEditableResumeText(event.target.value);
+          setHasResumePreviewEdits(true);
+        }}
+      />
+    );
+  const resumeContentEditor = renderResumeContentEditor();
+
+  const templateDesigner = (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+          Template Designer
+        </p>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 rounded-md px-3 text-xs"
+          onClick={resetTemplateOverrides}
+        >
+          Reset
+        </Button>
+      </div>
+      <p className="mt-1 text-xs text-slate-500">
+        {selectedTemplateConfig.description}
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="text-xs text-slate-600">
+          Accent
+          <input
+            type="color"
+            className="mt-1 h-9 w-full cursor-pointer rounded-md border border-slate-300 bg-white p-1"
+            value={selectedTemplateTheme.accent}
+            onChange={(event) =>
+              updateTemplateOverrides({ accent: event.target.value })
+            }
+          />
+        </label>
+        <label className="text-xs text-slate-600">
+          Heading Color
+          <input
+            type="color"
+            className="mt-1 h-9 w-full cursor-pointer rounded-md border border-slate-300 bg-white p-1"
+            value={selectedTemplateTheme.headingColor}
+            onChange={(event) =>
+              updateTemplateOverrides({
+                headingColor: event.target.value,
+              })
+            }
+          />
+        </label>
+        <label className="text-xs text-slate-600">
+          Body Color
+          <input
+            type="color"
+            className="mt-1 h-9 w-full cursor-pointer rounded-md border border-slate-300 bg-white p-1"
+            value={selectedTemplateTheme.bodyColor}
+            onChange={(event) =>
+              updateTemplateOverrides({ bodyColor: event.target.value })
+            }
+          />
+        </label>
+        <label className="text-xs text-slate-600">
+          Font
+          <select
+            className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-xs"
+            value={selectedTemplateTheme.fontFamily}
+            onChange={(event) =>
+              updateTemplateOverrides({ fontFamily: event.target.value })
+            }
+          >
+            {RESUME_FONT_OPTIONS.map((font) => (
+              <option key={font} value={font}>
+                {font}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs text-slate-600">
+          Base Font Size ({selectedTemplateTheme.baseFontSize}px)
+          <input
+            type="range"
+            min={11}
+            max={15}
+            step={1}
+            className="mt-2 w-full"
+            value={selectedTemplateTheme.baseFontSize}
+            onChange={(event) =>
+              updateTemplateOverrides({
+                baseFontSize: Number(event.target.value),
+              })
+            }
+          />
+        </label>
+        <label className="text-xs text-slate-600">
+          Line Height ({selectedTemplateTheme.lineHeight.toFixed(2)})
+          <input
+            type="range"
+            min={1.35}
+            max={1.95}
+            step={0.05}
+            className="mt-2 w-full"
+            value={selectedTemplateTheme.lineHeight}
+            onChange={(event) =>
+              updateTemplateOverrides({
+                lineHeight: Number(event.target.value),
+              })
+            }
+          />
+        </label>
+        <label className="text-xs text-slate-600">
+          Section Spacing ({selectedTemplateTheme.sectionSpacing}px)
+          <input
+            type="range"
+            min={10}
+            max={24}
+            step={1}
+            className="mt-2 w-full"
+            value={selectedTemplateTheme.sectionSpacing}
+            onChange={(event) =>
+              updateTemplateOverrides({
+                sectionSpacing: Number(event.target.value),
+              })
+            }
+          />
+        </label>
+        {selectedTemplateConfig.layout.photo !== "none" ? (
+          <label className="flex items-start gap-2 text-xs text-slate-600 sm:col-span-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+              checked={selectedTemplateTheme.showPhoto}
+              onChange={(event) =>
+                updateTemplateOverrides({
+                  showPhoto: event.target.checked,
+                })
+              }
+            />
+            <span>
+              Show photo
+              {!resumePhotoUrl ? (
+                <span className="block text-[11px] text-slate-400">
+                  Add one under Personal details in your base resume.
+                </span>
+              ) : null}
+            </span>
+          </label>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  const careerWarningDialog =
+    showCareerWarning && fitInsight ? (
+      <div className={cn(DIALOG_BACKDROP, "z-[80]")}>
+        <div className={cn(DIALOG_PANEL, "max-w-lg", DIALOG_BODY)}>
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Potential Role Mismatch
+              </h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Your resume appears aligned to{" "}
+                <span className="font-semibold">{fitInsight.resumeFamilyLabel}</span>, but
+                this scan targets{" "}
+                <span className="font-semibold">{fitInsight.targetFamilyLabel}</span>.
+              </p>
+              <p className="mt-2 text-sm text-slate-600">
+                Are you looking for a career change?
+              </p>
+            </div>
+          </div>
+
+          {/* Thumb-reachable on a phone: two equal full-width buttons, with
+              the affirmative first in the visual order it reads best. */}
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => {
+                setShowCareerWarning(false);
+                tourSignal("scan:idle");
+                toast.info("No changes were made. Try scanning against a closer role.");
+              }}
+            >
+              No
+            </Button>
+            <Button
+              className="w-full sm:w-auto"
+              disabled={optimizeWait.waiting}
+              onClick={() => {
+                setShowCareerWarning(false);
+                createTailoredDocuments(true);
+              }}
+            >
+              Yes
+            </Button>
+          </div>
+        </div>
+      </div>
+    ) : null;
+
+  // Leaving the preview — by closing it, heading to the job, or (on a phone)
+  // stepping back or switching section — throws the generated documents away,
+  // and there is no way back into it. This is the last chance to save them, so
+  // it sits above the preview itself.
+  const exitConfirmDialog = pendingExit ? (
+    <div className={cn(DIALOG_BACKDROP, "z-[90]")}>
+      <div className={cn(DIALOG_PANEL, "max-w-lg", DIALOG_BODY)}>
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold text-slate-900">
+              {EXIT_COPY[pendingExit].title}
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              {pendingDownloads.length === requiredDownloads.length
+                ? `You haven't downloaded your ${requiredDownloads
+                    .map((doc) => DOC_LABELS[doc])
+                    .join(" or ")} yet.`
+                : `You still haven't downloaded your ${pendingDownloads
+                    .map((doc) => DOC_LABELS[doc])
+                    .join(" or ")}.`}
+            </p>
+            <p className="mt-2 text-sm text-slate-600">{EXIT_COPY[pendingExit].detail}</p>
+          </div>
+        </div>
+
+        {/* Same geometry as the other confirms in this section: two equal
+            full-width buttons on a phone, the affirmative reading last. */}
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => {
+              leaveProceedRef.current = null;
+              setPendingExit(null);
+            }}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            No, let me download first
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => {
+              if (pendingExit === "apply") {
+                goToRemoteJob();
+                return;
+              }
+              const proceed = pendingExit === "leave" ? leaveProceedRef.current : null;
+              leaveProceedRef.current = null;
+              closePreview();
+              proceed?.();
+            }}
+          >
+            Go ahead
+          </Button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  if (isMobileLayout && !guestTrial) {
+    const selectableKeywords = result
+      ? result.missingKeywords.filter((keyword) => !isDegreeKeyword(keyword))
+      : [];
+    return (
+      <section className={className}>
+        <MobileScanFlow
+          form={form}
+          formErrors={formErrors}
+          onFieldChange={updateForm}
+          onAnalyze={analyzeResume}
+          isAnalyzing={isAnalyzing}
+          onReset={resetForm}
+          baseResumes={baseResumeList}
+          baseResumeLoading={baseResumeLoading}
+          selectedBaseResumeId={selectedBaseResumeId}
+          onSelectBaseResume={applyBaseResume}
+          onManageBaseResumes={() => router.push("/scan?section=base-resume")}
+          result={result}
+          scoreComponents={SCORE_COMPONENTS}
+          remoteJob={remoteJob}
+          allowsCoverLetter={shouldAllowCoverLetter}
+          optimizeWait={{
+            waiting: optimizeWait.waiting,
+            label: optimizeWaitLabel,
+            note:
+              optimizeWait.blockedBy === "daily"
+                ? `You've used today's ${optimizationUsage?.dailyLimit} optimizations. They reset at midnight UTC.`
+                : `A short break after ${optimizationUsage?.hourlyLimit} optimizations in an hour. This unlocks when it ends.`,
+          }}
+          onOptimize={() => createTailoredDocuments()}
+          isGeneratingDocs={isGeneratingDocs}
+          keywordPicker={{
+            open: showCareerKeywordPicker,
+            selectable: selectableKeywords,
+            selected: careerSelectedKeywords,
+            onToggle: toggleCareerKeyword,
+            onSelectAll: () => setCareerSelectedKeywords(selectableKeywords),
+            onClear: () => setCareerSelectedKeywords([]),
+            onBack: () => {
+              setShowCareerKeywordPicker(false);
+              tourSignal("scan:idle");
+            },
+            onContinue: () => {
+              setShowCareerKeywordPicker(false);
+              createTailoredDocuments(keywordPickerCareerChange, careerSelectedKeywords);
+            },
+          }}
+          preview={{
+            open: previewOpen,
+            docs: tailoredDocs,
+            view: previewView,
+            onViewChange: setPreviewView,
+            initialScore: initialScanScore,
+            finalScore,
+            finalScoreBreakdown,
+            isComputingFinalScore,
+            hasEdits: hasResumePreviewEdits,
+            onReevaluate: reevaluateEditedResumeScore,
+            resumeHtml: previewOpen ? renderPreviewResumeHtml() : "",
+            coverLetterHtml:
+              previewOpen && tailoredDocs ? renderCoverLetterHtml(tailoredDocs.coverLetter) : "",
+            renderEditor: (section) =>
+              renderResumeContentEditor(section ? [section] : undefined),
+            editorHasSections: resumeData !== null,
+            designer: templateDesigner,
+            templateId: selectedTemplate,
+            onTemplateChange: setSelectedTemplate,
+            downloadingType,
+            downloaded: downloadedDocs,
+            onDownload: downloadPdf,
+            onRequestExit: requestExit,
+          }}
+        />
+        {careerWarningDialog}
+        {exitConfirmDialog}
+      </section>
+    );
+  }
+
   return (
     <section className={cn("space-y-8", className)}>
       {!hideTopHeading && (
@@ -2501,55 +2979,7 @@ export const ScanSection = ({
         </div>
       )}
 
-      {showCareerWarning && fitInsight && (
-        <div className={cn(DIALOG_BACKDROP, "z-[80]")}>
-          <div className={cn(DIALOG_PANEL, "max-w-lg", DIALOG_BODY)}>
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">
-                  Potential Role Mismatch
-                </h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  Your resume appears aligned to{" "}
-                  <span className="font-semibold">{fitInsight.resumeFamilyLabel}</span>, but
-                  this scan targets{" "}
-                  <span className="font-semibold">{fitInsight.targetFamilyLabel}</span>.
-                </p>
-                <p className="mt-2 text-sm text-slate-600">
-                  Are you looking for a career change?
-                </p>
-              </div>
-            </div>
-
-            {/* Thumb-reachable on a phone: two equal full-width buttons, with
-                the affirmative first in the visual order it reads best. */}
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => {
-                  setShowCareerWarning(false);
-                  tourSignal("scan:idle");
-                  toast.info("No changes were made. Try scanning against a closer role.");
-                }}
-              >
-                No
-              </Button>
-              <Button
-                className="w-full sm:w-auto"
-                disabled={optimizeWait.waiting}
-                onClick={() => {
-                  setShowCareerWarning(false);
-                  createTailoredDocuments(true);
-                }}
-              >
-                Yes
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {careerWarningDialog}
 
       {showCareerKeywordPicker && result && (
         <div className={cn(DIALOG_BACKDROP, "z-[80]")}>
@@ -3097,41 +3527,7 @@ export const ScanSection = ({
                     className="min-h-0 flex-1 overflow-auto border-t border-slate-200 bg-slate-50 p-4"
                   >
                     {editorTab === "content" ? (
-                      resumeData ? (
-                        <ResumeEditor
-                          showPreview={false}
-                          session={resumeEditorSession}
-                          data={resumeData}
-                          onChange={(next) => {
-                            setResumeData(next);
-                            setEditableResumeText(resumeDataToText(next));
-                            setHasResumePreviewEdits(true);
-                          }}
-                          templateId={selectedTemplate}
-                          candidateName={previewCandidateName}
-                          designation={previewDesignation}
-                          onCandidateNameChange={(value) => {
-                            setPreviewCandidateName(value);
-                            setHasResumePreviewEdits(true);
-                          }}
-                          onDesignationChange={(value) => {
-                            setPreviewDesignation(value);
-                            setHasResumePreviewEdits(true);
-                          }}
-                          photoUrl={resumePhotoUrl}
-                          overrides={templateOverrides[selectedTemplate]}
-                          useContactIcons={!guestTrial}
-                        />
-                      ) : (
-                        <textarea
-                          className="min-h-[440px] w-full rounded-md border border-slate-200 bg-white p-3 text-sm leading-relaxed text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
-                          value={editableResumeText}
-                          onChange={(event) => {
-                            setEditableResumeText(event.target.value);
-                            setHasResumePreviewEdits(true);
-                          }}
-                        />
-                      )
+                      resumeContentEditor
                     ) : (
                       <div data-tour="preview-design" className="space-y-4">
                         <div>
@@ -3143,148 +3539,7 @@ export const ScanSection = ({
                             onSelect={setSelectedTemplate}
                           />
                         </div>
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                            Template Designer
-                          </p>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 rounded-md px-3 text-xs"
-                            onClick={resetTemplateOverrides}
-                          >
-                            Reset
-                          </Button>
-                        </div>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {selectedTemplateConfig.description}
-                        </p>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                          <label className="text-xs text-slate-600">
-                            Accent
-                            <input
-                              type="color"
-                              className="mt-1 h-9 w-full cursor-pointer rounded-md border border-slate-300 bg-white p-1"
-                              value={selectedTemplateTheme.accent}
-                              onChange={(event) =>
-                                updateTemplateOverrides({ accent: event.target.value })
-                              }
-                            />
-                          </label>
-                          <label className="text-xs text-slate-600">
-                            Heading Color
-                            <input
-                              type="color"
-                              className="mt-1 h-9 w-full cursor-pointer rounded-md border border-slate-300 bg-white p-1"
-                              value={selectedTemplateTheme.headingColor}
-                              onChange={(event) =>
-                                updateTemplateOverrides({
-                                  headingColor: event.target.value,
-                                })
-                              }
-                            />
-                          </label>
-                          <label className="text-xs text-slate-600">
-                            Body Color
-                            <input
-                              type="color"
-                              className="mt-1 h-9 w-full cursor-pointer rounded-md border border-slate-300 bg-white p-1"
-                              value={selectedTemplateTheme.bodyColor}
-                              onChange={(event) =>
-                                updateTemplateOverrides({ bodyColor: event.target.value })
-                              }
-                            />
-                          </label>
-                          <label className="text-xs text-slate-600">
-                            Font
-                            <select
-                              className="mt-1 h-9 w-full rounded-md border border-slate-300 bg-white px-2 text-xs"
-                              value={selectedTemplateTheme.fontFamily}
-                              onChange={(event) =>
-                                updateTemplateOverrides({ fontFamily: event.target.value })
-                              }
-                            >
-                              {RESUME_FONT_OPTIONS.map((font) => (
-                                <option key={font} value={font}>
-                                  {font}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="text-xs text-slate-600">
-                            Base Font Size ({selectedTemplateTheme.baseFontSize}px)
-                            <input
-                              type="range"
-                              min={11}
-                              max={15}
-                              step={1}
-                              className="mt-2 w-full"
-                              value={selectedTemplateTheme.baseFontSize}
-                              onChange={(event) =>
-                                updateTemplateOverrides({
-                                  baseFontSize: Number(event.target.value),
-                                })
-                              }
-                            />
-                          </label>
-                          <label className="text-xs text-slate-600">
-                            Line Height ({selectedTemplateTheme.lineHeight.toFixed(2)})
-                            <input
-                              type="range"
-                              min={1.35}
-                              max={1.95}
-                              step={0.05}
-                              className="mt-2 w-full"
-                              value={selectedTemplateTheme.lineHeight}
-                              onChange={(event) =>
-                                updateTemplateOverrides({
-                                  lineHeight: Number(event.target.value),
-                                })
-                              }
-                            />
-                          </label>
-                          <label className="text-xs text-slate-600">
-                            Section Spacing ({selectedTemplateTheme.sectionSpacing}px)
-                            <input
-                              type="range"
-                              min={10}
-                              max={24}
-                              step={1}
-                              className="mt-2 w-full"
-                              value={selectedTemplateTheme.sectionSpacing}
-                              onChange={(event) =>
-                                updateTemplateOverrides({
-                                  sectionSpacing: Number(event.target.value),
-                                })
-                              }
-                            />
-                          </label>
-                          {selectedTemplateConfig.layout.photo !== "none" ? (
-                            <label className="flex items-start gap-2 text-xs text-slate-600 sm:col-span-2">
-                              <input
-                                type="checkbox"
-                                className="mt-0.5 h-4 w-4 rounded border-slate-300"
-                                checked={selectedTemplateTheme.showPhoto}
-                                onChange={(event) =>
-                                  updateTemplateOverrides({
-                                    showPhoto: event.target.checked,
-                                  })
-                                }
-                              />
-                              <span>
-                                Show photo
-                                {!resumePhotoUrl ? (
-                                  <span className="block text-[11px] text-slate-400">
-                                    Add one under Personal details in your base resume.
-                                  </span>
-                                ) : null}
-                              </span>
-                            </label>
-                          ) : null}
-                        </div>
-                      </div>
+                      {templateDesigner}
                       </div>
                     )}
                   </div>
@@ -3345,32 +3600,7 @@ export const ScanSection = ({
                     >
                       <div
                         dangerouslySetInnerHTML={{
-                          // Highlight AI-added keywords in the PREVIEW only —
-                          // downloadPdf() renders its own HTML, so the PDF is
-                          // never highlighted.
-                          __html: highlightKeywordsInHtml(
-                            renderableResumeData
-                              ? renderResumeFromData({
-                                  data: renderableResumeData,
-                                  templateId: selectedTemplate,
-                                  candidateName: previewCandidateName,
-                                  designation: previewDesignation,
-                                  photoUrl: resumePhotoUrl,
-                                  overrides: templateOverrides[selectedTemplate],
-                                  useContactIcons: !guestTrial,
-                                })
-                              : renderResumeHtml({
-                                  resumeText:
-                                    editableResumeText || tailoredDocs.optimizedResumeText,
-                                  templateId: selectedTemplate,
-                                  candidateName: previewCandidateName,
-                                  designation: previewDesignation,
-                                  photoUrl: resumePhotoUrl,
-                                  overrides: templateOverrides[selectedTemplate],
-                                  useContactIcons: !guestTrial,
-                                }),
-                            tailoredDocs.incorporatedKeywords || []
-                          ),
+                          __html: renderPreviewResumeHtml(),
                         }}
                       />
                     </div>
@@ -3475,61 +3705,7 @@ export const ScanSection = ({
         </div>
       )}
 
-      {/* Leaving the preview — by closing it or by heading to the job — throws
-          the generated documents away, and there is no way back into it. This
-          is the last chance to save them, so it sits above the preview itself. */}
-      {pendingExit && (
-        <div className={cn(DIALOG_BACKDROP, "z-[90]")}>
-          <div className={cn(DIALOG_PANEL, "max-w-lg", DIALOG_BODY)}>
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
-              <div className="min-w-0">
-                <h3 className="text-lg font-semibold text-slate-900">
-                  {pendingExit === "apply"
-                    ? "Ready to apply?"
-                    : "Close without downloading?"}
-                </h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  {pendingDownloads.length === requiredDownloads.length
-                    ? `You haven't downloaded your ${requiredDownloads
-                        .map((doc) => DOC_LABELS[doc])
-                        .join(" or ")} yet.`
-                    : `You still haven't downloaded your ${pendingDownloads
-                        .map((doc) => DOC_LABELS[doc])
-                        .join(" or ")}.`}
-                </p>
-                <p className="mt-2 text-sm text-slate-600">
-                  {pendingExit === "apply"
-                    ? "You'll need them to apply, and this preview can't be reopened once you leave it."
-                    : "This preview can't be reopened, and the documents are not saved anywhere else."}
-                </p>
-              </div>
-            </div>
-
-            {/* Same geometry as the other confirms in this section: two equal
-                full-width buttons on a phone, the affirmative reading last. */}
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Button
-                className="w-full sm:w-auto"
-                onClick={() => setPendingExit(null)}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                No, let me download first
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => {
-                  if (pendingExit === "apply") goToRemoteJob();
-                  else closePreview();
-                }}
-              >
-                Go ahead
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {exitConfirmDialog}
     </section>
   );
 };

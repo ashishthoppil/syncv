@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import {
@@ -219,7 +219,16 @@ const DashboardPageContent = () => {
     });
   }, [activeSection, searchParams]);
 
-  const handleSectionChange = (sectionId) => {
+  // Registered by the Scan section while it holds tailored documents. On phones
+  // those sit inline with the tab bar still in reach, so a switch asks the
+  // section first; it returns true when it has taken over (it shows its own
+  // "leave without downloading?" confirm and finishes the switch itself).
+  const scanLeaveGuardRef = useRef(null);
+  const registerScanLeaveGuard = useCallback((guard) => {
+    scanLeaveGuardRef.current = guard;
+  }, []);
+
+  const switchSection = (sectionId) => {
     if (
       (sectionId === "job-tracker" && !subscription.allowsJobTracker) ||
       (isBaseResumeSection(sectionId) && baseResumeLocked)
@@ -231,6 +240,16 @@ const DashboardPageContent = () => {
     setActiveSection(sectionId);
     const query = sectionId === "scan" ? "" : `?section=${sectionId}`;
     router.replace(`/scan${query}`);
+  };
+
+  const handleSectionChange = (sectionId) => {
+    if (
+      sectionId !== activeSection &&
+      scanLeaveGuardRef.current?.(() => switchSection(sectionId))
+    ) {
+      return;
+    }
+    switchSection(sectionId);
   };
 
   // Remote Jobs hands the selected posting to the existing scanner: it fills the
@@ -256,6 +275,7 @@ const DashboardPageContent = () => {
           optimizationUsage={subscription.hasActivePlan ? subscription.optimizationUsage : null}
           prefill={scanPrefill}
           onPrefillConsumed={() => setScanPrefill(null)}
+          registerLeaveGuard={registerScanLeaveGuard}
         />
       );
     }
@@ -298,6 +318,7 @@ const DashboardPageContent = () => {
         allowsJobTracker={subscription.allowsJobTracker}
         onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
         optimizationUsage={subscription.hasActivePlan ? subscription.optimizationUsage : null}
+        registerLeaveGuard={registerScanLeaveGuard}
       />
     );
   };
