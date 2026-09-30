@@ -2,7 +2,9 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { authedFetch } from "@/lib/authed-fetch";
+import { MOCK_ATTEMPTS_PER_JOB } from "@/lib/interview-config";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -167,6 +169,7 @@ export const MockInterviewDialog = ({
   const [notice, setNotice] = useState("");
   const [speechLocale, setSpeechLocale] = useState<string>(DEFAULT_SPEECH_LOCALE);
   const [captureMode, setCaptureMode] = useState<CaptureMode>("browser");
+  const router = useRouter();
 
   const voice = useInterviewVoice({ sessionId: session?.id ?? null, mode: voiceMode });
   // Both are mounted so an interview can drop from the server's transcription
@@ -504,6 +507,12 @@ export const MockInterviewDialog = ({
     onOpenChange(false);
   };
 
+  /** From the lobby, once the free trial's interview is used. */
+  const viewPlans = () => {
+    onOpenChange(false);
+    router.push("/scan?section=settings&scrollTo=dashboard-pricing");
+  };
+
   /**
    * Opens an attempt's report. An unfinished one (a closed tab, a dropped
    * connection) is scored first from the answers it saved, so an interrupted
@@ -597,6 +606,7 @@ export const MockInterviewDialog = ({
                 onOpenReport={openReport}
                 loadingReportId={loadingReportId}
                 attemptsLeft={attemptsLeft}
+                onViewPlans={viewPlans}
               />
             ) : null}
 
@@ -706,6 +716,7 @@ export const MockInterviewDialog = ({
             {confirmEnd ? (
               <ConfirmEnd
                 attemptLimit={overview?.attemptLimit || 3}
+                trial={Boolean(overview?.trial)}
                 answeredCount={
                   answeredCount +
                   (stage === "answering" && (liveAnswerWords || recognition.hasSpeech) ? 1 : 0)
@@ -810,6 +821,7 @@ type LobbyProps = {
   loadingReportId: string | null;
   /** Mock interviews still available for this job; null while loading. */
   attemptsLeft: number | null;
+  onViewPlans: () => void;
 };
 
 const Lobby = ({
@@ -833,17 +845,42 @@ const Lobby = ({
   onOpenReport,
   loadingReportId,
   attemptsLeft,
+  onViewPlans,
 }: LobbyProps) => {
   const interviewer = overview?.interviewer || "Maya";
   const years = experience === "" ? null : Number(experience);
   const limit = overview?.attemptLimit || 3;
   const usedUp = attemptsLeft === 0;
+  // The free plan's trial: one interview for the whole account, against a
+  // paid plan's few per job. Its wording, and what comes after it, differ.
+  const trial = Boolean(overview?.trial);
+  // An attempt left before any answer has nothing to read.
+  const hasReports = Boolean(
+    overview?.attempts.some((attempt) => attempt.status === "completed" || attempt.answeredCount > 0)
+  );
   // Every start uses an attempt, so the button says what it costs, and once
   // they are gone it says so instead of offering a start the server refuses.
   const startButton = usedUp ? (
     <div className="rounded-2xl bg-white/[0.04] px-4 py-3.5 text-center ring-1 ring-inset ring-white/10">
-      <p className="text-sm font-semibold">You&apos;ve used all {limit} mock interviews for this job</p>
-      <p className="mt-0.5 text-xs text-white/50">Your reports from each attempt are below.</p>
+      <p className="text-sm font-semibold">
+        {trial
+          ? "You've used your free mock interview"
+          : `You've used all ${limit} mock interviews for this job`}
+      </p>
+      <p className="mt-0.5 text-xs text-white/50">
+        {trial
+          ? `Pro includes ${MOCK_ATTEMPTS_PER_JOB} mock interviews for every job you scan.`
+          : "Your reports from each attempt are below."}
+        {trial && hasReports ? " Your report is below." : ""}
+      </p>
+      {trial ? (
+        <Button
+          onClick={onViewPlans}
+          className="mt-3 h-10 rounded-full bg-white px-5 text-sm font-semibold text-slate-900 hover:bg-violet-50"
+        >
+          View plans
+        </Button>
+      ) : null}
     </div>
   ) : (
     <div>
@@ -858,9 +895,11 @@ const Lobby = ({
       </Button>
       {attemptsLeft !== null ? (
         <p className="mt-2 text-center text-xs text-white/50">
-          {attemptsLeft === limit
-            ? `You get ${limit} mock interviews for this job. Starting one uses one.`
-            : `${attemptsLeft} of ${limit} attempts left for this job. Starting one uses one.`}
+          {trial
+            ? "Your free trial includes one mock interview. Starting it uses it."
+            : attemptsLeft === limit
+              ? `You get ${limit} mock interviews for this job. Starting one uses one.`
+              : `${attemptsLeft} of ${limit} attempts left for this job. Starting one uses one.`}
         </p>
       ) : null}
     </div>
@@ -1630,6 +1669,7 @@ const CallScreen = ({
 
 const ConfirmEnd = ({
   attemptLimit,
+  trial,
   answeredCount,
   total,
   onKeepGoing,
@@ -1637,6 +1677,7 @@ const ConfirmEnd = ({
   onLeave,
 }: {
   attemptLimit: number;
+  trial: boolean;
   answeredCount: number;
   total: number;
   onKeepGoing: () => void;
@@ -1654,7 +1695,9 @@ const ConfirmEnd = ({
         {answeredCount
           ? `You've answered ${answeredCount} of ${total} questions. You can still get a score and feedback on those.`
           : "You haven't answered anything yet, so there's nothing to score."}{" "}
-        Either way, this counts as one of your {attemptLimit} attempts for this job.
+        {trial
+          ? "Either way, this uses your free mock interview."
+          : `Either way, this counts as one of your ${attemptLimit} attempts for this job.`}
       </p>
       <div className="mt-5 flex flex-col gap-2">
         {answeredCount ? (

@@ -2,6 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import { authedFetch } from "@/lib/authed-fetch";
 import { cn } from "@/lib/utils";
@@ -42,7 +43,10 @@ const requestPrep = (jobId: string) => {
     .then(async (response) => {
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.success) {
-        throw new Error(result?.message || "Couldn't prepare your interview material.");
+        throw Object.assign(
+          new Error(result?.message || "Couldn't prepare your interview material."),
+          { upgrade: result?.code === "upgrade" }
+        );
       }
       const entry = { prep: result.prep as InterviewPrep, generatedAt: String(result.generatedAt || "") };
       prepCache.set(jobId, entry);
@@ -200,6 +204,10 @@ export const InterviewPrepDialog = ({ job, open, onOpenChange, onPrepReady }: In
   const [entry, setEntry] = useState<{ prep: InterviewPrep; generatedAt: string } | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
+  // The refusal was the plan's limit (the free trial's one guide), so the way
+  // forward is the plans, not trying again.
+  const [needsUpgrade, setNeedsUpgrade] = useState(false);
+  const router = useRouter();
   const [tab, setTab] = useState<TabId>("overview");
   const [downloading, setDownloading] = useState(false);
   const jobId = job?.id || "";
@@ -219,6 +227,7 @@ export const InterviewPrepDialog = ({ job, open, onOpenChange, onPrepReady }: In
     setEntry(null);
     setStatus("loading");
     setError("");
+    setNeedsUpgrade(false);
     requestPrep(jobId)
       .then((result) => {
         onPrepReady?.(jobId);
@@ -229,6 +238,7 @@ export const InterviewPrepDialog = ({ job, open, onOpenChange, onPrepReady }: In
       .catch((reason: unknown) => {
         if (shownJobRef.current !== jobId) return;
         setError(reason instanceof Error ? reason.message : "Couldn't prepare your interview material.");
+        setNeedsUpgrade(Boolean((reason as { upgrade?: boolean } | null)?.upgrade));
         setStatus("error");
       });
   }, [jobId, onPrepReady]);
@@ -379,14 +389,33 @@ export const InterviewPrepDialog = ({ job, open, onOpenChange, onPrepReady }: In
                   <PrepLoading job={job} generating={!job?.has_interview_prep} />
                 ) : status === "error" ? (
                   <div className="flex flex-col items-center gap-3 py-16 text-center">
-                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
-                      <CircleAlert className="h-6 w-6" />
+                    {/* Reaching the plan's limit isn't a fault, so it doesn't
+                        get the error's red. */}
+                    <span
+                      className={cn(
+                        "flex h-12 w-12 items-center justify-center rounded-full",
+                        needsUpgrade ? "bg-violet-50 text-brand" : "bg-rose-50 text-rose-600"
+                      )}
+                    >
+                      {needsUpgrade ? <Sparkles className="h-6 w-6" /> : <CircleAlert className="h-6 w-6" />}
                     </span>
                     <p className="max-w-sm text-sm text-slate-600">{error}</p>
-                    <Button onClick={load} className="rounded-full">
-                      <RotateCcw />
-                      Try again
-                    </Button>
+                    {needsUpgrade ? (
+                      <Button
+                        className="rounded-full"
+                        onClick={() => {
+                          onOpenChange(false);
+                          router.push("/scan?section=settings&scrollTo=dashboard-pricing");
+                        }}
+                      >
+                        View plans
+                      </Button>
+                    ) : (
+                      <Button onClick={load} className="rounded-full">
+                        <RotateCcw />
+                        Try again
+                      </Button>
+                    )}
                   </div>
                 ) : prep && job ? (
                   <>

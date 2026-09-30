@@ -4,9 +4,10 @@ import {
   buildPrepQuestionsPrompt,
   buildPrepStudyPrompt,
   getCandidateContext,
+  getInterviewAllowance,
   hasKeywordData,
-  interviewAccessDenied,
   interviewSetupMissing,
+  interviewUpgradeRequired,
   isMissingSchemaError,
   jobKeywords,
   keywordDataMissing,
@@ -14,7 +15,10 @@ import {
   normalizePrep,
   parseModelJson,
   PREP_SYSTEM,
+  TRIAL_PREP_USED_MESSAGE,
+  trialInterviewPrepsUsed,
 } from "@/lib/server/interview";
+import { FREE_TRIAL_INTERVIEW_PREPS } from "@/lib/interview-config";
 import {
   chatCompletion,
   countModelCalls,
@@ -56,8 +60,16 @@ export async function POST(req) {
 
     if (!hasKeywordData(job)) return keywordDataMissing();
 
-    const denied = await interviewAccessDenied(supabase, user.id);
-    if (denied) return denied;
+    const allowance = await getInterviewAllowance(supabase, user.id);
+    if (!allowance.allowed) return interviewUpgradeRequired();
+    // The free trial writes a guide for one job. Reading a guide that exists
+    // (above) stays open to everyone: it costs nothing.
+    if (
+      allowance.trial &&
+      (await trialInterviewPrepsUsed(supabase, user.id)) >= FREE_TRIAL_INTERVIEW_PREPS
+    ) {
+      return interviewUpgradeRequired(TRIAL_PREP_USED_MESSAGE);
+    }
 
     const recentCalls = await countModelCalls(supabase, user.id, PREP_PURPOSES, 60);
     if (recentCalls >= HOURLY_MODEL_CALL_LIMITS.interviewPrep) {

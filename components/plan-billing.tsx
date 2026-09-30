@@ -258,6 +258,12 @@ export function PlanPrice({
  * while closed, so keyboard and screen-reader users skip them as sighted users
  * do. With no `visibleCount`, or nothing to hide, it is a plain list.
  */
+/**
+ * How many of the paid plan's features show before the "more" arrow, on the
+ * homepage's card and the Settings one alike.
+ */
+export const PAID_VISIBLE_FEATURES = 6;
+
 export function ExpandableList<T>({
   items,
   visibleCount,

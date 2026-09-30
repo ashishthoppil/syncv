@@ -4,6 +4,7 @@ import { SectionHeading } from "@/components/marketing/section-heading";
 import {
   BillingPeriodTabs,
   ExpandableList,
+  PAID_VISIBLE_FEATURES,
   PlanPrice,
   usePricingRegion,
 } from "@/components/plan-billing";
@@ -25,10 +26,6 @@ import { useState } from "react";
 
 // Features phrased as "No …" are the ones a plan does not include.
 const isUnavailableFeature = (title: string) => title.startsWith("No ");
-
-// How many of the paid plan's features show before its "more" arrow, so its
-// card stands about as tall as Free's instead of towering over it.
-const PAID_VISIBLE_FEATURES = 4;
 
 // Prices and features come from lib/subscription-plans.js, the same config that
 // drives checkout; only the homepage's own framing lives here.

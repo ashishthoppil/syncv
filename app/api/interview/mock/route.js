@@ -5,9 +5,10 @@ import {
   buildMockQuestionsPrompt,
   experienceLevel,
   getCandidateContext,
+  getInterviewAllowance,
   hasKeywordData,
-  interviewAccessDenied,
   interviewSetupMissing,
+  interviewUpgradeRequired,
   INTERVIEWER_NAME,
   isMissingSchemaError,
   jobKeywords,
@@ -20,6 +21,7 @@ import {
   parseModelJson,
   sessionForClient,
   transcriptionVocabulary,
+  trialMockInterviewsUsed,
 } from "@/lib/server/interview";
 import { MOCK_ATTEMPTS_PER_JOB } from "@/lib/interview-config";
 import { getRequestCountry } from "@/lib/server/pricing-region";
@@ -33,12 +35,14 @@ import {
   TOO_MANY_MODEL_CALLS_MESSAGE,
 } from "@/lib/server/openai";
 
-const attemptLimitReached = () =>
+const attemptLimitReached = (trial) =>
   NextResponse.json(
     {
       success: false,
-      code: "attempt_limit",
-      message: `You've used all ${MOCK_ATTEMPTS_PER_JOB} mock interviews for this job.`,
+      code: trial ? "upgrade" : "attempt_limit",
+      message: trial
+        ? `You've used your free mock interview. Upgrade to Pro for ${MOCK_ATTEMPTS_PER_JOB} with every job you scan.`
+        : `You've used all ${MOCK_ATTEMPTS_PER_JOB} mock interviews for this job.`,
     },
     { status: 403 }
   );
@@ -83,8 +87,9 @@ export async function GET(req) {
       return NextResponse.json({ success: false, message: "Job not found." }, { status: 404 });
     }
 
-    const [candidate, attemptsResult] = await Promise.all([
+    const [candidate, allowance, attemptsResult] = await Promise.all([
       getCandidateContext(supabase, user.id),
+      getInterviewAllowance(supabase, user.id),
       // Every attempt, finished or not: each one counts towards the limit,
       // and an unfinished one with answers can still be scored from here.
       supabase
@@ -117,8 +122,16 @@ export async function GET(req) {
         createdAt: row.created_at,
         completedAt: row.completed_at,
       })),
-      attemptLimit: MOCK_ATTEMPTS_PER_JOB,
-      attemptsUsed: (attemptsResult.data || []).length,
+      // A paid plan counts attempts per job. The free trial has one interview
+      // for the whole account, so one used on another job shows as used here.
+      trial: allowance.trial,
+      attemptLimit: allowance.mockLimit,
+      attemptsUsed: allowance.trial
+        ? Math.max(
+            (attemptsResult.data || []).length,
+            Math.min(allowance.mockLimit, await trialMockInterviewsUsed(supabase, user.id))
+          )
+        : (attemptsResult.data || []).length,
       sections: MOCK_SECTIONS.map(({ name, count }) => ({ name, count })),
       questionCount: MOCK_QUESTION_COUNT,
       interviewer: INTERVIEWER_NAME,
@@ -168,14 +181,16 @@ export async function POST(req) {
       if (isMissingSchemaError(previousError)) return interviewSetupMissing();
       throw previousError;
     }
-    if ((previous || []).length >= MOCK_ATTEMPTS_PER_JOB) return attemptLimitReached();
+    const allowance = await getInterviewAllowance(supabase, user.id);
+    if (!allowance.allowed) return interviewUpgradeRequired();
+    const used = allowance.trial
+      ? await trialMockInterviewsUsed(supabase, user.id)
+      : (previous || []).length;
+    if (used >= allowance.mockLimit) return attemptLimitReached(allowance.trial);
     const previousQuestions = (previous || [])
       .flatMap((row) => (Array.isArray(row.questions) ? row.questions : []))
       .map((question) => String(question?.question || ""))
       .filter(Boolean);
-
-    const denied = await interviewAccessDenied(supabase, user.id);
-    if (denied) return denied;
 
     const recentCalls = await countModelCalls(supabase, user.id, ["mock_interview_questions"], 60);
     if (recentCalls >= HOURLY_MODEL_CALL_LIMITS.mockInterviewQuestions) {
@@ -254,25 +269,25 @@ export async function POST(req) {
     }
 
     // The check above can be raced by two starts at once (a double tap, two
-    // tabs). Once saved, only the job's first MOCK_ATTEMPTS_PER_JOB attempts
-    // stand; a later one is removed before any voice is paid for.
-    const { data: saved } = await supabase
-      .from("mock_interviews")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("job_id", job.id)
+    // tabs). Once saved, only the first attempts up to the limit stand (the
+    // job's on a paid plan, the account's on the trial); a later one is
+    // removed before any voice is paid for.
+    let savedQuery = supabase.from("mock_interviews").select("id").eq("user_id", user.id);
+    if (!allowance.trial) savedQuery = savedQuery.eq("job_id", job.id);
+    const { data: saved } = await savedQuery
       .order("created_at", { ascending: true })
       .order("id", { ascending: true });
-    const standing = (saved || []).slice(0, MOCK_ATTEMPTS_PER_JOB).map((item) => item.id);
+    const standing = (saved || []).slice(0, allowance.mockLimit).map((item) => item.id);
     if (saved && !standing.includes(row.id)) {
       await supabase.from("mock_interviews").delete().eq("id", row.id).eq("user_id", user.id);
-      return attemptLimitReached();
+      return attemptLimitReached(allowance.trial);
     }
 
     return NextResponse.json({
       success: true,
       session: sessionForClient(row),
       level: experienceLevel(experienceYears).label,
+      trial: allowance.trial,
       voice: INTERVIEW_VOICE_MODE,
       transcription: INTERVIEW_TRANSCRIPTION_MODE,
     });

@@ -130,9 +130,13 @@ export type MockOverview = {
   job: { id: string; organization: string; designation: string };
   candidate: { firstName: string; title: string; experienceYears: number | null };
   attempts: MockAttempt[];
-  /** Mock interviews allowed for this job, and how many have been started. */
+  /**
+   * Mock interviews allowed and started: per job on a paid plan, for the whole
+   * account on the free plan's trial (`trial`).
+   */
   attemptLimit: number;
   attemptsUsed: number;
+  trial: boolean;
   sections: { name: string; count: number }[];
   questionCount: number;
   interviewer: string;

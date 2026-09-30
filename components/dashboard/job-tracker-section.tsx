@@ -411,6 +411,100 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
     currentPage * JOBS_PER_PAGE
   );
 
+  // Interview prep and the mock interview, for one job. `compact` is the
+  // table cell, where the column header already says "Interview". `counted`
+  // puts the paid plan's attempts-left in the tooltip; the free trial's single
+  // interview isn't per job, so the locked view leaves it out.
+  const renderInterviewButtons = (job: Job, compact: boolean, counted = true) => {
+    const bestMockScore = job.mock_interview?.bestScore ?? null;
+    const mockAttemptsLeft = Math.max(
+      0,
+      MOCK_ATTEMPTS_PER_JOB - (job.mock_interview?.attempts || 0)
+    );
+    const mockTitle = counted
+      ? [
+          mockAttemptsLeft
+            ? `Mock interview (${mockAttemptsLeft} of ${MOCK_ATTEMPTS_PER_JOB} left`
+            : `Mock interview (all ${MOCK_ATTEMPTS_PER_JOB} used`,
+          bestMockScore !== null ? `, best score ${bestMockScore})` : ")",
+        ].join("")
+      : "Mock interview";
+    return (
+      <>
+        <Button
+          variant="outline"
+          size="sm"
+          title={
+            job.has_interview_prep ? "Interview prep material (ready)" : "Interview prep material"
+          }
+          onClick={() => {
+            setPrepJob(job);
+            setPrepOpen(true);
+          }}
+          className={cn(
+            "relative gap-1.5 rounded-md border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:text-violet-800",
+            !compact && "flex-1 sm:flex-none"
+          )}
+        >
+          <BookOpen className="h-4 w-4" />
+          {compact ? "Prep" : "Interview prep"}
+          {job.has_interview_prep ? (
+            <span
+              aria-hidden
+              className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
+            />
+          ) : null}
+        </Button>
+        <Button
+          size="sm"
+          title={mockTitle}
+          onClick={() => {
+            setMockJob(job);
+            setMockOpen(true);
+          }}
+          className={cn(
+            "relative gap-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800",
+            !compact && "flex-1 sm:flex-none"
+          )}
+        >
+          <Mic className="h-4 w-4" />
+          {compact ? "Mock" : "Mock interview"}
+          {/* Best score so far: inline where the row has room, a corner badge
+              on phones, where the two buttons split the width and an inline
+              chip would push past it. */}
+          {!compact && bestMockScore !== null ? (
+            <>
+              <span className="hidden rounded bg-white/15 px-1.5 py-px text-[11px] font-semibold tabular-nums sm:inline">
+                {bestMockScore}
+              </span>
+              <span className="absolute -right-1.5 -top-2 rounded-full bg-violet-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white ring-2 ring-white sm:hidden">
+                {bestMockScore}
+              </span>
+            </>
+          ) : null}
+        </Button>
+      </>
+    );
+  };
+
+  const interviewDialogs = (
+    <>
+      <InterviewPrepDialog
+        job={prepJob}
+        open={prepOpen}
+        onOpenChange={setPrepOpen}
+        onPrepReady={handlePrepReady}
+      />
+      <MockInterviewDialog
+        job={mockJob}
+        open={mockOpen}
+        onOpenChange={setMockOpen}
+        onStarted={handleMockStarted}
+        onCompleted={handleMockCompleted}
+      />
+    </>
+  );
+
   if (loading) {
     return (
       <section className="space-y-8">
@@ -433,6 +527,13 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
   }
 
   if (subscriptionLocked) {
+    // Tracking jobs is a paid feature, but interview practice isn't only
+    // that: the free plan's trial includes a prep guide and one mock
+    // interview, and both need a scanned job to work from. The scan that
+    // produces that job is also what ends the trial and locks this section,
+    // so the jobs are listed here, read-only, with just those two buttons.
+    // (The server holds the actual allowance; see lib/server/interview.js.)
+    const practiceJobs = jobs.filter(hasKeywordData).slice(0, JOBS_PER_PAGE);
     return (
       <section className="space-y-8 max-w-6xl mx-auto">
         <div className="flex items-start gap-3 sm:items-center">
@@ -446,6 +547,37 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
             </p>
           </div>
         </div>
+        {practiceJobs.length ? (
+          <div className="mx-auto max-w-xl rounded-2xl border border-violet-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-slate-900">Interview practice</h2>
+              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
+                Included free
+              </span>
+            </div>
+            <p className="mt-1 text-sm leading-relaxed text-slate-500">
+              An interview prep guide and one mock interview, for a job you&apos;ve scanned.
+            </p>
+            <ul className="mt-3 divide-y divide-slate-100">
+              {practiceJobs.map((job) => (
+                <li
+                  key={job.id}
+                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="break-anywhere text-sm font-semibold text-slate-900">
+                      {job.organization}
+                    </p>
+                    <p className="break-anywhere text-sm text-slate-600">{job.designation}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    {renderInterviewButtons(job, false, false)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <SubscriptionGate
           event="job_tracker_locked_upgrade_clicked"
           title="You're out of scans"
@@ -454,8 +586,10 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
             "Every scan saved automatically, with its score",
             "Track each application from applied to offer",
             "Re-download the exact CV and cover letter you sent",
+            `Interview prep and ${MOCK_ATTEMPTS_PER_JOB} mock interviews for every job you scan`,
           ]}
         />
+        {interviewDialogs}
       </section>
     );
   }
@@ -685,78 +819,9 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                   <Trash2 className="h-4 w-4" />
                 </button>
               );
-              // Interview prep and the mock interview. `compact` is the table
-              // cell, where the column header already says "Interview".
               const canPractise = hasKeywordData(job);
-              const bestMockScore = job.mock_interview?.bestScore ?? null;
-              const mockAttemptsLeft = Math.max(
-                0,
-                MOCK_ATTEMPTS_PER_JOB - (job.mock_interview?.attempts || 0)
-              );
-              const mockTitle = [
-                mockAttemptsLeft
-                  ? `Mock interview (${mockAttemptsLeft} of ${MOCK_ATTEMPTS_PER_JOB} left`
-                  : `Mock interview (all ${MOCK_ATTEMPTS_PER_JOB} used`,
-                bestMockScore !== null ? `, best score ${bestMockScore})` : ")",
-              ].join("");
-              const interviewButtons = (compact: boolean) => (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    title={
-                      job.has_interview_prep
-                        ? "Interview prep material (ready)"
-                        : "Interview prep material"
-                    }
-                    onClick={() => {
-                      setPrepJob(job);
-                      setPrepOpen(true);
-                    }}
-                    className={cn(
-                      "relative gap-1.5 rounded-md border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:text-violet-800",
-                      !compact && "flex-1 sm:flex-none"
-                    )}
-                  >
-                    <BookOpen className="h-4 w-4" />
-                    {compact ? "Prep" : "Interview prep"}
-                    {job.has_interview_prep ? (
-                      <span
-                        aria-hidden
-                        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
-                      />
-                    ) : null}
-                  </Button>
-                  <Button
-                    size="sm"
-                    title={mockTitle}
-                    onClick={() => {
-                      setMockJob(job);
-                      setMockOpen(true);
-                    }}
-                    className={cn(
-                      "relative gap-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800",
-                      !compact && "flex-1 sm:flex-none"
-                    )}
-                  >
-                    <Mic className="h-4 w-4" />
-                    {compact ? "Mock" : "Mock interview"}
-                    {/* Best score so far: inline where the row has room, a
-                        corner badge on phones, where the two buttons split
-                        the width and an inline chip would push past it. */}
-                    {!compact && bestMockScore !== null ? (
-                      <>
-                        <span className="hidden rounded bg-white/15 px-1.5 py-px text-[11px] font-semibold tabular-nums sm:inline">
-                          {bestMockScore}
-                        </span>
-                        <span className="absolute -right-1.5 -top-2 rounded-full bg-violet-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white ring-2 ring-white sm:hidden">
-                          {bestMockScore}
-                        </span>
-                      </>
-                    ) : null}
-                  </Button>
-                </>
-              );
+              const interviewButtons = (compact: boolean) =>
+                renderInterviewButtons(job, compact);
 
               return (
                 <div key={job.id} className="transition hover:bg-slate-50/70">
@@ -894,19 +959,7 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
         )}
       </div>
 
-      <InterviewPrepDialog
-        job={prepJob}
-        open={prepOpen}
-        onOpenChange={setPrepOpen}
-        onPrepReady={handlePrepReady}
-      />
-      <MockInterviewDialog
-        job={mockJob}
-        open={mockOpen}
-        onOpenChange={setMockOpen}
-        onStarted={handleMockStarted}
-        onCompleted={handleMockCompleted}
-      />
+      {interviewDialogs}
     </section>
   );
 };

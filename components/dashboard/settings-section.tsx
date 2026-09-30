@@ -3,6 +3,7 @@
 import {
   BillingPeriodTabs,
   ExpandableList,
+  PAID_VISIBLE_FEATURES,
   PlanPrice,
   usePricingRegion,
 } from "@/components/plan-billing";
@@ -642,7 +643,7 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
                   items={plan.features as PlanFeature[]}
                   // Same idea as the homepage: the paid card's list stops
                   // about level with Free's, the rest behind an arrow.
-                  visibleCount={plan.isFree ? undefined : 5}
+                  visibleCount={plan.isFree ? undefined : PAID_VISIBLE_FEATURES}
                   listClassName="space-y-2.5 text-sm"
                   revealGapClassName="pt-2.5"
                   hiddenFooter={
