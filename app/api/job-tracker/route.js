@@ -43,9 +43,41 @@ export async function GET(req) {
       });
     }
 
+    // Each job's mock interviews, summarised onto its row: attempts used
+    // (every one started counts towards the per-job limit) and the best
+    // score among the finished ones. Optional: on a database without the
+    // table the list loads exactly as before.
+    const mockByJob = new Map();
+    const { data: mocks, error: mockError } = await supabase
+      .from("mock_interviews")
+      .select("job_id, status, overall_score")
+      .eq("user_id", userId);
+    if (!mockError) {
+      for (const mock of mocks || []) {
+        const entry = mockByJob.get(mock.job_id) || { attempts: 0, bestScore: null };
+        entry.attempts += 1;
+        if (
+          mock.status === "completed" &&
+          mock.overall_score !== null &&
+          mock.overall_score > (entry.bestScore ?? -1)
+        ) {
+          entry.bestScore = mock.overall_score;
+        }
+        mockByJob.set(mock.job_id, entry);
+      }
+    }
+
+    // Interview prep is kept on the row but is tens of kilobytes a job, so the
+    // list only says whether it exists; the prep dialog fetches it on demand.
+    const jobs = (data || []).map(({ interview_prep, ...job }) => ({
+      ...job,
+      has_interview_prep: Boolean(interview_prep),
+      mock_interview: mockByJob.get(job.id) || null,
+    }));
+
     return NextResponse.json({
       success: true,
-      data: data || [],
+      data: jobs,
     });
   } catch (error) {
     return NextResponse.json({

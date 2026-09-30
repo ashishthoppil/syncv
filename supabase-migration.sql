@@ -384,12 +384,20 @@ ALTER TABLE llm_usage ENABLE ROW LEVEL SECURITY;
 -- tokens (input, cached input, output); check them against OpenAI's pricing
 -- page before trusting the totals. `model` holds the name OpenAI reports,
 -- sometimes a dated snapshot like gpt-4o-mini-2024-07-18, hence the prefix
--- match — the gpt-4o-mini line must come before gpt-4o.
+-- match — the gpt-4o-mini lines must come before gpt-4o. The mock interview's
+-- voice (purpose mock_interview_voice) is logged as text tokens in and audio
+-- tokens out, priced on the gpt-4o-mini-tts line. Transcribing spoken answers
+-- (purpose mock_interview_transcription) is logged with audio and text input
+-- together; pricing it all at the audio rate overstates it by about a third.
 --
 -- SELECT user_id, purpose, COUNT(*) AS calls,
 --   ROUND(SUM(CASE
 --     WHEN model LIKE 'gpt-6-luna%' THEN
 --       (prompt_tokens - cached_tokens) * 0.10 + cached_tokens * 0.01 + completion_tokens * 0.50
+--     WHEN model LIKE 'gpt-4o-mini-tts%' THEN
+--       prompt_tokens * 0.60 + completion_tokens * 12.00
+--     WHEN model LIKE 'gpt-4o-mini-transcribe%' THEN
+--       prompt_tokens * 3.00 + completion_tokens * 5.00
 --     WHEN model LIKE 'gpt-4o-mini%' THEN
 --       (prompt_tokens - cached_tokens) * 0.15 + cached_tokens * 0.075 + completion_tokens * 0.60
 --     WHEN model LIKE 'gpt-4o%' THEN
@@ -415,3 +423,51 @@ ALTER TABLE subscriptions
   ADD COLUMN IF NOT EXISTS dodo_subscription_id TEXT UNIQUE,
   ADD COLUMN IF NOT EXISTS dodo_customer_id TEXT,
   ADD COLUMN IF NOT EXISTS dodo_payment_id TEXT;
+
+-- ---------------------------------------------------------------------------
+-- Interview prep and mock interviews
+-- ---------------------------------------------------------------------------
+-- Prep material is generated once per tracked job, the first time it is
+-- opened, and served from here afterwards: app/api/interview/prep never calls
+-- the model for a job that already has it.
+ALTER TABLE job_tracker
+  ADD COLUMN IF NOT EXISTS interview_prep JSONB,
+  ADD COLUMN IF NOT EXISTS interview_prep_generated_at TIMESTAMPTZ;
+
+-- One row per mock interview. `questions` carries the rubric each answer is
+-- scored against, so it stays server-side until the interview is over.
+-- `script` is what the interviewer says, fixed when the interview starts so the
+-- voice route only ever speaks lines that belong to the caller's interview.
+-- `answers` fills in one question at a time, so an interview that is cut off
+-- keeps what was said. Written by the server only: owners can read their rows.
+CREATE TABLE IF NOT EXISTS mock_interviews (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  job_id UUID NOT NULL REFERENCES job_tracker(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'in_progress'
+    CHECK (status IN ('in_progress', 'completed')),
+  experience_years INTEGER,
+  questions JSONB NOT NULL,
+  script JSONB,
+  answers JSONB NOT NULL DEFAULT '[]'::jsonb,
+  evaluation JSONB,
+  overall_score INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_mock_interviews_user_job
+  ON mock_interviews(user_id, job_id, created_at DESC);
+
+ALTER TABLE mock_interviews ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view their own mock interviews" ON mock_interviews;
+CREATE POLICY "Users can view their own mock interviews"
+  ON mock_interviews FOR SELECT USING (auth.uid() = user_id);
+
+DROP TRIGGER IF EXISTS update_mock_interviews_updated_at ON mock_interviews;
+CREATE TRIGGER update_mock_interviews_updated_at
+  BEFORE UPDATE ON mock_interviews
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();

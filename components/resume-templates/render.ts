@@ -2044,6 +2044,49 @@ export const highlightKeywordsInHtml = (
     .join("");
 };
 
+const LINE_HIGHLIGHT_STYLE =
+  "background-color:rgba(245,158,11,0.24);color:inherit;border-radius:2px;padding:0 1px;box-decoration-break:clone;-webkit-box-decoration-break:clone;";
+
+const decodeBasicEntities = (value: string) =>
+  value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&amp;/g, "&");
+
+const collapseWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
+
+/**
+ * Wrap whole lines of the resume (bullets, matched by their full text) in an
+ * amber <mark>: the points whose figures the optimizer suggested and the user
+ * has yet to confirm. PREVIEW ONLY, like the keyword highlight — and run it
+ * BEFORE that one, which splits a line's text into pieces this can't match.
+ */
+export const highlightLinesInHtml = (html: string, lines: string[] = []): string => {
+  const targets = new Set(
+    (lines || []).map((line) => collapseWhitespace(stripMarkdownBold(String(line || ""))))
+  );
+  targets.delete("");
+  if (!targets.size || !html) return html;
+
+  let insideStyle = false;
+  return html
+    .split(/(<[^>]*>)/)
+    .map((segment, index) => {
+      if (index % 2 === 1) {
+        if (/^<style\b/i.test(segment)) insideStyle = true;
+        else if (/^<\/style>/i.test(segment)) insideStyle = false;
+        return segment;
+      }
+      if (!segment || insideStyle) return segment;
+      return targets.has(collapseWhitespace(decodeBasicEntities(segment)))
+        ? `<mark style="${LINE_HIGHLIGHT_STYLE}">${segment}</mark>`
+        : segment;
+    })
+    .join("");
+};
+
 export const renderCoverLetterHtml = (content: string) => {
   const plain = stripMarkdownBold(content);
   const blocks = plain

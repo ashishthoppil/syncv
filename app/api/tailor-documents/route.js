@@ -22,6 +22,14 @@ import {
   languageNamesFromKeywords,
   sharesLanguage,
 } from "@/lib/languages";
+import {
+  buildKeywordWeightMap,
+  keywordPriority,
+  keywordWeightOf,
+  MIN_LINES_FOR_MENTION_COUNT,
+  REINFORCED_MENTIONS,
+  sortKeywordsByWeight,
+} from "@/lib/keyword-priority";
 
 const normalizeText = (value = "") =>
   value
@@ -50,6 +58,16 @@ const hasKeyword = (text = "", keyword = "") => {
   const regex = new RegExp(`${startAnchor}${pattern}${endAnchor}`, "i");
   return regex.test(normalizedText);
 };
+
+const nonEmptyLines = (text = "") =>
+  String(text || "")
+    .split("\n")
+    .filter((line) => line.trim());
+
+// How many lines mention any of `terms` — the analyzer's measure of whether a
+// must-have keyword is backed up in more than one place.
+const countKeywordLines = (text = "", terms = []) =>
+  nonEmptyLines(text).filter((line) => terms.some((term) => hasKeyword(line, term))).length;
 
 const stripPlaceholdersAndTemplateLabels = (text = "") =>
   text
@@ -410,6 +428,7 @@ const ensureStringArray = (value) =>
   Array.isArray(value)
     ? value.map((item) => ensureString(item)).filter(Boolean)
     : [];
+const stripBulletMarker = (value) => ensureString(value).replace(/^[-*•◦▪▸‣]\s+/, "");
 
 // Languages can arrive as an array, a single comma/bullet-joined string, or an
 // array containing such joined strings (e.g. "English • Hindi • Malayalam").
@@ -568,13 +587,22 @@ const normalizeResumeObject = (obj = {}) => {
     summary: dropDuplicateRoleOpener(ensureString(o.summary)),
     skills: ensureStringArray(o.skills),
     experience: (Array.isArray(o.experience) ? o.experience : [])
-      .map((e) => ({
-        designation: ensureString(e?.designation || e?.title),
-        company: ensureString(e?.company || e?.organization),
-        location: ensureString(e?.location),
-        duration: ensureString(e?.duration || e?.dates),
-        responsibilities: ensureStringArray(e?.responsibilities || e?.bullets),
-      }))
+      .map((e) => {
+        const bullets = ensureStringArray(e?.responsibilities || e?.bullets);
+        // The role's headline metrics point leads its bullets.
+        const metricsPoint = stripBulletMarker(e?.metricsPoint);
+        const alreadyListed =
+          metricsPoint &&
+          bullets.some((bullet) => normalizeText(bullet) === normalizeText(metricsPoint));
+        return {
+          designation: ensureString(e?.designation || e?.title),
+          company: ensureString(e?.company || e?.organization),
+          location: ensureString(e?.location),
+          duration: ensureString(e?.duration || e?.dates),
+          responsibilities:
+            metricsPoint && !alreadyListed ? [metricsPoint, ...bullets] : bullets,
+        };
+      })
       .filter((e) => e.designation || e.company || e.responsibilities.length),
     projects: (Array.isArray(o.projects) ? o.projects : [])
       .map((p) => ({
@@ -606,25 +634,105 @@ const normalizeResumeObject = (obj = {}) => {
   };
 };
 
-// Parse a model response (JSON string or already-parsed object) into the
-// canonical resume object. Returns null if it cannot be parsed.
-const parseModelResumeObject = (raw) => {
-  if (raw && typeof raw === "object") return normalizeResumeObject(raw);
+// A model response (JSON string or already-parsed object) as a plain object, or
+// null if it cannot be parsed.
+const parseModelJson = (raw) => {
+  if (raw && typeof raw === "object") return raw;
   const text = ensureString(raw);
   if (!text) return null;
   try {
     const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === "object") return normalizeResumeObject(parsed);
+    if (parsed && typeof parsed === "object") return parsed;
   } catch {
     // not JSON
   }
   return null;
 };
 
+// Parse a model response into the canonical resume object. Returns null if it
+// cannot be parsed.
+const parseModelResumeObject = (raw) => {
+  const parsed = parseModelJson(raw);
+  return parsed ? normalizeResumeObject(parsed) : null;
+};
+
 const normCompanyKey = (value) =>
   ensureString(value)
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
+
+// ---------------------------------------------------------------------------
+// Metrics points.
+//
+// Every role gets one headline bullet that states its main responsibility as a
+// measurable result. The figure comes from the resume where it has one. Where
+// it has none the model suggests a realistic one — the single place in the
+// pipeline where a number may be estimated — and that bullet is reported back
+// so the candidate confirms or corrects it before using the resume.
+// ---------------------------------------------------------------------------
+
+// Each role's metrics point as the model wrote it, with the model's own word on
+// whether its figure is an estimate.
+const extractMetricsPoints = (raw) => {
+  const parsed = parseModelJson(raw);
+  return (Array.isArray(parsed?.experience) ? parsed.experience : [])
+    .map((entry) => ({
+      company: ensureString(entry?.company || entry?.organization),
+      text: stripBulletMarker(entry?.metricsPoint),
+      estimated:
+        entry?.metricsPointEstimated === true || entry?.metricsPointEstimated === "true",
+    }))
+    .filter((point) => point.text);
+};
+
+const numberTokens = (text = "") =>
+  (String(text || "").match(/\d+(?:[.,]\d+)*/g) || []).map((token) => token.replace(/,/g, ""));
+
+// The metrics points whose figures the candidate never gave, as they appear in
+// the finished resume. A point counts as estimated when the model says so, or
+// when it carries a number the original resume does not contain: that includes
+// figures the model counted or derived, which nobody has checked either.
+// A later pass may have reworded the bullet, so it is found by its text first
+// and by its figures second.
+const findEstimatedMetrics = (experience = [], metricsPoints = [], resumeText = "") => {
+  const resumeNumbers = new Set(numberTokens(resumeText));
+  const roles = Array.isArray(experience) ? experience : [];
+  const found = [];
+  const seen = new Set();
+
+  metricsPoints.forEach((point) => {
+    const numbers = numberTokens(point.text);
+    if (!numbers.length) return;
+    const ungrounded = numbers.filter((token) => !resumeNumbers.has(token));
+    if (!point.estimated && !ungrounded.length) return;
+
+    const key = normCompanyKey(point.company);
+    const sameCompany = roles.filter((role) => {
+      const roleKey = normCompanyKey(role?.company);
+      return key && roleKey && (roleKey.includes(key) || key.includes(roleKey));
+    });
+    const candidates = (sameCompany.length ? sameCompany : roles).flatMap((role) =>
+      ensureStringArray(role?.responsibilities).map((bullet) => ({
+        company: ensureString(role?.company),
+        bullet,
+      }))
+    );
+
+    const target = normalizeText(point.text);
+    const wanted = ungrounded.length ? ungrounded : numbers;
+    const match =
+      candidates.find((candidate) => normalizeText(candidate.bullet) === target) ||
+      candidates.find((candidate) => {
+        const present = new Set(numberTokens(candidate.bullet));
+        return wanted.every((token) => present.has(token));
+      });
+    if (!match || seen.has(match.bullet)) return;
+    seen.add(match.bullet);
+    found.push(match);
+  });
+
+  return found;
+};
 
 // Object-level safety net mirroring reconcileExperienceSection: guarantees every
 // factual baseline role survives (the model sometimes merges/drops roles that
@@ -1847,12 +1955,49 @@ export async function POST(req) {
         ? selectedFromMissing
         : filterMissingByHandsOnEvidence(safeMissing, resume)
       : safeMissing;
+    // Each keyword's weight from the scan (1-10). It decides the order keywords
+    // are placed in, which ones are placed twice, and which give way first.
+    const safeWeightedKeywords = (Array.isArray(weightedKeywords) ? weightedKeywords : [])
+      .filter((entry) => entry && typeof entry.keyword === "string" && entry.keyword.trim())
+      .slice(0, 60);
+    const keywordWeights = buildKeywordWeightMap(safeWeightedKeywords);
+    const hasKeywordWeights = keywordWeights.size > 0;
+    const priorityOf = (keyword) => keywordPriority(keywordWeightOf(keyword, keywordWeights));
+    const variantsByKeyword = new Map(
+      safeWeightedKeywords.map((entry) => [
+        entry.keyword.trim().toLowerCase(),
+        ensureStringArray(entry.variants).slice(0, 3),
+      ])
+    );
+    const termsFor = (keyword) => [
+      keyword,
+      ...(variantsByKeyword.get(keyword.trim().toLowerCase()) || []),
+    ];
     // Language-fluency keywords never go to Skills or bullets — they belong in
     // the LANGUAGES section, injected deterministically after the model pass.
     // So keep them OUT of the set the model weaves into skills/experience.
-    const missingForCareerChange = keywordsForIntegration.filter(
-      (keyword) => !isLanguageKeyword(keyword)
+    // Highest weight first: every list built from this inherits the order.
+    const missingForCareerChange = sortKeywordsByWeight(
+      keywordsForIntegration.filter((keyword) => !isLanguageKeyword(keyword)),
+      keywordWeights
     );
+    // Must-have keywords the resume already has, but in one place only. They are
+    // evidenced, so giving them a second mention claims nothing new — and the
+    // analyzer scores a must-have in full only once it is backed up.
+    const reinforceKeywords =
+      hasKeywordWeights && nonEmptyLines(resume).length >= MIN_LINES_FOR_MENTION_COUNT
+        ? sortKeywordsByWeight(
+            (Array.isArray(matchedKeywords) ? matchedKeywords : [])
+              .filter((keyword) => typeof keyword === "string" && keyword.trim())
+              .slice(0, 60),
+            keywordWeights
+          ).filter(
+            (keyword) =>
+              priorityOf(keyword) === "high" &&
+              !isLanguageKeyword(keyword) &&
+              countKeywordLines(resume, termsFor(keyword)) < REINFORCED_MENTIONS
+          )
+        : [];
     const selectedLanguageNames = languageNamesFromKeywords(
       keywordsForIntegration.filter((keyword) => isLanguageKeyword(keyword))
     );
@@ -1924,18 +2069,34 @@ export async function POST(req) {
     const hasLanguagesSection = factualLanguagesBaseline.length > 0;
     const additionalSectionsBaseline = parseAdditionalSections(resume);
 
-    const safeWeightedKeywords = Array.isArray(weightedKeywords) ? weightedKeywords : [];
     const matchedKeywordSet = new Set(safeMatched.map((k) => k.toLowerCase()));
     // Summary must only reference skills the candidate already has — never inject missing keywords.
     // Use the highest-weight matched keywords as the hint so the summary stays honest.
-    const highPriorityMatchedKeywords = safeWeightedKeywords
-      .filter((k) => matchedKeywordSet.has(k.keyword.toLowerCase()))
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 3)
-      .map((k) => k.keyword);
+    const highPriorityMatchedKeywords = sortKeywordsByWeight(
+      safeWeightedKeywords
+        .map((k) => k.keyword)
+        .filter((keyword) => matchedKeywordSet.has(keyword.toLowerCase())),
+      keywordWeights
+    ).slice(0, 3);
     const summaryKeywordHint = highPriorityMatchedKeywords.length
       ? highPriorityMatchedKeywords.join(", ")
       : safeMatched.slice(0, 3).join(", ") || "none";
+
+    // The missing keywords as the prompt lists them: by tier when the scan
+    // carried weights, as one flat list when it did not.
+    const tierList = (keywords, priority) =>
+      keywords.filter((keyword) => priorityOf(keyword) === priority).join(", ") || "None";
+    const missingKeywordLines = hasKeywordWeights
+      ? [
+          "Missing keywords to incorporate, by priority (each tier listed most important first):",
+          `- MUST-HAVE: ${tierList(missingForCareerChange, "high")}`,
+          `- IMPORTANT: ${tierList(missingForCareerChange, "medium")}`,
+          `- NICE-TO-HAVE: ${tierList(missingForCareerChange, "low")}`,
+          `Must-have keywords the resume already mentions, but in one place only (give each a second mention): ${
+            reinforceKeywords.join(", ") || "None"
+          }`,
+        ]
+      : [`Missing keywords to incorporate: ${missingForCareerChange.join(", ") || "None"}`];
 
     const resumePrompt = [
       "You are an expert ATS-focused resume writer specializing in highly relevant, role-targeted resumes.",
@@ -1945,7 +2106,7 @@ export async function POST(req) {
       "{",
       '  "summary": "string",',
       '  "skills": ["Category: item, item, item", "..."],',
-      '  "experience": [{ "designation": "string", "company": "string", "location": "string", "duration": "string", "bullets": ["string", "..."] }],',
+      '  "experience": [{ "designation": "string", "company": "string", "location": "string", "duration": "string", "metricsPoint": "string", "metricsPointEstimated": true, "bullets": ["string", "..."] }],',
       '  "projects": [{ "name": "string", "link": "string", "bullets": ["string", "..."] }],',
       '  "education": [{ "qualification": "string", "institution": "string", "location": "string", "duration": "string", "details": ["string"] }],',
       '  "certifications": ["string"],',
@@ -1958,7 +2119,8 @@ export async function POST(req) {
         ? `1. summary (REWRITE MODE): A summary already exists — rewrite it to target the role more precisely. Keep the candidate's voice and factual experience level. 3-4 sentences, 60-80 words. Open with seniority + domain (e.g. "Senior Backend Engineer with 6 years..."). REWRITE means REPLACE: produce one cohesive paragraph with EXACTLY ONE role-title opening sentence — never keep the original summary's opening sentence and then add a second "Title with N years..." opener after it; fold the original's facts (employers, achievements) into the new sentences instead. Reference only skills and experience already present in the resume; these confirmed keywords may be highlighted: ${summaryKeywordHint}. Rules: NEVER mention a skill, tool, or technology that is not evidenced in the original resume; no "I" statements; no hollow filler ("results-driven", "passionate", "go-getter", "dynamic") unless tied to a specific fact.`
         : `1. summary (GENERATE MODE): No summary exists — write one from scratch using ONLY facts already present in the resume. 3-4 sentences, 60-80 words. Structure: (a) open with seniority + domain ("Senior X Engineer with N years of experience in..."), (b) highlight 2-3 skills that are confirmed in the resume AND relevant to the target role, (c) close with a concise value statement. These confirmed keywords may be used: ${summaryKeywordHint}. Rules: NEVER claim a skill, tool, certification, or experience that is not in the original resume — not even to match the JD; no "I" statements; no generic filler.`,
       "2. skills: An array of 3-6 strings (NEVER more than 6), each a logical category formatted as 'Category: item, item, item'. Choose categories that fit THIS candidate's profession — do not assume software/engineering. Examples by field: software → Languages, Frameworks, Tools, Cloud; marketing → Channels, Analytics, Tools, Content; nursing/healthcare → Clinical Skills, Systems/EMR, Patient Care, Communication; finance → Accounting, Analysis, Software, Compliance; design → Design, Prototyping, Tools, Research. NEVER use a 'Certifications' or 'Licenses' category in skills — certifications have their own dedicated field and must not be duplicated here. List ONLY concrete, named hard skills, tools, and technologies here (e.g. React, GraphQL, Docker, Jest) — each category should hold 3-8 such items. DO NOT create a catch-all bucket named 'Concepts', 'Additional', 'Additional Skills', 'Other', or 'Miscellaneous', and DO NOT stuff a long list of job-description phrases into skills. A keyword belongs in skills ONLY if it is a real, named tool / technology / hard skill the candidate actually uses. Concept, practice, methodology, quality, domain, or ways-of-working keywords (e.g. 'user-centric design', 'high-traffic systems', 'code review', 'documentation', 'system design', 'progressive enhancement', 'cross-functional collaboration', 'consumer-facing products') must NOT be listed as skills — instead weave them into the SUMMARY or the single most relevant EXPERIENCE / PROJECT bullet. Do NOT include vague filler or buzzwords (e.g. 'Product Mindset', 'Ownership Mindset', 'Problem-Solving Skills', 'Analytical Thinking', 'Fast-Paced Environments', 'Attention to Detail', 'Team Player') and never a phrase like '1 to 3 years experience'; genuine, named soft skills (Leadership, Communication, Teamwork, Time Management) are allowed sparingly. Avoid near-duplicates (e.g. 'Git' and 'Git workflows').",
-      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. KEEP EVERY role from the work-history section — never drop, merge, or hollow out a role because it looks unrelated to the target job. When a role seems off-target, do NOT remove it: instead RE-ANGLE its bullets to foreground the responsibilities, transferable skills, tools, and outcomes most relevant to the target role and its keywords, while staying 100% truthful to what the candidate actually did. Every role must keep a substantive set of bullets (3-6), never be reduced to an empty or near-empty entry. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Each bullet starts with a strong action verb. QUANTIFICATION (critical — this is YOUR job, do it actively): aim for a NUMBER in at least half of the bullets in every role, using ONLY figures that are stated in, or directly countable from, the candidate's own resume. Work through these derivations in order: (a) SURFACE — reuse every number, %, $, duration, volume, frequency, team size, or scale already written anywhere in the resume, and LEAD the bullet with it; (b) COUNT — when the resume enumerates things, state the count: named tools/platforms ('sourced via LinkedIn, Naukri, Indeed, ApnaJobs' → 'sourced across 4 platforms'), named clients/brands/business units ('recruited for MYn and NxtGen' → 'recruited for 2 business units'), named teams, products, modules, or projects listed elsewhere in the resume ('built X, Y and Z' → 'delivered 3 products'); (c) DERIVE FROM DATES — express a role's own stated duration where it strengthens the point ('Feb 2025 - Mar 2026' → 'over 13 months'); (d) CONVERT — restate a concrete fact as a figure ('reduced load time from 5s to 2s' → 'cut load time 60%'). HARD BOUNDARY: every number must be literally present in the resume or arithmetically derived by counting/among items the resume itself lists — if you cannot point to the exact words that justify it, write the bullet WITHOUT a number. Never estimate, approximate, round up, add a '+' to an exact count, or invent percentages, revenue, headcount, or performance gains. KEYWORD WEAVING: for each missing keyword that genuinely relates to a role's real work, integrate it INTO an existing bullet by rewording that bullet so the keyword reads naturally in context — never tack it on as a tag or a parenthetical list, and never add a new bare bullet that just names a keyword. Spread keywords across the DIFFERENT roles (put each where it fits best) rather than clustering many into one role. If the original resume states a metric, preserve it verbatim. NEVER invent, estimate, or inflate a number, percentage, employer, name, or claim the resume does not support.",
+      "3. experience: An array of role objects — ONLY real jobs, internships, or volunteer positions belong here. KEEP EVERY role from the work-history section — never drop, merge, or hollow out a role because it looks unrelated to the target job. When a role seems off-target, do NOT remove it: instead RE-ANGLE its bullets to foreground the responsibilities, transferable skills, tools, and outcomes most relevant to the target role and its keywords, while staying 100% truthful to what the candidate actually did. Every role must keep a substantive set of bullets (3-6), never be reduced to an empty or near-empty entry. Include ONLY roles listed in the resume's work-history section: the headline/job-title line under the candidate's name (e.g. 'Freelance Front-End Developer') is a title, NOT a job entry — never turn it into one. Never output placeholder company values like 'None' or 'N/A'; use an empty string only for a real listed role whose employer is genuinely absent. NEVER place education/degrees, skills, languages, certifications, or interests in the experience array (they have their own fields). Fill designation, company, location, and duration as separate fields (leave a field as an empty string only if truly unknown). Each bullet starts with a strong action verb. QUANTIFICATION (critical — this is YOUR job, do it actively): aim for a NUMBER in at least half of the bullets in every role, using ONLY figures that are stated in, or directly countable from, the candidate's own resume. Work through these derivations in order: (a) SURFACE — reuse every number, %, $, duration, volume, frequency, team size, or scale already written anywhere in the resume, and LEAD the bullet with it; (b) COUNT — when the resume enumerates things, state the count: named tools/platforms ('sourced via LinkedIn, Naukri, Indeed, ApnaJobs' → 'sourced across 4 platforms'), named clients/brands/business units ('recruited for MYn and NxtGen' → 'recruited for 2 business units'), named teams, products, modules, or projects listed elsewhere in the resume ('built X, Y and Z' → 'delivered 3 products'); (c) DERIVE FROM DATES — express a role's own stated duration where it strengthens the point ('Feb 2025 - Mar 2026' → 'over 13 months'); (d) CONVERT — restate a concrete fact as a figure ('reduced load time from 5s to 2s' → 'cut load time 60%'). HARD BOUNDARY (everything in `bullets`): every number must be literally present in the resume or arithmetically derived by counting/among items the resume itself lists — if you cannot point to the exact words that justify it, write the bullet WITHOUT a number. Never estimate, approximate, round up, add a '+' to an exact count, or invent percentages, revenue, headcount, or performance gains. The ONLY place an estimate is allowed is the role's metricsPoint (rule 3a). KEYWORD WEAVING: for each missing keyword that genuinely relates to a role's real work, integrate it INTO an existing bullet by rewording that bullet so the keyword reads naturally in context — never tack it on as a tag or a parenthetical list, and never add a new bare bullet that just names a keyword. Spread keywords across the DIFFERENT roles (put each where it fits best) rather than clustering many into one role. If the original resume states a metric, preserve it verbatim. NEVER invent, estimate, or inflate a number, percentage, employer, name, or claim the resume does not support.",
+      "3a. metricsPoint (one per role, MANDATORY): besides `bullets`, give EVERY role a `metricsPoint` — one headline achievement that states the candidate's main responsibility in THAT role as a measurable result, in the style of 'Developed and deployed more than 15 high-impact web applications' or 'Increased quarterly sales by 10%'. It must describe work that role's own bullets show the candidate did: never a new responsibility, tool, client, product, or project. One sentence of at most 25 words, starting with a strong action verb, with no leading dash. It is shown as the role's FIRST bullet, so do not repeat it (or its figure) inside `bullets`, and give different roles different metrics points. It counts toward the role's 3-6 bullets. Choosing the figure: (1) FIRST use a figure the resume states for that role, or one you can count or derive from it under the QUANTIFICATION rules, and set metricsPointEstimated to false. (2) ONLY when the resume gives no usable figure for that role, write a realistic, CONSERVATIVE estimate that fits the role's seniority, duration, and scope, and set metricsPointEstimated to true. For an estimate, prefer the volume or scale of the candidate's own output ('more than 15 web applications', '20+ client accounts', 'a team of 5') over business outcomes (revenue, sales %, growth, cost savings) — use an outcome only when the role's bullets show the candidate owned it — and prefer 'more than N' / 'N+' phrasing over a falsely precise number. The candidate is asked to confirm or correct every estimated figure before using the resume, so flag honestly: if ANY number in the metricsPoint is neither stated in the resume nor countable from it, metricsPointEstimated MUST be true. An estimate covers the FIGURE only — the work it measures must be real.",
       hasProjectsSection
         ? "4. projects: The original resume HAS a projects section, so the output JSON MUST include a non-empty projects array containing EVERY original project (match the baseline above). Each project object has a clear name, its link (copy the project's link VERBATIM from the baseline — never drop or alter it), and 1-3 bullets describing scope and impact. Quantify these bullets with the same rules as experience: reuse any figure the resume states, and COUNT what the resume enumerates (features, integrations, screens, tools, users) — but never invent a number the resume cannot justify. Weave any missing keyword that genuinely relates to a project INTO that project's bullets by rewording them naturally — never as an appended tag, and only where the project truly used it. Never drop a project to save space."
         : "4. projects: The original resume has no projects section — omit the projects key entirely. Do not invent projects.",
@@ -1968,12 +2130,19 @@ export async function POST(req) {
       keywordSelectionApplied && missingForCareerChange.length
         ? `USER-CONFIRMED SKILLS (MANDATORY): The candidate has personally confirmed they have hands-on experience with EACH of these keywords: ${missingForCareerChange.join(
             ", "
-          )}. You MUST include EVERY one of them in the output, placed where it is MOST contextually relevant (see KEYWORD DISTRIBUTION) — a named tool/technology in a skills category, everything else woven into the summary or the most relevant experience/project bullet. The candidate's confirmation IS the evidence, so do NOT omit any as "unrelated" or "unevidenced". You may still NOT fabricate metrics, numbers, employers, dates, or achievements around them — only reflect the skill itself truthfully.`
+          )}. You MUST include EVERY one of them in the output, placed where it is MOST contextually relevant (see KEYWORD DISTRIBUTION) — a named tool/technology in a skills category, everything else woven into the summary or the most relevant experience/project bullet. The candidate's confirmation IS the evidence, so do NOT omit any as "unrelated" or "unevidenced". You may still NOT fabricate metrics, numbers, employers, dates, or achievements around them — only reflect the skill itself truthfully.${
+            hasKeywordWeights
+              ? " They are listed highest priority first (see KEYWORD PRIORITY)."
+              : ""
+          }`
         : "",
       "KEYWORD DISTRIBUTION (critical): spread the missing keywords EVENLY across the summary, the skills categories, and the experience bullets (and project bullets when a keyword relates to a project) so the whole resume improves — this is the difference between a tailored resume and keyword stuffing. NEVER concentrate many keywords into a single skills category or any catch-all bucket. Place each keyword where it is most contextually relevant: named tools/technologies → a fitting skills category; concepts, practices, qualities, domains, and ways of working → woven naturally into the summary or the single most relevant experience/project bullet. NEVER add keywords to the education or certifications sections.",
+      hasKeywordWeights
+        ? "KEYWORD PRIORITY (critical): the keywords below are ranked by how much the job description depends on them, so they are NOT equal. Work down the list: place MUST-HAVE keywords first, in the most prominent spots that are truthful for them (the leading skills categories, the most recent relevant role, the metricsPoint when it genuinely fits). A MUST-HAVE keyword should end up in TWO different places: a named tool/technology in a skills category AND in the experience/project bullet where the candidate used it; a concept or practice in the bullet where that work was done AND in a second role's bullet or a project bullet. The must-haves the resume already mentions once are evidenced, so their second mention may also be the summary. If a must-have truthfully fits only one place, one mention is enough — never force the second. Two mentions is the ceiling for what you add: never write the same keyword twice in one bullet or one skills category, and never add a third mention, which is keyword stuffing. An IMPORTANT keyword appears once, in its single best place. A NICE-TO-HAVE keyword appears once and only where it fits naturally; when space is tight or the fit is forced, these are the first to give way (a USER-CONFIRMED keyword is never dropped — it takes the least prominent truthful spot instead)."
+        : "",
       "",
       "HARD CONSTRAINTS (zero tolerance):",
-      "- Never invent employers, dates, titles, certifications, degrees, or quantified achievements.",
+      "- Never invent employers, dates, titles, certifications, degrees, or quantified achievements. The one exception is the figure in a metricsPoint flagged metricsPointEstimated=true (rule 3a).",
       "- Preserve every original employer name, job title, dates, education qualification, and certification VERBATIM.",
       "- Preserve all contact info and professional links from the original resume.",
       "- Bullets are plain strings with no leading dash, bullet glyph, emoji, or decorative symbol (the template adds bullet styling).",
@@ -1995,7 +2164,7 @@ export async function POST(req) {
       `User-approved keywords for career change: ${selectedFromMissing.join(", ") || "None selected"}`,
       `Role transition context: ${roleTransition}`,
       `Already-matched keywords (keep referenced): ${safeMatched.join(", ") || "None"}`,
-      `Missing keywords to incorporate: ${missingForCareerChange.join(", ") || "None"}`,
+      ...missingKeywordLines,
       `Analyzer suggestions: ${safeSuggestions.join(" | ") || "None"}`,
       `ATS formatting warnings to fix: ${safeFormattingWarnings.join(" | ") || "None"}`,
       `Score breakdown to improve: ${JSON.stringify(safeScoreBreakdown)}`,
@@ -2036,11 +2205,27 @@ export async function POST(req) {
       });
     }
 
+    // Each role's headline metrics point, already folded into its bullets.
+    // Kept so the ones carrying an estimated figure can be reported back.
+    const metricsPoints = extractMetricsPoints(optimizedResumeRaw);
+
+    const pass1Text = resumeObjectToText(resumeData);
     const uncoveredAfterPass1 = missingForCareerChange.filter(
-      (keyword) => !hasKeyword(resumeObjectToText(resumeData), keyword)
+      (keyword) => !hasKeyword(pass1Text, keyword)
     );
 
     if (uncoveredAfterPass1.length) {
+      // Must-haves that landed in one place only. A revision pass is never run
+      // for these alone (it would double the cost of most optimizations), but
+      // when one is running anyway it picks them up.
+      const singleMentionAfterPass1 = hasKeywordWeights
+        ? [...missingForCareerChange, ...reinforceKeywords].filter(
+            (keyword) =>
+              priorityOf(keyword) === "high" &&
+              !uncoveredAfterPass1.includes(keyword) &&
+              countKeywordLines(pass1Text, termsFor(keyword)) < REINFORCED_MENTIONS
+          )
+        : [];
       const revisionPrompt = [
         "Revise the resume below to naturally include EVERY one of the listed keywords without losing truthfulness.",
         "",
@@ -2054,11 +2239,15 @@ export async function POST(req) {
         "- PRESERVE EVERY existing number, %, $, count, and duration exactly as written — never delete or weaken a quantified result while integrating keywords, and never reduce the proportion of bullets that carry a metric.",
         "- Preserve EVERY experience role, project, education entry, certification, and language already present — do not drop or merge any.",
         "- Every bullet starts with a strong action verb.",
-        `Required missing keywords to add: ${uncoveredAfterPass1.join(", ")}`,
+        "- Each role's FIRST bullet is its headline metrics point: keep it first, with its figure unchanged.",
+        `Required missing keywords to add (highest priority first — give the earlier ones the more prominent spots): ${uncoveredAfterPass1.join(", ")}`,
+        singleMentionAfterPass1.length
+          ? `Must-have keywords currently mentioned in one place only — add ONE more mention of each in a different section (a skills category, or the bullet where the candidate did that work), where it is truthful, and never a third: ${singleMentionAfterPass1.join(", ")}`
+          : "",
         "Return only the JSON object.",
         "",
         "Current optimized resume:",
-        resumeObjectToText(resumeData).slice(0, 12000),
+        pass1Text.slice(0, 12000),
       ].join("\n");
 
       const revised = await generateWithModel({
@@ -2272,13 +2461,21 @@ export async function POST(req) {
     // Coverage is reported against the FULL missing list (not just the
     // integration target) so the UI can show everything that was left out —
     // including keywords the user chose not to add.
-    const coverageKeywords = safeMissing.length ? safeMissing : missingForCareerChange;
+    // Both lists come back highest weight first.
+    const coverageKeywords = sortKeywordsByWeight(
+      safeMissing.length ? safeMissing : missingForCareerChange,
+      keywordWeights
+    );
     const stillMissingKeywords = coverageKeywords.filter(
       (keyword) => !hasKeyword(optimizedResumeText, keyword)
     );
     const incorporatedKeywords = coverageKeywords.filter((keyword) =>
       hasKeyword(optimizedResumeText, keyword)
     );
+
+    // Metrics points whose figure the resume never stated: the preview flags
+    // these until the candidate edits or confirms them.
+    const estimatedMetrics = findEstimatedMetrics(resumeData.experience, metricsPoints, resume);
 
     let finalCoverLetter = "";
     if (shouldGenerateCoverLetter) {
@@ -2298,6 +2495,11 @@ export async function POST(req) {
         "- Do not include heading text like 'Tailored Cover Letter' or 'Cover Letter'.",
         "- Do not use placeholders like [Candidate Address], [Date], [Your Name], [Company].",
         "- Plain text only, no markdown fences, no bullet points.",
+        estimatedMetrics.length
+          ? `- These resume points carry figures the candidate has not confirmed yet. Do NOT quote, paraphrase, or allude to their numbers: ${estimatedMetrics
+              .map((metric) => `"${metric.bullet}"`)
+              .join(" ")}`
+          : "",
         "",
         `Organization: ${organization}`,
         `Designation: ${designation}`,
@@ -2346,6 +2548,7 @@ export async function POST(req) {
         coverLetter: finalCoverLetter,
         incorporatedKeywords,
         stillMissingKeywords,
+        estimatedMetrics,
       },
     });
   } catch (error) {

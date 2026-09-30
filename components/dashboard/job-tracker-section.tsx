@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
 import { cn } from "@/lib/utils";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "react-toastify";
 import { supabase } from "@/lib/supabaseClient";
 import {
@@ -19,18 +19,24 @@ import type {
   ResumeTemplateThemeOverrides,
 } from "@/components/resume-templates/types";
 import {
+  BookOpen,
   Briefcase,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
   List,
   Loader2,
+  Mic,
   SaveIcon,
   Search,
   Trash2,
 } from "lucide-react";
 import swal from "sweetalert";
 import { resolveResumePhotoUrl } from "@/lib/resume-photo";
+import { InterviewPrepDialog } from "@/components/dashboard/interview/interview-prep-dialog";
+import { MockInterviewDialog } from "@/components/dashboard/interview/mock-interview-dialog";
+import { MOCK_ATTEMPTS_PER_JOB } from "@/lib/interview-config";
 
 const STATUS_STYLES: Record<string, string> = {
   Applied: "border-blue-200 bg-blue-50 text-blue-700",
@@ -40,6 +46,19 @@ const STATUS_STYLES: Record<string, string> = {
 };
 const statusClass = (status: string) =>
   STATUS_STYLES[status] || "border-slate-200 bg-slate-50 text-slate-700";
+
+// Browsers draw a native select's arrow hard against its right border and
+// ignore padding for it, so the selects here hide it (`appearance-none`) and
+// draw this one inside their right padding instead.
+const SelectChevron = ({ className }: { className?: string }) => (
+  <ChevronDown
+    aria-hidden="true"
+    className={cn(
+      "pointer-events-none absolute top-1/2 h-4 w-4 -translate-y-1/2",
+      className
+    )}
+  />
+);
 
 const scoreClass = (score: number | null) => {
   if (score === null) return "bg-slate-100 text-slate-400";
@@ -60,6 +79,11 @@ type Job = {
   optimized_score?: number | null;
   matched_keywords: string[];
   missing_keywords: string[];
+  keyword_universe?: string[];
+  /** Whether interview prep has been generated; the prep itself is fetched on open. */
+  has_interview_prep?: boolean;
+  /** Completed mock interviews for this job, or null before the first. */
+  mock_interview?: { attempts: number; bestScore: number | null } | null;
   resume_template_id?: string | null;
   cover_letter_template_id?: string | null;
   generated_resume_text?: string | null;
@@ -78,6 +102,14 @@ type Job = {
 };
 
 const STATUS_OPTIONS = ["Applied", "Interviewing", "Offer", "Rejected"];
+
+// Interview prep and the mock interview are built from the keywords a scan
+// saves. A job typed into the form below has none, so it doesn't get the
+// interview buttons (the interview routes refuse it too).
+const hasKeywordData = (job: Job) =>
+  Boolean(
+    job.keyword_universe?.length || job.matched_keywords?.length || job.missing_keywords?.length
+  );
 const JOBS_PER_PAGE = 10;
 
 type JobTrackerSectionProps = {
@@ -96,6 +128,52 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
     designation: "",
     status: STATUS_OPTIONS[0],
   });
+  // Which job each interview dialog is showing. The job stays set while the
+  // dialog animates closed, so its content doesn't blank out mid-transition.
+  const [prepJob, setPrepJob] = useState<Job | null>(null);
+  const [prepOpen, setPrepOpen] = useState(false);
+  const [mockJob, setMockJob] = useState<Job | null>(null);
+  const [mockOpen, setMockOpen] = useState(false);
+
+  const handlePrepReady = useCallback((jobId: string) => {
+    setJobs((prev) =>
+      prev.map((job) => (job.id === jobId ? { ...job, has_interview_prep: true } : job))
+    );
+  }, []);
+
+  // Every start counts towards the job's mock interview limit; the best score
+  // only moves when one is scored.
+  const handleMockStarted = useCallback((jobId: string) => {
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              mock_interview: {
+                attempts: (job.mock_interview?.attempts || 0) + 1,
+                bestScore: job.mock_interview?.bestScore ?? null,
+              },
+            }
+          : job
+      )
+    );
+  }, []);
+
+  const handleMockCompleted = useCallback((jobId: string, score: number) => {
+    setJobs((prev) =>
+      prev.map((job) => {
+        if (job.id !== jobId) return job;
+        const previous = job.mock_interview;
+        return {
+          ...job,
+          mock_interview: {
+            attempts: previous?.attempts || 1,
+            bestScore: Math.max(previous?.bestScore ?? score, score),
+          },
+        };
+      })
+    );
+  }, []);
 
   useEffect(() => {
     fetchJobs();
@@ -419,20 +497,23 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
               setNewJob((prev) => ({ ...prev, designation: event.target.value }))
             }
           />
-          <select
-            value={newJob.status}
-            onChange={(event) =>
-              setNewJob((prev) => ({ ...prev, status: event.target.value }))
-            }
-            aria-label="Interview status"
-            className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 md:h-9"
-          >
-            {STATUS_OPTIONS.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              value={newJob.status}
+              onChange={(event) =>
+                setNewJob((prev) => ({ ...prev, status: event.target.value }))
+              }
+              aria-label="Interview status"
+              className="h-11 w-full appearance-none rounded-md border border-slate-200 bg-white pl-3 pr-10 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 md:h-9"
+            >
+              {STATUS_OPTIONS.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+            <SelectChevron className="right-3 text-slate-400" />
+          </div>
           <div className="md:col-span-3">
             <Button type="submit" className="w-full rounded-md md:w-auto">
               <SaveIcon className="mr-2 h-4 w-4" />
@@ -457,12 +538,15 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
             />
           </div>
         </div>
-        <div className="grid grid-cols-[2fr,1.5fr,1.5fr,1.3fr,1fr,0.5fr] items-center border-b border-slate-200 bg-slate-50 px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 max-sm:hidden">
+        {/* The table needs ~950px for seven columns, so it starts at xl;
+            narrower screens get the row as a card (below). */}
+        <div className="hidden items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 xl:grid xl:grid-cols-[minmax(0,1.6fr),minmax(0,1.3fr),172px,104px,120px,168px,36px]">
           <span>Organization</span>
           <span>Role</span>
           <span>Documents</span>
           <span>Score</span>
           <span>Status</span>
+          <span>Interview</span>
           <span></span>
         </div>
         <div className="divide-y divide-slate-100">
@@ -566,23 +650,30 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                   ) : null}
                 </span>
               );
+              // The status colours sit on the wrapper so the chevron can pick up
+              // the same text colour; the select inherits them.
               const statusSelect = (
-                <select
-                  value={job.interview_status}
-                  onChange={(event) => updateStatus(job.id, event.target.value)}
-                  disabled={updating === job.id}
-                  aria-label={`Status for ${job.designation} at ${job.organization}`}
+                <div
                   className={cn(
-                    "h-9 cursor-pointer rounded-full border px-3 text-xs font-semibold shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 disabled:opacity-50 sm:h-8",
+                    "relative inline-flex rounded-md shadow-sm",
                     statusClass(job.interview_status)
                   )}
                 >
-                  {STATUS_OPTIONS.map((status) => (
-                    <option key={status} value={status} className="bg-white text-slate-700">
-                      {status}
-                    </option>
-                  ))}
-                </select>
+                  <select
+                    value={job.interview_status}
+                    onChange={(event) => updateStatus(job.id, event.target.value)}
+                    disabled={updating === job.id}
+                    aria-label={`Status for ${job.designation} at ${job.organization}`}
+                    className="peer h-9 cursor-pointer appearance-none rounded-md border border-inherit bg-transparent pl-3 pr-8 text-xs font-semibold text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 disabled:opacity-50 sm:h-8"
+                  >
+                    {STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status} className="bg-white text-slate-700">
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                  <SelectChevron className="right-2.5 peer-disabled:opacity-50" />
+                </div>
               );
               const deleteButton = (
                 <button
@@ -593,6 +684,78 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
+              );
+              // Interview prep and the mock interview. `compact` is the table
+              // cell, where the column header already says "Interview".
+              const canPractise = hasKeywordData(job);
+              const bestMockScore = job.mock_interview?.bestScore ?? null;
+              const mockAttemptsLeft = Math.max(
+                0,
+                MOCK_ATTEMPTS_PER_JOB - (job.mock_interview?.attempts || 0)
+              );
+              const mockTitle = [
+                mockAttemptsLeft
+                  ? `Mock interview (${mockAttemptsLeft} of ${MOCK_ATTEMPTS_PER_JOB} left`
+                  : `Mock interview (all ${MOCK_ATTEMPTS_PER_JOB} used`,
+                bestMockScore !== null ? `, best score ${bestMockScore})` : ")",
+              ].join("");
+              const interviewButtons = (compact: boolean) => (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    title={
+                      job.has_interview_prep
+                        ? "Interview prep material (ready)"
+                        : "Interview prep material"
+                    }
+                    onClick={() => {
+                      setPrepJob(job);
+                      setPrepOpen(true);
+                    }}
+                    className={cn(
+                      "relative gap-1.5 rounded-md border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:text-violet-800",
+                      !compact && "flex-1 sm:flex-none"
+                    )}
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    {compact ? "Prep" : "Interview prep"}
+                    {job.has_interview_prep ? (
+                      <span
+                        aria-hidden
+                        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white"
+                      />
+                    ) : null}
+                  </Button>
+                  <Button
+                    size="sm"
+                    title={mockTitle}
+                    onClick={() => {
+                      setMockJob(job);
+                      setMockOpen(true);
+                    }}
+                    className={cn(
+                      "relative gap-1.5 rounded-md bg-slate-900 text-white hover:bg-slate-800",
+                      !compact && "flex-1 sm:flex-none"
+                    )}
+                  >
+                    <Mic className="h-4 w-4" />
+                    {compact ? "Mock" : "Mock interview"}
+                    {/* Best score so far: inline where the row has room, a
+                        corner badge on phones, where the two buttons split
+                        the width and an inline chip would push past it. */}
+                    {!compact && bestMockScore !== null ? (
+                      <>
+                        <span className="hidden rounded bg-white/15 px-1.5 py-px text-[11px] font-semibold tabular-nums sm:inline">
+                          {bestMockScore}
+                        </span>
+                        <span className="absolute -right-1.5 -top-2 rounded-full bg-violet-600 px-1.5 py-px text-[10px] font-bold tabular-nums text-white ring-2 ring-white sm:hidden">
+                          {bestMockScore}
+                        </span>
+                      </>
+                    ) : null}
+                  </Button>
+                </>
               );
 
               return (
@@ -624,27 +787,68 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
                       {resumeButton}
                       {coverButton}
                     </div>
+                    {canPractise ? (
+                      <div className="flex gap-2">{interviewButtons(false)}</div>
+                    ) : null}
                   </div>
 
-                  {/* Tablet and up: the original six-column row, unchanged. */}
-                  <div className="hidden items-center gap-3 px-5 py-4 sm:grid sm:grid-cols-[2fr,1.5fr,1.5fr,1.3fr,1fr,0.5fr]">
-                    <div className="flex flex-col justify-center">
-                      <p className="text-sm font-semibold text-slate-900">
+                  {/* Tablet up to xl: the same row on two lines. What the job
+                      is and where it stands on top; everything you can do
+                      with it underneath, documents left, interview right. */}
+                  <div className="hidden px-5 py-4 sm:block xl:hidden">
+                    <div className="flex items-start gap-4">
+                      <div className="min-w-0 flex-1">
+                        <p className="break-anywhere text-sm font-semibold text-slate-900">
+                          {job.organization}
+                        </p>
+                        <p className="break-anywhere mt-0.5 text-sm text-slate-600">
+                          {job.designation}
+                          <span className="text-slate-400">
+                            {" · "}
+                            {new Date(job.created_at).toLocaleDateString()}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3">
+                        {scoreChip}
+                        {statusSelect}
+                        {deleteButton}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex">
+                        {resumeButton}
+                        {coverButton}
+                      </div>
+                      {canPractise ? (
+                      <div className="flex gap-2">{interviewButtons(false)}</div>
+                    ) : null}
+                    </div>
+                  </div>
+
+                  {/* xl and up: the table row, with the interview buttons as
+                      its last column. */}
+                  <div className="hidden items-center gap-3 px-5 py-4 xl:grid xl:grid-cols-[minmax(0,1.6fr),minmax(0,1.3fr),172px,104px,120px,168px,36px]">
+                    <div className="flex min-w-0 flex-col justify-center">
+                      <p className="break-anywhere text-sm font-semibold text-slate-900">
                         {job.organization}
                       </p>
                       <p className="text-xs text-slate-400">
                         {new Date(job.created_at).toLocaleDateString()}
                       </p>
                     </div>
-                    <p className="flex items-center text-sm text-slate-600">
+                    <p className="break-anywhere flex items-center text-sm text-slate-600">
                       {job.designation}
                     </p>
-                    <div className="flex flex-wrap items-center">
+                    <div className="flex items-center">
                       {resumeButton}
                       {coverButton}
                     </div>
                     <div className="flex items-center justify-start gap-2">{scoreChip}</div>
                     <div className="flex items-center">{statusSelect}</div>
+                    <div className="flex items-center gap-2">
+                      {canPractise ? interviewButtons(true) : null}
+                    </div>
                     <div className="flex items-center justify-end">{deleteButton}</div>
                   </div>
                 </div>
@@ -689,6 +893,20 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
           </div>
         )}
       </div>
+
+      <InterviewPrepDialog
+        job={prepJob}
+        open={prepOpen}
+        onOpenChange={setPrepOpen}
+        onPrepReady={handlePrepReady}
+      />
+      <MockInterviewDialog
+        job={mockJob}
+        open={mockOpen}
+        onOpenChange={setMockOpen}
+        onStarted={handleMockStarted}
+        onCompleted={handleMockCompleted}
+      />
     </section>
   );
 };

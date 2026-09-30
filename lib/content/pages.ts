@@ -73,6 +73,7 @@ export const ABOUT: StaticPage = {
       body: [
         "When you run a scan, the text of your resume and the job description you pasted are sent to OpenAI's API for analysis and rewriting. SynCV uses OpenAI's GPT-6 Luna model for this. The output is returned to you in an editor — you review and change anything before exporting.",
         "AI is used for comparison and rewriting. It is not used to judge you: SynCV does not assess whether you are qualified for a role, does not score you as a candidate, and does not recommend whether to apply.",
+        "The one exception is practice you ask for. Interview prep writes likely questions and a study guide for a job you have scanned, and a mock interview asks you questions and scores your practice answers so you can see what to improve. Those scores are shown only to you.",
       ],
     },
     {
@@ -138,8 +139,8 @@ export const PRIVACY: StaticPage = {
   description:
     "What SynCV collects, where your resume goes when you run a scan, which third parties process it, and how to delete everything.",
   answer:
-    "SynCV stores your account details, the base resume you upload, and the scans and applications you create. When you run a scan, your resume text and the job description are sent to OpenAI for processing. Deleting your account removes your resumes, scans and application history from our database.",
-  updated: "14 September 2026",
+    "SynCV stores your account details, the base resume you upload, and the scans and applications you create. When you run a scan, your resume text and the job description are sent to OpenAI for processing; so are your answers, and short voice clips if you speak them, when you take a mock interview. Deleting your account removes your resumes, scans and application history from our database.",
+  updated: "30 September 2026",
   sections: [
     {
       heading: "What we collect",
@@ -159,6 +160,7 @@ export const PRIVACY: StaticPage = {
       body: [
         "This is the part worth reading carefully, because it involves a third party.",
         "When you run a scan, the text of your resume and the job description you pasted are sent to OpenAI's API for analysis and rewriting, and the result is returned to you. Your resume is not sent anywhere else, is not shown to other users, and is not sold or shared with recruiters, employers or advertisers.",
+        "Interview practice works the same way. For interview prep and mock interviews, the keywords from your scan, your years of experience and the skills on your base resume are sent to OpenAI to write the questions, and your mock interview answers are sent to it to be scored. If you answer by voice, short audio clips of what you say are sent to OpenAI to be turned into text. SynCV does not store that audio; the written transcript, your score and the feedback are saved to your account so you can read your reports, and are deleted with it.",
       ],
     },
     {
@@ -166,7 +168,7 @@ export const PRIVACY: StaticPage = {
       body: ["Each of these processes some of your data in order to run part of the service."],
       bullets: [
         "Supabase — authentication and database storage for your account, resumes, scans and applications",
-        "OpenAI — processes resume and job description text to produce analysis and tailored output",
+        "OpenAI — processes resume and job description text to produce analysis and tailored output; for interview practice, writes the questions, transcribes spoken answers and scores them",
         "Dodo Payments — our merchant of record for subscriptions: it takes payment, issues invoices and handles sales tax, and receives your email address and billing details to do so. Card details go to Dodo Payments directly; SynCV never sees or stores them",
         "Resend — transactional email, such as account and welcome messages",
         "Vercel — application hosting, and privacy-friendly traffic analytics that do not build a profile of you",
