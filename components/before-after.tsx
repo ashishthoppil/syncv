@@ -46,7 +46,7 @@ const BeforeAfter = () => {
               <ArrowRight aria-hidden="true" className="h-6 w-6 rotate-90 lg:rotate-0" />
             </span>
             <span className="whitespace-nowrap rounded-full border border-hairline bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft shadow-sm">
-              2 clicks
+              in a single click
             </span>
           </div>
         </Reveal>

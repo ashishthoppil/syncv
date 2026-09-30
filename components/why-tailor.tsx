@@ -41,7 +41,7 @@ const WhyTailor = () => {
         <SectionHeading
           eyebrow="Why it matters"
           title="Why Tailor Your Resume for Every Job?"
-          description="Because the resume that describes your whole career is rarely the one that answers a specific posting. Tailoring decides what a reviewer sees first — it does not change what you have done."
+          description="Because the resume that describes your whole career is rarely the one that answers a specific posting. Tailoring decides what a reviewer sees first, it does not change what you have done."
         />
 
         <div className="mt-12 grid gap-6 sm:mt-16 sm:grid-cols-2">

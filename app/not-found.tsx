@@ -35,7 +35,7 @@ export default function NotFound() {
             >
               <span className="font-semibold">SynCV home</span>
               <span className="mt-1 block text-sm text-foreground/70">
-                Tailor your resume to any job description in two clicks.
+                Tailor your resume to any job description in a single click.
               </span>
             </Link>
           </li>

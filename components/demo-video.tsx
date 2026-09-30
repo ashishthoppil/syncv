@@ -42,7 +42,7 @@ const DemoVideo = () => {
           // Kept whole: the browser would otherwise happily break the line at
           // the hyphen and leave "Job-" dangling.
           <>
-            From Resume to <span className="whitespace-nowrap">Job-Specific</span> Resume in 2 Clicks
+            From Resume to <span className="whitespace-nowrap">Job-Specific</span> Resume in a Single Click
           </>
         }
         description="Job description in. Tailored resume out."

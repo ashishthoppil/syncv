@@ -27,7 +27,7 @@ import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans"
 const PATH = "/";
 const TITLE = "Job-Specific Resume Tailoring – Match Any Job Description";
 const DESCRIPTION =
-  `Tailor your resume to every job in 2 clicks. SynCV leads with the experience each job asks for — no invented skills, experience, or achievements. Try ${formatScanCount(FREE_PLAN_SCAN_LIMIT)} free.`;
+  `Tailor your resume to every job in a single click. SynCV leads with the experience each job asks for — no invented skills, experience, or achievements. Try ${formatScanCount(FREE_PLAN_SCAN_LIMIT)} free.`;
 
 export const metadata = buildMetadata({
   title: TITLE,

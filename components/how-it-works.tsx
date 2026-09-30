@@ -43,7 +43,7 @@ const HowItWorks = () => {
         <SectionHeading
           eyebrow="How it works"
           title="How SynCV Works"
-          description="One upload, then two clicks per application."
+          description="One upload, one click per application."
         />
 
         <ol className="mt-12 grid gap-6 sm:mt-16 md:grid-cols-3">

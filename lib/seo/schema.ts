@@ -58,7 +58,7 @@ export const websiteNode = (): JsonLdNode => ({
   url: absoluteUrl("/"),
   name: SITE_NAME,
   description:
-    "Tailor your resume to any job description in two clicks using the experience you already have.",
+    "Tailor your resume to any job description in a single click using the experience you already have.",
   publisher: { "@id": ORGANIZATION_ID },
   inLanguage: "en",
   // No SearchAction: the site has no internal search endpoint, and claiming one
@@ -91,7 +91,7 @@ export const softwareApplicationNode = (): JsonLdNode => ({
   browserRequirements: "Requires JavaScript. Works in any modern browser.",
   publisher: { "@id": ORGANIZATION_ID },
   description:
-    "SynCV tailors an existing resume to a specific job description in two clicks. It reorders, rewrites and re-emphasises the experience already on the resume, and reports how well the result matches the job description. It does not add skills or experience the candidate has not claimed.",
+    "SynCV tailors an existing resume to a specific job description in a single click. It reorders, rewrites and re-emphasises the experience already on the resume, and reports how well the result matches the job description. It does not add skills or experience the candidate has not claimed.",
   featureList: [
     "Resume tailoring against a pasted job description",
     "Job description keyword and requirement analysis",

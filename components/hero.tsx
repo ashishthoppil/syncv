@@ -79,7 +79,7 @@ const Hero = () => {
             className={`mt-6 max-w-2xl text-pretty text-center text-lg leading-relaxed text-ink-soft sm:text-xl ${ENTER}`}
             style={after(160)}
           >
-            Tailor your resume to every job in 2 clicks — using the experience and skills you already have.
+            Tailor your resume to every job in a single click, using the experience and skills you already have.
           </p>
           {/*
             One column on phones, two on tablets, then a centred 3 + 2 row on

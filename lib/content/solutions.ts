@@ -42,7 +42,7 @@ export type Solution = {
 export const SOLUTIONS = {
   resumeTailor: {
     path: "/resume-tailor",
-    title: "Tailor Your Resume to a Job Description in 2 Clicks",
+    title: "Tailor Your Resume to a Job Description in a Single Click",
     h1: "Tailor your resume to a job description",
     description:
       "Upload your resume once, paste a job description, and SynCV rewrites it for that job using the experience you already have. Tailor, don't fabricate.",
@@ -89,7 +89,7 @@ export const SOLUTIONS = {
       {
         heading: "How it works",
         body: [
-          "Two clicks, after a one-time setup. The base resume is stored so you never upload it again.",
+          "1 click, after a one-time setup. The base resume is stored so you never upload it again.",
         ],
         steps: [
           {
@@ -152,7 +152,7 @@ export const SOLUTIONS = {
       "freeScans",
     ]),
     cta: {
-      heading: "Tailor your resume in two clicks",
+      heading: "Tailor your resume in a single click",
       body: "Upload your resume, paste the job you're applying to, and see what changes — before you spend an evening doing it by hand.",
       action: "Tailor your resume free",
     },

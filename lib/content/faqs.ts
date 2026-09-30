@@ -24,7 +24,7 @@ export const FAQ_POOL = {
   whatIsJobSpecificTailor: {
     question: "What is job-specific resume tailoring?",
     answer:
-      "Job-specific resume tailoring reads your resume and a job description together, works out which of your existing experience matters most for that role, and rewrites the resume to lead with it. SynCV does this in two clicks: upload your resume once, paste a job description, and get a version aimed at that posting.",
+      "Job-specific resume tailoring reads your resume and a job description together, works out which of your existing experience matters most for that role, and rewrites the resume to lead with it. SynCV does this in a single click: upload your resume once, paste a job description, and get a version aimed at that posting.",
   },
   doesSyncvInvent: {
     question: "Does SynCV invent experience or skills?",
