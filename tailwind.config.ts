@@ -89,6 +89,10 @@ export default {
         // lets go completely once it ends — no lingering transform, so the
         // element's own hover transitions keep working afterwards.
         "reveal-up": "reveal-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) backwards",
+        // Mock interview: the level bars while someone is speaking, and the
+        // interviewer's avatar breathing while it waits.
+        "voice-bar": "voice-bar 0.9s ease-in-out infinite",
+        "orb-breathe": "orb-breathe 4s ease-in-out infinite",
       },
       keyframes: {
         marquee: {
@@ -125,6 +129,14 @@ export default {
         },
         "reveal-up": {
           from: { opacity: "0", transform: "translateY(1.5rem)" },
+        },
+        "voice-bar": {
+          "0%, 100%": { transform: "scaleY(0.3)" },
+          "50%": { transform: "scaleY(1)" },
+        },
+        "orb-breathe": {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.04)" },
         },
       },
     },

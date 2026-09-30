@@ -15,7 +15,6 @@ import { TapTooltip } from "@/components/ui/tooltip";
 import {
   ALL_PLANS,
   BILLING_PERIOD_BY_KEY,
-  DEFAULT_BILLING_PERIOD,
   FREE_PLAN_SCAN_LIMIT,
   formatScanCount,
 } from "@/lib/subscription-plans";
@@ -52,7 +51,9 @@ const MARKETING_COPY: Record<
 const plans = ALL_PLANS.map((plan) => ({ ...plan, ...MARKETING_COPY[plan.key] }));
 
 const Pricing = () => {
-  const [billingPeriod, setBillingPeriod] = useState<string>(DEFAULT_BILLING_PERIOD);
+  // The homepage opens on Weekly, the smallest commitment; the dashboard and
+  // checkout still fall back to DEFAULT_BILLING_PERIOD.
+  const [billingPeriod, setBillingPeriod] = useState<string>("weekly");
   const { region } = usePricingRegion();
   // The paid card wears the selected period's badge ("Most popular", "Best
   // value"); weekly has none.

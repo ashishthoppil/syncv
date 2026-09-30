@@ -9,6 +9,12 @@ import {
 import { FAIR_USE_SCANS_PER_DAY, FAIR_USE_SCANS_PER_HOUR } from "@/lib/subscription-plans";
 import { describeWait, getDayStartUtc } from "@/lib/server/optimization-allowance";
 import {
+  keywordPriority,
+  MIN_LINES_FOR_MENTION_COUNT,
+  REINFORCED_MENTIONS,
+  SINGLE_MENTION_CREDIT,
+} from "@/lib/keyword-priority";
+import {
   countScansSince,
   countWeeklyScans,
   countFreeTrialScans,
@@ -571,6 +577,11 @@ const clampWeight = (value) => {
   return Math.max(1, Math.min(10, Math.round(numeric)));
 };
 
+// What a keyword is worth in the score: its weight, lifted when the job
+// description lists it as required.
+const keywordBaseWeight = (keywordObj = {}) =>
+  clampWeight(keywordObj.weight) * (keywordObj.importance === "required" ? 1.2 : 1);
+
 const extractWeightedKeywordsWithAI = async ({
   cleanedJd,
   organization,
@@ -722,6 +733,26 @@ const findBestMatchForTerm = (term, resumeIndex) => {
   }
 
   return { matched: false, confidence: 0, mode: "none" };
+};
+
+// One index per non-empty resume line. A keyword's mentions are counted by the
+// lines it appears on, so repeating it within a line earns nothing.
+const buildResumeLineIndexes = (resumeText = "") =>
+  String(resumeText || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map(buildResumeIndex);
+
+const countKeywordMentions = (terms, lineIndexes, limit = REINFORCED_MENTIONS) => {
+  let mentions = 0;
+  for (const lineIndex of lineIndexes) {
+    if (terms.some((term) => findBestMatchForTerm(term, lineIndex).matched)) {
+      mentions += 1;
+      if (mentions >= limit) break;
+    }
+  }
+  return mentions;
 };
 
 // Title-token synonyms, grouped by profession. Candidates come from every
@@ -1612,9 +1643,17 @@ const buildSuggestions = ({
   titleMatchScore = 0,
   experienceScore = 0,
   formattingWarnings = [],
+  singleMentionKeywords = [],
 }) => {
   const suggestions = [];
   if (missingKeywords.length) suggestions.push("Add missing keywords from the job description.");
+  if (singleMentionKeywords.length) {
+    suggestions.push(
+      `Back up your must-have keywords in a second place, such as the bullet where you used them: ${singleMentionKeywords
+        .slice(0, 5)
+        .join(", ")}.`
+    );
+  }
   if (achievementScore < 60) suggestions.push("Include measurable achievements with numbers or percentages.");
   if (!sectionAnalysis?.foundSections?.summary) suggestions.push("Add a professional summary section.");
   if (!sectionAnalysis?.foundSections?.skills) suggestions.push("Improve or add a dedicated skills section.");
@@ -1631,17 +1670,20 @@ const scoreResume = (
   { jdText = "", targetRole = "", experienceYears = null, candidateTitle = "" } = {}
 ) => {
   const resumeIndex = buildResumeIndex(resumeText);
+  const lineIndexes = buildResumeLineIndexes(resumeText);
+  const canCountMentions = lineIndexes.length >= MIN_LINES_FOR_MENTION_COUNT;
 
   let totalWeight = 0;
   let matchedWeight = 0;
   const matched = [];
   const missing = [];
+  // Must-have keywords the resume mentions in only one place.
+  const singleMention = [];
 
   for (const keywordObj of weightedKeywords) {
     const keyword = keywordObj.keyword;
     const variants = Array.isArray(keywordObj.variants) ? keywordObj.variants : [];
-    const importanceBoost = keywordObj.importance === "required" ? 1.2 : 1;
-    const baseWeight = clampWeight(keywordObj.weight) * importanceBoost;
+    const baseWeight = keywordBaseWeight(keywordObj);
     totalWeight += baseWeight;
 
     const termsToTry = [keyword, ...variants].filter(Boolean);
@@ -1656,7 +1698,16 @@ const scoreResume = (
     }
 
     if (best.matched) {
-      matchedWeight += baseWeight * best.confidence;
+      let credit = baseWeight * best.confidence;
+      if (
+        canCountMentions &&
+        keywordPriority(keywordObj.weight) === "high" &&
+        countKeywordMentions(termsToTry, lineIndexes) < REINFORCED_MENTIONS
+      ) {
+        credit *= SINGLE_MENTION_CREDIT;
+        singleMention.push(keyword);
+      }
+      matchedWeight += credit;
       matched.push(keyword);
     } else {
       missing.push(keyword);
@@ -1666,14 +1717,20 @@ const scoreResume = (
   const keywordMatchScore =
     totalWeight === 0 ? 0 : clampScore((matchedWeight / totalWeight) * 100);
 
+  // Weighted like the keyword match: covering a must-have skill counts for more
+  // than covering a nice-to-have one.
   const skillKeywords = weightedKeywords.filter(isSkillLikeKeyword);
   const matchedSkillSet = new Set(matched.map((item) => canonical(item)));
-  const skillsMatchedCount = skillKeywords.filter((item) =>
-    matchedSkillSet.has(canonical(item.keyword))
-  ).length;
+  const totalSkillWeight = skillKeywords.reduce(
+    (sum, item) => sum + keywordBaseWeight(item),
+    0
+  );
+  const matchedSkillWeight = skillKeywords
+    .filter((item) => matchedSkillSet.has(canonical(item.keyword)))
+    .reduce((sum, item) => sum + keywordBaseWeight(item), 0);
   const skillsCoverageScore =
-    skillKeywords.length > 0
-      ? clampScore((skillsMatchedCount / skillKeywords.length) * 100)
+    totalSkillWeight > 0
+      ? clampScore((matchedSkillWeight / totalSkillWeight) * 100)
       : keywordMatchScore;
 
   const titleAnalysis = analyzeTitleMatch(resumeText, targetRole, candidateTitle);
@@ -1699,6 +1756,7 @@ const scoreResume = (
     titleMatchScore: titleAnalysis.score,
     experienceScore: experienceAnalysis.score,
     formattingWarnings,
+    singleMentionKeywords: singleMention,
   });
 
   return {
@@ -1720,6 +1778,7 @@ const scoreResume = (
     suggestions,
     matchedKeywords: matched,
     missingKeywords: missing,
+    singleMentionKeywords: singleMention,
     keywordUniverse: weightedKeywords.map((k) => k.keyword),
     weightedKeywords,
   };

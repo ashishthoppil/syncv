@@ -53,6 +53,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isLanguageKeyword } from "@/lib/languages";
+import { groupKeywordsByPriority, type WeightedKeywordLike } from "@/lib/keyword-priority";
+import {
+  KeywordPriorityChips,
+  KeywordPriorityHeading,
+  KeywordPriorityInline,
+} from "@/components/dashboard/keyword-priority";
 import type { BaseResumeRecord } from "@/lib/base-resume";
 import { RESUME_TEMPLATE_CONFIGS } from "@/components/resume-templates/config";
 import type { ResumeTemplateId } from "@/components/resume-templates/types";
@@ -113,6 +119,8 @@ type ScanResultView = {
   matchedKeywords: string[];
   missingKeywords: string[];
   keywordUniverse: string[];
+  /** Each keyword's weight; absent on a scan restored from before they were kept. */
+  weightedKeywords?: WeightedKeywordLike[];
   scoreBreakdown?: ScoreBreakdown;
   sectionAnalysis?: { foundSections?: Partial<Record<string, boolean>> };
   suggestions?: string[];
@@ -157,8 +165,20 @@ type PreviewControl = {
   isComputingFinalScore: boolean;
   hasEdits: boolean;
   onReevaluate: () => void;
-  /** The rendered resume, with added keywords highlighted (preview only). */
+  /**
+   * The rendered resume, with added keywords and unconfirmed figures
+   * highlighted (preview only).
+   */
   resumeHtml: string;
+  /** Metrics points whose figure was suggested and is still unconfirmed. */
+  estimatedMetrics: { company: string; bullet: string }[];
+  onConfirmEstimatedMetrics: () => void;
+  /**
+   * The change review: how many changes are still pending (suggested figures
+   * aside — those have their own notice), and the way to accept them at once.
+   * Tapping a highlight in the document reviews one. Null with nothing to review.
+   */
+  review: { pending: number; onAcceptAll: () => void } | null;
   coverLetterHtml: string;
   /**
    * The resume editor — one section of it, or all of it. Built by the host so
@@ -1113,11 +1133,13 @@ const KeywordListCard = ({
   tone,
   title,
   keywords,
+  weighted,
   emptyText,
 }: {
   tone: "matched" | "missing";
   title: string;
   keywords: string[];
+  weighted?: WeightedKeywordLike[];
   emptyText: string;
 }) => {
   const matched = tone === "matched";
@@ -1139,21 +1161,13 @@ const KeywordListCard = ({
         </span>
       </div>
       {keywords.length ? (
-        <ul className="mt-3 flex flex-wrap gap-1.5">
-          {keywords.map((keyword) => (
-            <li
-              key={keyword}
-              className={cn(
-                "break-anywhere rounded-full border px-2.5 py-[3px] text-xs font-medium",
-                matched
-                  ? "border-emerald-200 bg-emerald-50/70 text-emerald-700"
-                  : "border-rose-200 bg-rose-50/70 text-rose-600"
-              )}
-            >
-              {keyword}
-            </li>
-          ))}
-        </ul>
+        <KeywordPriorityChips
+          tone={tone}
+          keywords={keywords}
+          weighted={weighted}
+          dense
+          className="mt-3"
+        />
       ) : (
         <p className="mt-3 text-sm text-slate-500">{emptyText}</p>
       )}
@@ -2286,12 +2300,14 @@ export const MobileScanFlow = ({
           tone="matched"
           title="Matched keywords"
           keywords={result.matchedKeywords}
+          weighted={result.weightedKeywords}
           emptyText="None of the extracted keywords are present yet."
         />
         <KeywordListCard
           tone="missing"
           title="Missing keywords"
           keywords={result.missingKeywords}
+          weighted={result.weightedKeywords}
           emptyText="Great! Your resume covers every keyword we found."
         />
 
@@ -2400,14 +2416,30 @@ export const MobileScanFlow = ({
         {skills.length ? (
           <section className={cn(CARD, "p-3.5")}>
             {toolbar}
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {skills.map((keyword) => (
-                <SelectableChip
-                  key={keyword}
-                  keyword={keyword}
-                  selected={selectedSet.has(keyword)}
-                  onToggle={() => keywordPicker.onToggle(keyword)}
-                />
+            {/* By how much the job depends on each keyword, so the ones worth
+                confirming come first. */}
+            <div className="mt-3 space-y-3">
+              {groupKeywordsByPriority(skills, result?.weightedKeywords).map((tier) => (
+                <div key={tier.priority ?? "all"}>
+                  {tier.priority ? (
+                    <KeywordPriorityHeading
+                      priority={tier.priority}
+                      label={tier.label}
+                      count={tier.keywords.length}
+                      className="mb-2"
+                    />
+                  ) : null}
+                  <div className="flex flex-wrap gap-1.5">
+                    {tier.keywords.map((keyword) => (
+                      <SelectableChip
+                        key={keyword}
+                        keyword={keyword}
+                        selected={selectedSet.has(keyword)}
+                        onToggle={() => keywordPicker.onToggle(keyword)}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </section>
@@ -2604,6 +2636,78 @@ export const MobileScanFlow = ({
           </div>
         ) : null}
 
+        {onResume && preview.estimatedMetrics.length ? (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5">
+            <div className="flex gap-3">
+              <AlertTriangle
+                className="h-[22px] w-[22px] shrink-0 text-orange-500"
+                strokeWidth={1.9}
+              />
+              <p className="text-[13px] leading-relaxed text-orange-800">
+                <strong className="font-semibold">
+                  Check {preview.estimatedMetrics.length === 1 ? "this figure" : "these figures"}.
+                </strong>{" "}
+                {preview.estimatedMetrics.length === 1
+                  ? "Your resume gave no number for the point highlighted in amber, so we suggested a realistic one. Edit it to your real result before you download."
+                  : `Your resume gave no numbers for the ${preview.estimatedMetrics.length} points highlighted in amber, so we suggested realistic ones. Edit them to your real results before you download.`}
+              </p>
+            </div>
+            <ul className="mt-2.5 space-y-1.5 text-[13px] leading-snug text-orange-900">
+              {preview.estimatedMetrics.map((metric) => (
+                <li key={metric.bullet} className="flex gap-2">
+                  <span aria-hidden className="text-orange-400">
+                    •
+                  </span>
+                  <span className="break-anywhere min-w-0">
+                    {metric.company ? (
+                      <span className="font-semibold">{metric.company}: </span>
+                    ) : null}
+                    {metric.bullet}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={openEditorSheet}
+                className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200"
+              >
+                <Pencil className="h-4 w-4" /> Edit
+              </button>
+              <button
+                type="button"
+                onClick={preview.onConfirmEstimatedMetrics}
+                className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-slate-200"
+              >
+                <Check className="h-4 w-4" />
+                {preview.estimatedMetrics.length === 1 ? "It's correct" : "They're correct"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {onResume && preview.review && preview.review.pending > 0 ? (
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3">
+            <p className="min-w-0 flex-1 text-[13px] leading-snug text-emerald-900">
+              <strong className="font-semibold">
+                {preview.review.pending === 1
+                  ? "1 change to review."
+                  : `${preview.review.pending} changes to review.`}
+              </strong>{" "}
+              The old text is in red, the new in green. Tap a highlight to accept or reject it.
+            </p>
+            <button
+              type="button"
+              onClick={preview.review.onAcceptAll}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white shadow-sm"
+            >
+              <Check className="h-4 w-4" strokeWidth={2.75} />
+              Accept all
+            </button>
+          </div>
+        ) : null}
+
         {onResume ? (
           <>
             <DocumentPreview
@@ -2616,14 +2720,18 @@ export const MobileScanFlow = ({
               <div className="space-y-1 px-1 text-xs leading-relaxed">
                 {added.length ? (
                   <p className="text-emerald-700">
-                    <span className="font-semibold">Added:</span> {added.join(", ")}
+                    <span className="font-semibold">Added:</span>{" "}
+                    <KeywordPriorityInline keywords={added} weighted={result?.weightedKeywords} />
                     <span className="text-slate-400"> · highlighted above, never in the download</span>
                   </p>
                 ) : null}
                 {notIncluded.length ? (
                   <p className="text-slate-500">
                     <span className="font-semibold text-slate-600">Not included:</span>{" "}
-                    {notIncluded.join(", ")}
+                    <KeywordPriorityInline
+                      keywords={notIncluded}
+                      weighted={result?.weightedKeywords}
+                    />
                   </p>
                 ) : null}
               </div>

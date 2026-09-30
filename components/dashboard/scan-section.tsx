@@ -5,6 +5,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { isLanguageKeyword } from "@/lib/languages";
+import { groupKeywordsByPriority } from "@/lib/keyword-priority";
+import {
+  buildResumeReview,
+  lineOfReviewChange,
+  markReviewedResume,
+  rejectReviewChange,
+  renderReviewMarkup,
+  type ResumeReview,
+  type ReviewDecisions,
+} from "@/lib/resume-review";
+import { ResumeReviewPopover } from "@/components/dashboard/resume-review-popover";
+import {
+  KeywordPriorityChips,
+  KeywordPriorityHeading,
+  KeywordPriorityInline,
+  keywordPriorityText,
+} from "@/components/dashboard/keyword-priority";
 import {
   SCAN_SOURCE_MANUAL,
   type ScanSource,
@@ -29,6 +46,7 @@ import {
 import {
   extractCandidateName,
   highlightKeywordsInHtml,
+  highlightLinesInHtml,
   renderCoverLetterHtml,
   renderResumeFromData,
   renderResumeHtml,
@@ -146,6 +164,9 @@ type TailoredDocs = {
   coverLetter: string;
   incorporatedKeywords?: string[];
   stillMissingKeywords?: string[];
+  // Metrics points whose figure the optimizer suggested because the resume
+  // stated none. Flagged in the preview until edited or confirmed.
+  estimatedMetrics?: { company: string; bullet: string }[];
 };
 
 type ProfileContactPayload = {
@@ -396,6 +417,13 @@ export const ScanSection = ({
   const [isComputingFinalScore, setIsComputingFinalScore] = useState(false);
   const [editableResumeText, setEditableResumeText] = useState("");
   const [resumeData, setResumeData] = useState<ResumeData | null>(null);
+  // What the optimizer changed against the base resume, and what the user has
+  // decided about each change so far. Null when there is no structured base
+  // resume to compare with.
+  const [review, setReview] = useState<ResumeReview | null>(null);
+  const [reviewDecisions, setReviewDecisions] = useState<ReviewDecisions>({});
+  // Download was asked for with changes still unreviewed.
+  const [downloadGateOpen, setDownloadGateOpen] = useState(false);
   // The Design tab and Cover letter view unmount the resume editor; this is
   // how it comes back with its drafts and used Rephrase / Generate buttons.
   const resumeEditorSession = useRef<ResumeEditorSession | null>(null);
@@ -899,6 +927,9 @@ export const ScanSection = ({
     setFinalScore(null);
     setEditableResumeText("");
     setResumeData(null);
+    setReview(null);
+    setReviewDecisions({});
+    setDownloadGateOpen(false);
     setHasResumePreviewEdits(false);
     setShowCareerWarning(false);
     setShowCareerKeywordPicker(false);
@@ -1547,6 +1578,14 @@ export const ScanSection = ({
       // New documents: whatever was downloaded before no longer counts.
       setDownloadedDocs({ cv: false, cover: false });
       setResumeData(data.message.optimizedResume || null);
+      // Every change against the base resume starts out pending review.
+      setReview(
+        selectedResumeData && data.message.optimizedResume
+          ? buildResumeReview(selectedResumeData, data.message.optimizedResume)
+          : null
+      );
+      setReviewDecisions({});
+      setDownloadGateOpen(false);
       setEditableResumeText(data.message.optimizedResumeText || "");
       setHasResumePreviewEdits(false);
       setPreviewCandidateName(extractCandidateName(form.resume));
@@ -2121,16 +2160,11 @@ export const ScanSection = ({
               </span>
             </div>
             {result.matchedKeywords.length ? (
-              <ul className="flex flex-wrap gap-1.5">
-                {result.matchedKeywords.map((keyword) => (
-                  <li
-                    key={keyword}
-                    className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
-                  >
-                    {keyword}
-                  </li>
-                ))}
-              </ul>
+              <KeywordPriorityChips
+                tone="matched"
+                keywords={result.matchedKeywords}
+                weighted={result.weightedKeywords}
+              />
             ) : (
               <p className="text-sm text-slate-500">
                 None of the extracted keywords are present yet.
@@ -2149,16 +2183,11 @@ export const ScanSection = ({
               </span>
             </div>
             {result.missingKeywords.length ? (
-              <ul className="flex flex-wrap gap-1.5">
-                {result.missingKeywords.map((keyword) => (
-                  <li
-                    key={keyword}
-                    className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700"
-                  >
-                    {keyword}
-                  </li>
-                ))}
-              </ul>
+              <KeywordPriorityChips
+                tone="missing"
+                keywords={result.missingKeywords}
+                weighted={result.weightedKeywords}
+              />
             ) : (
               <p className="text-sm text-slate-500">
                 Great! Your resume covers every keyword we found.
@@ -2256,33 +2285,187 @@ export const ScanSection = ({
 
   // ---- Shared by the desktop preview and the phone flow ----------------------
 
-  // Highlight added keywords in the PREVIEW only — downloadPdf() renders its
-  // own HTML, so the PDF is never highlighted.
+  // Metrics points still carrying a figure the optimizer suggested. One drops
+  // off this list as soon as its bullet is edited (the text no longer matches),
+  // and all of them do when the user confirms the figures are right.
+  const pendingEstimatedMetrics = (tailoredDocs?.estimatedMetrics || []).filter((metric) =>
+    resumeData
+      ? (resumeData.experience || []).some((role) =>
+          (role.responsibilities || []).includes(metric.bullet)
+        )
+      : (editableResumeText || tailoredDocs?.optimizedResumeText || "").includes(metric.bullet)
+  );
+
+  // ---- Change review ----------------------------------------------------------
+  //
+  // The resume with each pending change marked (old text, then new), for the
+  // preview only. `resumeData` itself always holds the optimizer's text for a
+  // pending change, so nothing here reaches the editor, the re-score or the PDF.
+  const reviewed =
+    review && renderableResumeData
+      ? markReviewedResume(
+          renderableResumeData,
+          review,
+          reviewDecisions,
+          pendingEstimatedMetrics.map((metric) => metric.bullet)
+        )
+      : null;
+  // Changes inside a line with an unconfirmed suggested figure. "Accept all"
+  // leaves these alone: a figure the user never gave is confirmed on purpose.
+  const estimatedChangeIds = new Set(reviewed?.estimatedIds || []);
+  const pendingChangeIds = (reviewed?.pendingIds || []).filter(
+    (id) => !estimatedChangeIds.has(id)
+  );
+  const pendingReviewTotal = Math.max(
+    reviewed?.pendingIds.length || 0,
+    pendingEstimatedMetrics.length
+  );
+  const reviewBlocksDownload = reviewed !== null && pendingReviewTotal > 0;
+
+  const acceptReviewChanges = (ids: number[]) =>
+    setReviewDecisions((current) => {
+      const next = { ...current };
+      ids.forEach((id) => {
+        next[id] = "accepted";
+      });
+      return next;
+    });
+
+  const confirmEstimatedMetrics = () => {
+    setTailoredDocs((docs) => (docs ? { ...docs, estimatedMetrics: [] } : docs));
+    acceptReviewChanges(reviewed?.estimatedIds || []);
+  };
+
+  const acceptReviewChange = (id: number) => {
+    // Accepting a change in a line with a suggested figure confirms the figure.
+    if (estimatedChangeIds.has(id) && resumeData && review) {
+      const line = lineOfReviewChange(resumeData, review, reviewDecisions, id);
+      setTailoredDocs((docs) =>
+        docs
+          ? {
+              ...docs,
+              estimatedMetrics: (docs.estimatedMetrics || []).filter(
+                (metric) => metric.bullet.replace(/\s+/g, " ").trim() !== line
+              ),
+            }
+          : docs
+      );
+    }
+    acceptReviewChanges([id]);
+  };
+
+  // Rejecting puts the base resume's text back, so it is an edit like any other.
+  const rejectReviewChangeById = (id: number) => {
+    if (!resumeData || !review) return;
+    const next = rejectReviewChange(resumeData, review, reviewDecisions, id);
+    setReviewDecisions(next.decisions);
+    if (next.data !== resumeData) {
+      setResumeData(next.data);
+      setEditableResumeText(resumeDataToText(next.data));
+      setHasResumePreviewEdits(true);
+    }
+  };
+
+  const acceptAllReviewChanges = ({ includeFigures = false } = {}) => {
+    if (includeFigures) {
+      setTailoredDocs((docs) => (docs ? { ...docs, estimatedMetrics: [] } : docs));
+      acceptReviewChanges(reviewed?.pendingIds || []);
+    } else {
+      acceptReviewChanges(pendingChangeIds);
+    }
+  };
+
+  // The resume downloads only once every change has been accepted or rejected.
+  const requestDownload = (type: "cv" | "cover") => {
+    if (type === "cv" && reviewBlocksDownload) {
+      setDownloadGateOpen(true);
+      return;
+    }
+    downloadPdf(type);
+  };
+
+  // Mark pending changes — or, with no review to show, added keywords and
+  // unconfirmed figures — in the PREVIEW only. downloadPdf() renders its own
+  // HTML, so the PDF is never highlighted.
   const renderPreviewResumeHtml = () => {
     if (!tailoredDocs) return "";
+    if (reviewed) {
+      return renderReviewMarkup(
+        renderResumeFromData({
+          data: reviewed.data,
+          templateId: selectedTemplate,
+          candidateName: previewCandidateName,
+          designation: previewDesignation,
+          photoUrl: resumePhotoUrl,
+          overrides: templateOverrides[selectedTemplate],
+          useContactIcons: !guestTrial,
+        })
+      );
+    }
     return highlightKeywordsInHtml(
-      renderableResumeData
-        ? renderResumeFromData({
-            data: renderableResumeData,
-            templateId: selectedTemplate,
-            candidateName: previewCandidateName,
-            designation: previewDesignation,
-            photoUrl: resumePhotoUrl,
-            overrides: templateOverrides[selectedTemplate],
-            useContactIcons: !guestTrial,
-          })
-        : renderResumeHtml({
-            resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
-            templateId: selectedTemplate,
-            candidateName: previewCandidateName,
-            designation: previewDesignation,
-            photoUrl: resumePhotoUrl,
-            overrides: templateOverrides[selectedTemplate],
-            useContactIcons: !guestTrial,
-          }),
+      highlightLinesInHtml(
+        renderableResumeData
+          ? renderResumeFromData({
+              data: renderableResumeData,
+              templateId: selectedTemplate,
+              candidateName: previewCandidateName,
+              designation: previewDesignation,
+              photoUrl: resumePhotoUrl,
+              overrides: templateOverrides[selectedTemplate],
+              useContactIcons: !guestTrial,
+            })
+          : renderResumeHtml({
+              resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
+              templateId: selectedTemplate,
+              candidateName: previewCandidateName,
+              designation: previewDesignation,
+              photoUrl: resumePhotoUrl,
+              overrides: templateOverrides[selectedTemplate],
+              useContactIcons: !guestTrial,
+            }),
+        pendingEstimatedMetrics.map((metric) => metric.bullet)
+      ),
       tailoredDocs.incorporatedKeywords || []
     );
   };
+
+  const estimatedMetricsNotice = pendingEstimatedMetrics.length ? (
+    <div className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+      <div className="min-w-0 flex-1 text-xs leading-relaxed text-amber-900">
+        <p>
+          <strong className="font-semibold">
+            Check {pendingEstimatedMetrics.length === 1 ? "this figure" : "these figures"}.
+          </strong>{" "}
+          {pendingEstimatedMetrics.length === 1
+            ? "Your resume gave no number for the point highlighted in amber, so we suggested a realistic one. Edit it to your real result before you download."
+            : `Your resume gave no numbers for the ${pendingEstimatedMetrics.length} points highlighted in amber, so we suggested realistic ones. Edit them to your real results before you download.`}
+        </p>
+        <ul className="mt-1.5 space-y-1">
+          {pendingEstimatedMetrics.map((metric) => (
+            <li key={metric.bullet} className="flex gap-1.5">
+              <span aria-hidden className="text-amber-500">
+                •
+              </span>
+              <span className="break-anywhere min-w-0">
+                {metric.company ? (
+                  <span className="font-semibold">{metric.company}: </span>
+                ) : null}
+                {metric.bullet}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <button
+        type="button"
+        onClick={confirmEstimatedMetrics}
+        className="shrink-0 rounded-md bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-900 shadow-sm ring-1 ring-amber-200 transition hover:bg-amber-100"
+      >
+        {pendingEstimatedMetrics.length === 1 ? "It's correct" : "They're correct"}
+      </button>
+    </div>
+  ) : null;
 
   // The phone flow edits one section at a time; the desktop preview shows
   // them all. Both share the one editor session, so drafts carry across.
@@ -2585,6 +2768,83 @@ export const ScanSection = ({
     </div>
   ) : null;
 
+  // Asked to download with changes still unreviewed. Sits above the preview,
+  // like the exit confirm, and offers the one action that clears the way.
+  const downloadGateDialog =
+    downloadGateOpen && reviewed ? (
+      <div className={cn(DIALOG_BACKDROP, "z-[90]")}>
+        <div className={cn(DIALOG_PANEL, "max-w-lg", DIALOG_BODY)}>
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Review the changes before downloading
+              </h3>
+              <p className="mt-1 text-sm text-slate-600">
+                {pendingReviewTotal === 1
+                  ? "1 change to your resume is"
+                  : `${pendingReviewTotal} changes to your resume are`}{" "}
+                still waiting for you. Accept or reject each one in the preview, or accept
+                them all here.
+              </p>
+              {pendingEstimatedMetrics.length ? (
+                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">
+                  <p>
+                    <strong className="font-semibold">
+                      {pendingEstimatedMetrics.length === 1
+                        ? "One of them is a figure we suggested."
+                        : `${pendingEstimatedMetrics.length} of them are figures we suggested.`}
+                    </strong>{" "}
+                    Your resume gave no numbers here, so accepting confirms{" "}
+                    {pendingEstimatedMetrics.length === 1 ? "this one is" : "these are"} right:
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {pendingEstimatedMetrics.map((metric) => (
+                      <li key={metric.bullet} className="flex gap-1.5">
+                        <span aria-hidden className="text-amber-500">
+                          •
+                        </span>
+                        <span className="break-anywhere min-w-0">{metric.bullet}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => setDownloadGateOpen(false)}
+            >
+              Review changes
+            </Button>
+            <Button
+              className="w-full sm:w-auto"
+              onClick={() => {
+                acceptAllReviewChanges({ includeFigures: true });
+                setDownloadGateOpen(false);
+                downloadPdf("cv");
+              }}
+            >
+              <Check className="mr-2 h-4 w-4" />
+              Accept all &amp; download
+            </Button>
+          </div>
+        </div>
+      </div>
+    ) : null;
+
+  const reviewPopover = (
+    <ResumeReviewPopover
+      enabled={previewOpen && reviewed !== null && !downloadGateOpen && !pendingExit}
+      onAccept={acceptReviewChange}
+      onReject={rejectReviewChangeById}
+    />
+  );
+
   if (isMobileLayout && !guestTrial) {
     const selectableKeywords = result
       ? result.missingKeywords.filter((keyword) => !isDegreeKeyword(keyword))
@@ -2647,6 +2907,11 @@ export const ScanSection = ({
             hasEdits: hasResumePreviewEdits,
             onReevaluate: reevaluateEditedResumeScore,
             resumeHtml: previewOpen ? renderPreviewResumeHtml() : "",
+            estimatedMetrics: pendingEstimatedMetrics,
+            onConfirmEstimatedMetrics: confirmEstimatedMetrics,
+            review: reviewed
+              ? { pending: pendingChangeIds.length, onAcceptAll: () => acceptAllReviewChanges() }
+              : null,
             coverLetterHtml:
               previewOpen && tailoredDocs ? renderCoverLetterHtml(tailoredDocs.coverLetter) : "",
             renderEditor: (section, onNotice) =>
@@ -2657,11 +2922,13 @@ export const ScanSection = ({
             onTemplateChange: setSelectedTemplate,
             downloadingType,
             downloaded: downloadedDocs,
-            onDownload: downloadPdf,
+            onDownload: requestDownload,
             onRequestExit: requestExit,
           }}
         />
         {careerWarningDialog}
+        {reviewPopover}
+        {downloadGateDialog}
         {exitConfirmDialog}
       </section>
     );
@@ -3126,36 +3393,54 @@ export const ScanSection = ({
                     {group.hint ? (
                       <p className="mb-2 text-xs text-slate-500">{group.hint}</p>
                     ) : null}
-                    <div className="flex flex-wrap gap-2">
-                      {group.keywords.map((keyword) => {
-                        const selected = careerSelectedKeywords.includes(keyword);
-                        return (
-                          <button
-                            key={keyword}
-                            type="button"
-                            onClick={() => toggleCareerKeyword(keyword)}
-                            aria-pressed={selected}
-                            className={cn(
-                              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                              selected
-                                ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
-                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "flex h-4 w-4 items-center justify-center rounded-full border transition",
-                                selected
-                                  ? "border-emerald-500 bg-emerald-500 text-white"
-                                  : "border-slate-300 bg-white text-transparent"
-                              )}
-                            >
-                              <Check className="h-3 w-3" />
-                            </span>
-                            {keyword}
-                          </button>
-                        );
-                      })}
+                    {/* Within a group, by how much the job depends on each
+                        keyword — so the ones worth confirming come first. */}
+                    <div className="space-y-3">
+                      {groupKeywordsByPriority(group.keywords, result.weightedKeywords).map(
+                        (tier) => (
+                          <div key={tier.priority ?? "all"}>
+                            {tier.priority ? (
+                              <KeywordPriorityHeading
+                                priority={tier.priority}
+                                label={tier.label}
+                                count={tier.keywords.length}
+                                className="mb-2"
+                              />
+                            ) : null}
+                            <div className="flex flex-wrap gap-2">
+                              {tier.keywords.map((keyword) => {
+                                const selected = careerSelectedKeywords.includes(keyword);
+                                return (
+                                  <button
+                                    key={keyword}
+                                    type="button"
+                                    onClick={() => toggleCareerKeyword(keyword)}
+                                    aria-pressed={selected}
+                                    className={cn(
+                                      "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                                      selected
+                                        ? "border-emerald-400 bg-emerald-50 text-emerald-700 shadow-sm"
+                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                                    )}
+                                  >
+                                    <span
+                                      className={cn(
+                                        "flex h-4 w-4 items-center justify-center rounded-full border transition",
+                                        selected
+                                          ? "border-emerald-500 bg-emerald-500 text-white"
+                                          : "border-slate-300 bg-white text-transparent"
+                                      )}
+                                    >
+                                      <Check className="h-3 w-3" />
+                                    </span>
+                                    {keyword}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )
+                      )}
                     </div>
                   </div>
                 ))}
@@ -3593,7 +3878,36 @@ export const ScanSection = ({
                       <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                         Preview
                       </span>
-                      {tailoredDocs.incorporatedKeywords?.length ? (
+                      {reviewed ? (
+                        reviewed.pendingIds.length ? (
+                          <span
+                            className="hidden items-center gap-3 whitespace-nowrap text-[11px] text-slate-500 sm:inline-flex"
+                            title="Hover a highlighted change to accept or reject it"
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              <span
+                                aria-hidden
+                                className="inline-block h-2.5 w-4 rounded-sm"
+                                style={{ backgroundColor: "rgba(244,63,94,0.22)" }}
+                              />
+                              Before
+                            </span>
+                            <span className="inline-flex items-center gap-1.5">
+                              <span
+                                aria-hidden
+                                className="inline-block h-2.5 w-4 rounded-sm"
+                                style={{ backgroundColor: "rgba(16,185,129,0.28)" }}
+                              />
+                              After (hover to review)
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="hidden items-center gap-1 text-[11px] font-medium text-emerald-700 sm:inline-flex">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            All changes reviewed
+                          </span>
+                        )
+                      ) : tailoredDocs.incorporatedKeywords?.length ? (
                         <span className="hidden items-center gap-1.5 text-[11px] text-slate-500 sm:inline-flex">
                           <span
                             aria-hidden
@@ -3603,8 +3917,31 @@ export const ScanSection = ({
                           Added keywords — not shown in the download
                         </span>
                       ) : null}
+                      {pendingEstimatedMetrics.length ? (
+                        <span className="hidden items-center gap-1.5 whitespace-nowrap text-[11px] text-amber-700 sm:inline-flex">
+                          <span
+                            aria-hidden
+                            className="inline-block h-2.5 w-4 rounded-sm"
+                            style={{ backgroundColor: "rgba(245,158,11,0.3)" }}
+                          />
+                          Suggested figure
+                        </span>
+                      ) : null}
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5 text-slate-500">
+                      {pendingChangeIds.length ? (
+                        <button
+                          type="button"
+                          onClick={() => acceptAllReviewChanges()}
+                          className="mr-1.5 inline-flex h-7 items-center gap-1 rounded-md bg-emerald-600 px-2.5 text-xs font-semibold text-white transition hover:bg-emerald-700"
+                        >
+                          <Check className="h-3.5 w-3.5" strokeWidth={2.75} />
+                          Accept all
+                          <span className="tabular-nums opacity-80">
+                            ({pendingChangeIds.length})
+                          </span>
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         aria-label="Zoom out"
@@ -3631,6 +3968,11 @@ export const ScanSection = ({
                     </div>
                   </div>
                   <div className="touch-scroll min-h-0 flex-1 overflow-auto px-3 pb-6 sm:px-5">
+                    {estimatedMetricsNotice ? (
+                      <div className="mx-auto mb-3 w-full max-w-[820px]">
+                        {estimatedMetricsNotice}
+                      </div>
+                    ) : null}
                     <div
                       className="mx-auto w-full max-w-[820px] overflow-hidden rounded-md bg-white shadow-md ring-1 ring-slate-200"
                       style={{ zoom: previewZoom }}
@@ -3662,19 +4004,31 @@ export const ScanSection = ({
                 {tailoredDocs.incorporatedKeywords?.length ? (
                   <p
                     className="truncate text-xs text-emerald-700"
-                    title={tailoredDocs.incorporatedKeywords.join(", ")}
+                    title={keywordPriorityText(
+                      tailoredDocs.incorporatedKeywords,
+                      result?.weightedKeywords
+                    )}
                   >
                     <span className="font-semibold">Added:</span>{" "}
-                    {tailoredDocs.incorporatedKeywords.join(", ")}
+                    <KeywordPriorityInline
+                      keywords={tailoredDocs.incorporatedKeywords}
+                      weighted={result?.weightedKeywords}
+                    />
                   </p>
                 ) : null}
                 {tailoredDocs.stillMissingKeywords?.length ? (
                   <p
                     className="truncate text-xs text-slate-500"
-                    title={tailoredDocs.stillMissingKeywords.join(", ")}
+                    title={keywordPriorityText(
+                      tailoredDocs.stillMissingKeywords,
+                      result?.weightedKeywords
+                    )}
                   >
                     <span className="font-semibold text-slate-600">Not included:</span>{" "}
-                    {tailoredDocs.stillMissingKeywords.join(", ")}
+                    <KeywordPriorityInline
+                      keywords={tailoredDocs.stillMissingKeywords}
+                      weighted={result?.weightedKeywords}
+                    />
                   </p>
                 ) : null}
               </div>
@@ -3706,7 +4060,7 @@ export const ScanSection = ({
                   }
                   onClick={() => {
                     if (guestTrial) return;
-                    downloadPdf(previewView === "cover" ? "cover" : "cv");
+                    requestDownload(previewView === "cover" ? "cover" : "cv");
                   }}
                 >
                   {guestTrial ? (
@@ -3742,6 +4096,8 @@ export const ScanSection = ({
         </div>
       )}
 
+      {reviewPopover}
+      {downloadGateDialog}
       {exitConfirmDialog}
     </section>
   );
