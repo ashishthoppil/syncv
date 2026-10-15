@@ -9,21 +9,31 @@ import { Input } from "@/components/ui/input";
 import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
 import { cn } from "@/lib/utils";
 import {
+  COMPANY_SIZES,
+  COMPANY_TYPES,
   EMPLOYMENT_TYPES,
   dedupeLabels,
-  EXPERIENCE_LEVELS,
   FREE_PLAN_PREVIEW_JOBS,
   FREE_PLAN_VISIBLE_JOBS,
+  INDUSTRIES,
   isScannable,
+  JOB_RETENTION_DAYS,
+  LOCATION_OPTIONS,
   POSTED_WITHIN_OPTIONS,
+  REGION_LABELS,
   REMOTE_JOBS_PAGE_SIZE,
-  REMOTE_LOCATIONS,
+  SALARY_OPTIONS,
+  SENIORITY_LEVELS,
+  SOURCE_HOMEPAGES,
+  TECH_STACK_FILTERS,
+  WORKPLACE_TYPES,
   type RemoteJob,
 } from "@/lib/remote-jobs/types";
 import {
   ArrowLeft,
   Building2,
   Clock,
+  Code2,
   ExternalLink,
   Globe2,
   Loader2,
@@ -44,18 +54,61 @@ const EXAMPLE_QUERIES = [
 ];
 
 type Filters = {
-  remoteLocation: string;
+  workplaceType: string;
+  location: string;
   employmentType: string;
-  experienceLevel: string;
+  seniority: string;
   postedWithinDays: string;
+  techStack: string;
+  industry: string;
+  companyType: string;
+  companySize: string;
+  salary: string;
 };
 
 const EMPTY_FILTERS: Filters = {
-  remoteLocation: "",
+  workplaceType: "",
+  location: "",
   employmentType: "",
-  experienceLevel: "",
+  seniority: "",
   postedWithinDays: "",
+  techStack: "",
+  industry: "",
+  companyType: "",
+  companySize: "",
+  salary: "",
 };
+
+type FilterOption = { value: string; label: string };
+
+/** The filter panel, in display order. "" is each filter's "any" choice. */
+const FILTER_FIELDS: {
+  key: keyof Filters;
+  label: string;
+  anyLabel: string;
+  options: readonly FilterOption[];
+}[] = [
+  { key: "workplaceType", label: "Work type", anyLabel: "Remote or hybrid", options: WORKPLACE_TYPES },
+  { key: "location", label: "Location", anyLabel: "Any location", options: LOCATION_OPTIONS },
+  { key: "employmentType", label: "Employment type", anyLabel: "Any type", options: EMPLOYMENT_TYPES },
+  { key: "seniority", label: "Seniority", anyLabel: "Any level", options: SENIORITY_LEVELS },
+  {
+    key: "postedWithinDays",
+    label: "Posted",
+    anyLabel: `Last ${JOB_RETENTION_DAYS} days`,
+    options: POSTED_WITHIN_OPTIONS,
+  },
+  {
+    key: "techStack",
+    label: "Tech stack",
+    anyLabel: "Any tech",
+    options: TECH_STACK_FILTERS.map((tech) => ({ value: tech, label: tech })),
+  },
+  { key: "industry", label: "Industry", anyLabel: "Any industry", options: INDUSTRIES },
+  { key: "companyType", label: "Company type", anyLabel: "Any company", options: COMPANY_TYPES },
+  { key: "companySize", label: "Company size", anyLabel: "Any size", options: COMPANY_SIZES },
+  { key: "salary", label: "Salary", anyLabel: "Any salary", options: SALARY_OPTIONS },
+];
 
 type RemoteJobsSectionProps = {
   userId?: string;
@@ -96,6 +149,13 @@ type RemoteJobsSectionProps = {
 const SELECT_CLASS =
   "h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 md:h-9";
 
+const labelMap = (options: readonly FilterOption[]) =>
+  Object.fromEntries(options.map((option) => [option.value, option.label]));
+const EMPLOYMENT_LABELS = labelMap(EMPLOYMENT_TYPES);
+const SENIORITY_LABELS = labelMap(SENIORITY_LEVELS);
+const INDUSTRY_LABELS = labelMap(INDUSTRIES);
+const SIZE_LABELS = labelMap(COMPANY_SIZES);
+
 const formatPostedAt = (iso: string) => {
   if (!iso) return "";
   const posted = new Date(iso).getTime();
@@ -110,21 +170,94 @@ const formatPostedAt = (iso: string) => {
 
 /** "Full-time · Senior" — only the parts the source actually gave us. */
 const metaLine = (job: RemoteJob) =>
-  [job.employmentType, job.experienceLevel].filter(Boolean).join(" · ");
+  [EMPLOYMENT_LABELS[job.employmentType], SENIORITY_LABELS[job.seniority]]
+    .filter(Boolean)
+    .join(" · ");
+
+/** "Startup · 51–200 employees · Fintech & Financial Services" */
+const companyLine = (job: RemoteJob) =>
+  [
+    job.isStartup ? "Startup" : "",
+    SIZE_LABELS[job.companySize] || "",
+    INDUSTRY_LABELS[job.industry] || "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
 /**
- * Chips for a job: its skills when the source gives any, otherwise its own
- * categorisation. De-duplicated here as well as in the normalizers — the label
- * doubles as the React key, and a cached response from before the normalizers
- * deduped would otherwise throw a duplicate-key error.
+ * Chips for a job: its tech stack when the posting names any, otherwise the
+ * source's own categorisation. De-duplicated here as well — the label doubles
+ * as the React key.
  */
 const tagsFor = (job: RemoteJob) =>
   dedupeLabels(job.skills.length ? job.skills : job.categories);
 
-const remoteLine = (job: RemoteJob) =>
-  job.remoteCountries.length
-    ? `Remote — ${job.remoteCountries.join(", ")}`
-    : "Remote";
+let regionNames: Intl.DisplayNames | null = null;
+const countryName = (code: string) => {
+  try {
+    regionNames ??= new Intl.DisplayNames(["en"], { type: "region" });
+    return regionNames.of(code) || code;
+  } catch {
+    return code;
+  }
+};
+
+/**
+ * "Remote — Anywhere", "Remote — India, APAC", "Hybrid — Bengaluru, India".
+ * For a remote job the countries and regions are where you may work from; for
+ * a hybrid job the source's own location (the office) reads better.
+ */
+const placeLine = (job: RemoteJob) => {
+  const kind = job.workplaceType === "hybrid" ? "Hybrid" : "Remote";
+  if (job.workplaceType === "remote" && job.regions.includes("worldwide")) {
+    return `${kind} — Anywhere`;
+  }
+  const areas = dedupeLabels([
+    ...job.countries.map(countryName),
+    ...job.regions.filter((region) => region !== "worldwide").map((region) => REGION_LABELS[region]),
+  ]);
+  const where =
+    job.workplaceType === "hybrid" ? job.location || areas.join(", ") : areas.slice(0, 4).join(", ") || job.location;
+  return where ? `${kind} — ${where}` : kind;
+};
+
+/** Same place in other words: compares the letters, ignoring "remote"/"hybrid". */
+const restates = (location: string, line: string) => {
+  const letters = (value: string) =>
+    value.toLowerCase().replace(/\b(remote|hybrid)\b/g, "").replace(/[^a-z]/g, "");
+  return letters(location) === letters(line);
+};
+
+/**
+ * The job title, linked to the source where its terms require it: startup.jobs
+ * asks that every title link to the listing on startup.jobs, as an ordinary
+ * (followed) link.
+ */
+const JobTitle = ({ job, className }: { job: RemoteJob; className: string }) =>
+  job.source === "startupjobs" && job.sourceUrl ? (
+    <a href={job.sourceUrl} target="_blank" rel="noopener" className={cn(className, "hover:underline")}>
+      {job.title}
+    </a>
+  ) : (
+    <span className={className}>{job.title}</span>
+  );
+
+/** "via Jobicy" — credit to the source, linking to its homepage where asked. */
+const SourceCredit = ({ job }: { job: RemoteJob }) => {
+  const homepage = SOURCE_HOMEPAGES[job.source];
+  return (
+    <span>
+      via{" "}
+      {homepage ? (
+        <a href={homepage} target="_blank" rel="noopener" className="underline hover:text-slate-600">
+          {job.sourceName}
+        </a>
+      ) : (
+        job.sourceName
+      )}
+    </span>
+  );
+};
 
 const SectionHeading = () => (
   <div className="flex items-start gap-3 sm:items-center">
@@ -136,7 +269,7 @@ const SectionHeading = () => (
         Remote Jobs
       </h1>
       <p className="text-sm text-slate-500">
-        Find remote opportunities that match your experience.
+        Remote and hybrid roles from 11 job sources, refreshed every night.
       </p>
     </div>
   </div>
@@ -189,7 +322,6 @@ export const RemoteJobsSection = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
-  const [partialSources, setPartialSources] = useState<string[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -279,7 +411,6 @@ export const RemoteJobsSection = ({
         activeSearchRef.current = { query, filters: nextFilters };
         setLoading(true);
         setError("");
-        setPartialSources([]);
         setHasMore(false);
       }
       try {
@@ -295,14 +426,9 @@ export const RemoteJobsSection = ({
           offset: String(offset),
         });
         if (query.trim()) params.set("query", query.trim());
-        if (nextFilters.remoteLocation)
-          params.set("remoteLocation", nextFilters.remoteLocation);
-        if (nextFilters.employmentType)
-          params.set("employmentType", nextFilters.employmentType);
-        if (nextFilters.experienceLevel)
-          params.set("experienceLevel", nextFilters.experienceLevel);
-        if (nextFilters.postedWithinDays)
-          params.set("postedWithinDays", nextFilters.postedWithinDays);
+        for (const [key, value] of Object.entries(nextFilters)) {
+          if (value) params.set(key, value);
+        }
 
         const response = await fetch(`/api/remote-jobs?${params.toString()}`);
         const payload = await response.json();
@@ -335,7 +461,6 @@ export const RemoteJobsSection = ({
         setHasMore(
           hasFullAccess && Boolean(payload.hasMore) && incoming.length > 0
         );
-        if (!append) setPartialSources(payload.partialSources || []);
       } catch (searchError) {
         console.error("Remote job search failed:", searchError);
         if (append) {
@@ -362,14 +487,14 @@ export const RemoteJobsSection = ({
     event?.preventDefault();
     track("remote_job_search", {
       query: queryInput.trim().slice(0, 100),
-      remoteLocation: filters.remoteLocation || "any",
+      location: filters.location || "any",
     });
     runSearch(queryInput, filters);
   };
 
   const handleExample = (example: string) => {
     setQueryInput(example);
-    track("remote_job_search", { query: example, remoteLocation: filters.remoteLocation || "any" });
+    track("remote_job_search", { query: example, location: filters.location || "any" });
     runSearch(example, filters);
   };
 
@@ -379,6 +504,11 @@ export const RemoteJobsSection = ({
     const nextFilters = { ...filters, [key]: value };
     setFilters(nextFilters);
     if (hasSearched) runSearch(queryInput, nextFilters);
+  };
+
+  const clearFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    if (hasSearched) runSearch(queryInput, EMPTY_FILTERS);
   };
 
   /**
@@ -633,105 +763,44 @@ export const RemoteJobsSection = ({
 
         <div
           className={cn(
-            "mt-4 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-4",
+            "mt-4 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-5",
             showFilters ? "grid" : "hidden lg:grid"
           )}
         >
-          <div className="space-y-1.5">
-            <label
-              htmlFor="remote-from"
-              className="text-xs font-medium text-slate-500"
-            >
-              Remote from
-            </label>
-            <select
-              id="remote-from"
-              className={SELECT_CLASS}
-              value={filters.remoteLocation}
-              onChange={(event) =>
-                updateFilter("remoteLocation", event.target.value)
-              }
-            >
-              <option value="">Any location</option>
-              {REMOTE_LOCATIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label
-              htmlFor="employment-type"
-              className="text-xs font-medium text-slate-500"
-            >
-              Employment type
-            </label>
-            <select
-              id="employment-type"
-              className={SELECT_CLASS}
-              value={filters.employmentType}
-              onChange={(event) =>
-                updateFilter("employmentType", event.target.value)
-              }
-            >
-              <option value="">Any type</option>
-              {EMPLOYMENT_TYPES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label
-              htmlFor="experience-level"
-              className="text-xs font-medium text-slate-500"
-            >
-              Experience level
-            </label>
-            <select
-              id="experience-level"
-              className={SELECT_CLASS}
-              value={filters.experienceLevel}
-              onChange={(event) =>
-                updateFilter("experienceLevel", event.target.value)
-              }
-            >
-              <option value="">Any level</option>
-              {EXPERIENCE_LEVELS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label
-              htmlFor="posted-date"
-              className="text-xs font-medium text-slate-500"
-            >
-              Posted date
-            </label>
-            <select
-              id="posted-date"
-              className={SELECT_CLASS}
-              value={filters.postedWithinDays}
-              onChange={(event) =>
-                updateFilter("postedWithinDays", event.target.value)
-              }
-            >
-              <option value="">Any time</option>
-              {POSTED_WITHIN_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          {FILTER_FIELDS.map((field) => (
+            <div key={field.key} className="space-y-1.5">
+              <label
+                htmlFor={`remote-jobs-filter-${field.key}`}
+                className="text-xs font-medium text-slate-500"
+              >
+                {field.label}
+              </label>
+              <select
+                id={`remote-jobs-filter-${field.key}`}
+                className={SELECT_CLASS}
+                value={filters[field.key]}
+                onChange={(event) => updateFilter(field.key, event.target.value)}
+              >
+                <option value="">{field.anyLabel}</option>
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+          {activeFilterCount > 0 && (
+            <div className="flex items-end sm:col-span-2 lg:col-span-5">
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -757,17 +826,17 @@ export const RemoteJobsSection = ({
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <Search className="mx-auto h-8 w-8 text-slate-300" />
           <h2 className="mt-3 text-base font-semibold text-slate-900">
-            Find your next remote job
+            Find your next remote or hybrid job
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Search for a role above to discover remote opportunities.
+            Search for a role above, or narrow it down with the filters.
           </p>
         </div>
       ) : !jobs.length ? (
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <SearchX className="mx-auto h-8 w-8 text-slate-300" />
           <h2 className="mt-3 text-base font-semibold text-slate-900">
-            No matching remote jobs found
+            No matching jobs found
           </h2>
           <p className="mt-1 text-sm text-slate-500">
             Try a different job title or broaden your filters.
@@ -779,15 +848,9 @@ export const RemoteJobsSection = ({
             {/* "Showing", not a total: more pages load as the user scrolls,
                 and without a plan the count is the three that are open. */}
             <p className="text-sm text-slate-500">
-              Showing {openJobs.length} remote{" "}
+              Showing {openJobs.length}{" "}
               {openJobs.length === 1 ? "job" : "jobs"}
             </p>
-            {partialSources.length > 0 && (
-              <p className="text-xs text-amber-700">
-                Some sources ({partialSources.join(", ")}) didn&apos;t respond —
-                results may be incomplete.
-              </p>
-            )}
           </div>
 
           {openJobs.map((job) => (
@@ -839,7 +902,7 @@ export const RemoteJobsSection = ({
 
           {!withheldResults && !hasMore && !loadingMore && (
             <p className="py-6 text-center text-xs text-slate-400">
-              That&apos;s every remote job we found. Try a different title or
+              That&apos;s every job we found. Try a different title or
               broaden your filters for more.
             </p>
           )}
@@ -863,7 +926,7 @@ const UpgradePrompt = ({
       <Lock className="h-5 w-5" />
     </span>
     <h2 className="mt-3 text-base font-semibold text-slate-900">
-      Unlock every remote job
+      Unlock every job
     </h2>
     <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
       Your free plan shows the first {FREE_PLAN_VISIBLE_JOBS}. Pro opens the
@@ -882,8 +945,22 @@ const UpgradePrompt = ({
   </div>
 );
 
+const WorkplaceBadge = ({ job }: { job: RemoteJob }) => (
+  <span
+    className={cn(
+      "shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+      job.workplaceType === "hybrid"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : "border-emerald-200 bg-emerald-50 text-emerald-800"
+    )}
+  >
+    {job.workplaceType === "hybrid" ? "Hybrid" : "Remote"}
+  </span>
+);
+
 const JobCard = ({ job, onView }: { job: RemoteJob; onView: () => void }) => {
   const meta = metaLine(job);
+  const company = companyLine(job);
   const tags = tagsFor(job);
   const posted = formatPostedAt(job.postedAt);
 
@@ -893,7 +970,7 @@ const JobCard = ({ job, onView }: { job: RemoteJob; onView: () => void }) => {
         <CompanyLogo job={job} size="sm" />
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-semibold text-slate-900 break-words">
-            {job.title}
+            <JobTitle job={job} className="break-words" />
           </h3>
           {job.companyName && (
             <p className="mt-0.5 text-sm text-slate-600 break-words">
@@ -901,14 +978,21 @@ const JobCard = ({ job, onView }: { job: RemoteJob; onView: () => void }) => {
             </p>
           )}
         </div>
+        <WorkplaceBadge job={job} />
       </div>
 
       <div className="mt-3 space-y-1.5 text-sm text-slate-600">
         <p className="flex items-start gap-1.5">
           <Globe2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-          <span className="min-w-0 break-words">{remoteLine(job)}</span>
+          <span className="min-w-0 break-words">{placeLine(job)}</span>
         </p>
         {meta && <p className="text-slate-500">{meta}</p>}
+        {company && (
+          <p className="flex items-start gap-1.5 text-slate-500">
+            <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <span className="min-w-0 break-words">{company}</span>
+          </p>
+        )}
         {job.salary && (
           <p className="flex items-center gap-1.5 text-slate-500">
             <Wallet className="h-4 w-4 shrink-0 text-slate-400" />
@@ -919,7 +1003,7 @@ const JobCard = ({ job, onView }: { job: RemoteJob; onView: () => void }) => {
 
       {tags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
-          {tags.slice(0, 5).map((tag) => (
+          {tags.slice(0, 6).map((tag) => (
             <span
               key={tag}
               className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600"
@@ -933,8 +1017,8 @@ const JobCard = ({ job, onView }: { job: RemoteJob; onView: () => void }) => {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs text-slate-400">
           {posted && <span>{posted}</span>}
-          {posted && isScannable(job) && <span className="mx-1.5">·</span>}
-          {isScannable(job) && <span>Scan to see your match</span>}
+          {posted && <span className="mx-1.5">·</span>}
+          <SourceCredit job={job} />
         </div>
         <Button className="w-full rounded-md sm:w-auto" onClick={onView}>
           View Job
@@ -942,6 +1026,30 @@ const JobCard = ({ job, onView }: { job: RemoteJob; onView: () => void }) => {
       </div>
     </article>
   );
+};
+
+/**
+ * startup.jobs' terms: a page dedicated to one of their listings carries a
+ * canonical link to the original. The dashboard is one client-side page, so
+ * the tag is pointed at the job while it is open and put back on the way out.
+ */
+const useSourceCanonical = (job: RemoteJob) => {
+  useEffect(() => {
+    if (job.source !== "startupjobs" || !job.sourceUrl) return;
+    const existing = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    const previous = existing?.getAttribute("href") ?? null;
+    const link = existing || document.createElement("link");
+    if (!existing) {
+      link.rel = "canonical";
+      document.head.appendChild(link);
+    }
+    link.setAttribute("href", job.sourceUrl);
+    return () => {
+      if (!existing) link.remove();
+      else if (previous === null) existing.removeAttribute("href");
+      else existing.setAttribute("href", previous);
+    };
+  }, [job.source, job.sourceUrl]);
 };
 
 const JobDetail = ({
@@ -956,11 +1064,33 @@ const JobDetail = ({
   /** The header is real but the JD is still being fetched. */
   descriptionLoading?: boolean;
 }) => {
+  useSourceCanonical(job);
   const meta = metaLine(job);
-  const tags = tagsFor(job);
+  const company = companyLine(job);
   const posted = formatPostedAt(job.postedAt);
   const scannable = !descriptionLoading && isScannable(job);
   const hasDescription = scannable || Boolean(job.descriptionHtml);
+  const homepage = SOURCE_HOMEPAGES[job.source];
+  // Followed links where the source's terms ask for them (startup.jobs).
+  const sourceRel = job.source === "startupjobs" ? "noopener" : "noopener noreferrer";
+
+  const details = [
+    { icon: Globe2, label: "Work type", value: placeLine(job) },
+    {
+      // The source's own wording, when it says more than the line above —
+      // "Remote - United States" under "Remote — United States" says nothing.
+      icon: Building2,
+      label: "Location",
+      value:
+        job.workplaceType === "remote" && job.location && !restates(job.location, placeLine(job))
+          ? job.location
+          : "",
+    },
+    { icon: ScanLine, label: "Role", value: meta },
+    { icon: Building2, label: "Company", value: company },
+    { icon: Wallet, label: "Salary", value: job.salary },
+    { icon: Clock, label: "Posted", value: posted.replace("Posted ", "") },
+  ].filter((detail) => detail.value);
 
   const actions = (
     <div className="flex flex-col gap-2 sm:flex-row">
@@ -995,7 +1125,7 @@ const JobDetail = ({
           <CompanyLogo job={job} size="lg" />
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold text-slate-900 break-words sm:text-2xl">
-              {job.title}
+              <JobTitle job={job} className="break-words" />
             </h1>
             {job.companyName && (
               <p className="mt-0.5 text-sm text-slate-600 break-words sm:text-base">
@@ -1003,74 +1133,39 @@ const JobDetail = ({
               </p>
             )}
           </div>
+          <WorkplaceBadge job={job} />
         </div>
 
         <dl className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
-          <div className="flex items-start gap-2">
-            <Globe2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-            <div className="min-w-0">
-              <dt className="text-xs font-medium text-slate-500">
-                Remote eligibility
-              </dt>
-              <dd className="text-sm text-slate-700 break-words">
-                {remoteLine(job)}
-              </dd>
-            </div>
-          </div>
-
-          {job.location && (
-            <div className="flex items-start gap-2">
-              <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+          {details.map(({ icon: Icon, label, value }) => (
+            <div key={label} className="flex items-start gap-2">
+              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
               <div className="min-w-0">
-                <dt className="text-xs font-medium text-slate-500">Location</dt>
-                <dd className="text-sm text-slate-700">{job.location}</dd>
+                <dt className="text-xs font-medium text-slate-500">{label}</dt>
+                <dd className="text-sm text-slate-700 break-words">{value}</dd>
               </div>
             </div>
-          )}
-
-          {meta && (
-            <div className="flex items-start gap-2">
-              <ScanLine className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-slate-500">Role</dt>
-                <dd className="text-sm text-slate-700">{meta}</dd>
-              </div>
-            </div>
-          )}
-
-          {job.salary && (
-            <div className="flex items-start gap-2">
-              <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-slate-500">Salary</dt>
-                <dd className="text-sm text-slate-700">{job.salary}</dd>
-              </div>
-            </div>
-          )}
-
-          {posted && (
-            <div className="flex items-start gap-2">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <div className="min-w-0">
-                <dt className="text-xs font-medium text-slate-500">Posted</dt>
-                <dd className="text-sm text-slate-700">
-                  {posted.replace("Posted ", "")}
-                </dd>
-              </div>
-            </div>
-          )}
+          ))}
         </dl>
 
-        {tags.length > 0 && (
-          <div className="mt-4 flex flex-wrap gap-1.5 border-t border-slate-100 pt-4">
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600"
-              >
-                {tag.replace(/-/g, " ")}
-              </span>
-            ))}
+        {(job.skills.length > 0 || job.categories.length > 0) && (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            {job.skills.length > 0 && (
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                <Code2 className="h-4 w-4 text-slate-400" />
+                Tech stack
+              </p>
+            )}
+            <div className="flex flex-wrap gap-1.5">
+              {tagsFor(job).map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600"
+                >
+                  {tag.replace(/-/g, " ")}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1128,18 +1223,32 @@ const JobDetail = ({
         )}
 
         {/* Attribution — the job APIs grant access on condition that listings
-            stay credited and link back to the original posting. */}
+            stay credited and link back to the original posting (and, for some,
+            to the source's own site). */}
         {job.sourceUrl && (
           <p className="mt-6 border-t border-slate-100 pt-4 text-xs text-slate-400">
             Originally posted on{" "}
             <a
               href={job.sourceUrl}
               target="_blank"
-              rel="noopener noreferrer"
+              rel={sourceRel}
               className="font-medium text-slate-600 underline"
             >
               {job.sourceName}
             </a>
+            {homepage && (
+              <>
+                {" · "}
+                <a
+                  href={homepage}
+                  target="_blank"
+                  rel={sourceRel}
+                  className="font-medium text-slate-600 underline"
+                >
+                  More jobs on {new URL(homepage).hostname.replace(/^www\./, "")}
+                </a>
+              </>
+            )}
           </p>
         )}
       </div>

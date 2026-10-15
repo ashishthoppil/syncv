@@ -471,3 +471,244 @@ CREATE TRIGGER update_mock_interviews_updated_at
   BEFORE UPDATE ON mock_interviews
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
+
+-- ---------------------------------------------------------------------------
+-- Remote Jobs: daily ingest
+-- ---------------------------------------------------------------------------
+-- A Vercel cron (vercel.json) pulls remote and hybrid jobs from every source
+-- once a day at 23:59 IST and stores them here. The Remote Jobs screen searches
+-- these tables instead of calling the job APIs on every search. Jobs posted
+-- more than 14 days ago are deleted by the same cron.
+--
+-- RLS is enabled with no policies, so only the service role (the API routes)
+-- can read or write. Several sources' terms ask that we make reasonable efforts
+-- to stop third parties pulling their listings in bulk, which rules out letting
+-- the anon key select from these tables.
+
+-- One row per hiring company, shared by all of its jobs. Startup status, size
+-- and industry are looked up once per company (lib/jobs-ingest/enrich-companies)
+-- rather than once per job. NULL means "not known", never "no".
+CREATE TABLE IF NOT EXISTS job_companies (
+  key TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  website TEXT,
+  is_startup BOOLEAN,
+  size_band TEXT CHECK (size_band IN ('1-50', '51-200', '201-1000', '1001-5000', '5000+')),
+  industry TEXT,
+  enrichment_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (enrichment_status IN ('pending', 'done', 'failed')),
+  enrichment_attempts INTEGER NOT NULL DEFAULT 0,
+  enriched_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_companies_pending
+  ON job_companies(created_at) WHERE enrichment_status = 'pending';
+
+ALTER TABLE job_companies ENABLE ROW LEVEL SECURITY;
+
+-- One row per posting. `id` is "<source>:<external id>" (ATS boards add the
+-- company: "greenhouse:stripe~123"), the same id the Remote Jobs URL carries.
+-- `board` is the ATS company slug, so a board that was read in full can have
+-- its taken-down postings deleted without touching the other boards.
+-- `description_html` is stored as the source sent it and sanitized when read.
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  external_id TEXT NOT NULL,
+  board TEXT,
+  source_url TEXT NOT NULL,
+  application_url TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL,
+  company_name TEXT NOT NULL,
+  company_key TEXT NOT NULL,
+  company_logo TEXT NOT NULL DEFAULT '',
+  description_html TEXT NOT NULL DEFAULT '',
+  location TEXT NOT NULL DEFAULT '',
+  -- ISO 3166-1 alpha-2 codes. For a remote job: where a candidate may live.
+  -- For a hybrid job: where the office is.
+  countries TEXT[] NOT NULL DEFAULT '{}',
+  -- 'worldwide', 'europe', 'emea', 'apac', 'asia', 'americas',
+  -- 'north-america', 'latam', 'africa', 'middle-east', 'oceania'.
+  regions TEXT[] NOT NULL DEFAULT '{}',
+  workplace_type TEXT NOT NULL CHECK (workplace_type IN ('remote', 'hybrid')),
+  employment_type TEXT
+    CHECK (employment_type IN ('full-time', 'part-time', 'contract', 'internship')),
+  seniority TEXT CHECK (seniority IN ('entry', 'mid', 'senior', 'lead', 'executive')),
+  salary_text TEXT NOT NULL DEFAULT '',
+  salary_min NUMERIC,
+  salary_max NUMERIC,
+  salary_currency TEXT,
+  salary_period TEXT,
+  -- The lower bound, annualised and converted to USD at a fixed rate. Only
+  -- used by the minimum-salary filter.
+  salary_usd_annual NUMERIC,
+  tech_stack TEXT[] NOT NULL DEFAULT '{}',
+  categories TEXT[] NOT NULL DEFAULT '{}',
+  -- Industry as the source states it (SmartRecruiters, Workable). Falls back to
+  -- the company lookup when NULL.
+  source_industry TEXT,
+  -- Set when the source itself only lists startups (startup.jobs).
+  source_is_startup BOOLEAN,
+  posted_at TIMESTAMPTZ NOT NULL,
+  expires_at TIMESTAMPTZ,
+  -- Normalised "title|company", for dropping the same role listed by two sources.
+  dedupe_key TEXT NOT NULL,
+  -- Lowercased title, company, categories and tech stack: what keyword search
+  -- matches against.
+  search_text TEXT NOT NULL DEFAULT '',
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_posted_at ON jobs(posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_source_board ON jobs(source, board);
+CREATE INDEX IF NOT EXISTS idx_jobs_source_posted_at ON jobs(source, posted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_company_key ON jobs(company_key);
+CREATE INDEX IF NOT EXISTS idx_jobs_countries ON jobs USING GIN (countries);
+CREATE INDEX IF NOT EXISTS idx_jobs_regions ON jobs USING GIN (regions);
+CREATE INDEX IF NOT EXISTS idx_jobs_tech_stack ON jobs USING GIN (tech_stack);
+
+ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
+
+-- What the search reads: a job plus what is known about its company, without
+-- the description. security_invoker keeps the tables' RLS in force through the
+-- view; without it the view would run as its owner and expose the rows.
+CREATE OR REPLACE VIEW job_listings
+WITH (security_invoker = true) AS
+SELECT
+  j.id,
+  j.source,
+  j.external_id,
+  j.source_url,
+  j.application_url,
+  j.title,
+  j.company_name,
+  j.company_logo,
+  j.location,
+  j.countries,
+  j.regions,
+  j.workplace_type,
+  j.employment_type,
+  j.seniority,
+  j.salary_text,
+  j.salary_usd_annual,
+  j.tech_stack,
+  j.categories,
+  COALESCE(j.source_is_startup, c.is_startup) AS is_startup,
+  c.size_band AS company_size,
+  COALESCE(j.source_industry, c.industry) AS industry,
+  j.posted_at,
+  j.dedupe_key,
+  j.search_text
+FROM jobs j
+LEFT JOIN job_companies c ON c.key = j.company_key;
+
+-- Search. Applies every filter, then keeps the newest `p_per_source` matches
+-- from EACH source, so the app can rank by relevance and interleave sources
+-- (lib/remote-jobs/search.ts). A plain newest-first cut would hand the whole
+-- result to Himalayas, which posts ~3,000 jobs a day to everyone else's few
+-- hundred.
+--
+-- `p_keyword_groups` is a JSON array of word lists, e.g. [["react"],["vue"]]:
+-- a job matches when every word of ANY list appears in its search_text. It is
+-- a deliberately loose pre-filter; the app re-checks matches word by word.
+-- An unstated employment type or seniority passes those filters, as it did
+-- when filtering happened in the app: the posting simply didn't say.
+CREATE OR REPLACE FUNCTION search_job_listings(
+  p_workplace TEXT DEFAULT NULL,
+  p_countries TEXT[] DEFAULT NULL,
+  p_regions TEXT[] DEFAULT NULL,
+  p_employment TEXT DEFAULT NULL,
+  p_seniority TEXT DEFAULT NULL,
+  p_startup BOOLEAN DEFAULT NULL,
+  p_sizes TEXT[] DEFAULT NULL,
+  p_tech TEXT[] DEFAULT NULL,
+  p_industry TEXT DEFAULT NULL,
+  p_posted_since TIMESTAMPTZ DEFAULT NULL,
+  p_salary_listed BOOLEAN DEFAULT FALSE,
+  p_min_salary_usd NUMERIC DEFAULT NULL,
+  p_keyword_groups JSONB DEFAULT NULL,
+  p_per_source INTEGER DEFAULT 150
+)
+RETURNS SETOF job_listings
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT (ranked.l).*
+  FROM (
+    SELECT
+      l,
+      ROW_NUMBER() OVER (PARTITION BY l.source ORDER BY l.posted_at DESC) AS rn
+    FROM job_listings l
+    WHERE (p_workplace IS NULL OR l.workplace_type = p_workplace)
+      AND (
+        (p_countries IS NULL AND p_regions IS NULL)
+        OR l.countries && COALESCE(p_countries, '{}'::TEXT[])
+        OR l.regions && COALESCE(p_regions, '{}'::TEXT[])
+      )
+      AND (p_employment IS NULL OR l.employment_type IS NULL OR l.employment_type = p_employment)
+      AND (p_seniority IS NULL OR l.seniority IS NULL OR l.seniority = p_seniority)
+      AND (p_startup IS NULL OR l.is_startup = p_startup)
+      AND (p_sizes IS NULL OR l.company_size = ANY(p_sizes))
+      AND (p_tech IS NULL OR l.tech_stack && p_tech)
+      AND (p_industry IS NULL OR l.industry = p_industry)
+      AND (p_posted_since IS NULL OR l.posted_at >= p_posted_since)
+      AND (NOT COALESCE(p_salary_listed, FALSE) OR l.salary_text <> '')
+      AND (p_min_salary_usd IS NULL OR l.salary_usd_annual >= p_min_salary_usd)
+      AND (
+        p_keyword_groups IS NULL
+        OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(p_keyword_groups) AS g(words)
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(g.words) AS w(word)
+            WHERE POSITION(w.word IN l.search_text) = 0
+          )
+        )
+      )
+  ) ranked
+  WHERE ranked.rn <= p_per_source
+  ORDER BY (ranked.l).posted_at DESC;
+$$;
+
+REVOKE EXECUTE ON FUNCTION search_job_listings(
+  TEXT, TEXT[], TEXT[], TEXT, TEXT, BOOLEAN, TEXT[], TEXT[], TEXT, TIMESTAMPTZ,
+  BOOLEAN, NUMERIC, JSONB, INTEGER
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION search_job_listings(
+  TEXT, TEXT[], TEXT[], TEXT, TEXT, BOOLEAN, TEXT[], TEXT[], TEXT, TIMESTAMPTZ,
+  BOOLEAN, NUMERIC, JSONB, INTEGER
+) TO service_role;
+
+-- One row per cron run, and one per source within it. The daily report email
+-- is built from these, and they stay as a history of what each source yielded.
+CREATE TABLE IF NOT EXISTS job_ingest_runs (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ,
+  jobs_expired INTEGER NOT NULL DEFAULT 0,
+  companies_enriched INTEGER NOT NULL DEFAULT 0,
+  jobs_total INTEGER,
+  report_sent_at TIMESTAMPTZ,
+  error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS job_ingest_source_runs (
+  run_id UUID NOT NULL REFERENCES job_ingest_runs(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'running'
+    CHECK (status IN ('running', 'ok', 'partial', 'failed', 'skipped')),
+  fetched INTEGER NOT NULL DEFAULT 0,
+  new_jobs INTEGER NOT NULL DEFAULT 0,
+  removed INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ,
+  PRIMARY KEY (run_id, source)
+);
+
+ALTER TABLE job_ingest_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE job_ingest_source_runs ENABLE ROW LEVEL SECURITY;

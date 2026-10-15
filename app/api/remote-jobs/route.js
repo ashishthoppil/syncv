@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import { getJobById, searchAllProviders } from "@/lib/remote-jobs/providers";
-import { DEFAULT_SEARCH_PARAMS, MAX_SEARCH_OFFSET } from "@/lib/remote-jobs/types";
+import { getJobListing, searchJobListings } from "@/lib/remote-jobs/search";
+import {
+  DEFAULT_SEARCH_PARAMS,
+  FREE_PLAN_PREVIEW_JOBS,
+  FREE_PLAN_VISIBLE_JOBS,
+  MAX_SEARCH_OFFSET,
+} from "@/lib/remote-jobs/types";
 import {
   countFreeTrialScans,
   FREE_TRIAL_SCAN_LIMIT,
@@ -13,22 +18,22 @@ const MAX_LIMIT = 50;
 /**
  * Browsing needs a scan to spend: an active plan, or free-trial scans left.
  * The same condition the dashboard uses to draw the lock — enforced here too,
- * because a screen that merely hides the search still answers `curl`.
+ * because a screen that merely hides the search still answers `curl`. Only a
+ * plan pages past the preview, and that is enforced here as well.
  */
-const canBrowseJobs = async (userId) => {
+const getAccess = async (userId) => {
   const supabase = getSupabaseAdminClient();
   const plan = await getPlanForUser(supabase, userId);
-  if (plan) return true;
+  if (plan) return { canBrowse: true, fullList: true };
   const used = await countFreeTrialScans(supabase, userId);
-  return used < FREE_TRIAL_SCAN_LIMIT;
+  return { canBrowse: used < FREE_TRIAL_SCAN_LIMIT, fullList: false };
 };
 
 /**
- * Remote Jobs search. Reads from public job-board APIs only — nothing here
- * touches user data, and provider responses are cached for an hour inside the
- * provider (their terms ask for at most hourly polling).
+ * Remote Jobs search, over the jobs the daily ingest stores
+ * (app/api/cron/ingest-jobs). Nothing here calls a job API.
  *
- * `?id=<provider:externalId>` resolves a single job for a direct link.
+ * `?id=<source:externalId>` resolves a single job, with its description.
  */
 export async function GET(req) {
   try {
@@ -44,18 +49,18 @@ export async function GET(req) {
       });
     }
 
-    if (!(await canBrowseJobs(userId))) {
+    const access = await getAccess(userId);
+    if (!access.canBrowse) {
       return NextResponse.json({
         success: false,
         locked: true,
-        message:
-          "Your free trial is used up. Subscribe to a plan to browse remote jobs.",
+        message: "Your free trial is used up. Subscribe to a plan to browse remote jobs.",
       });
     }
 
     const jobId = searchParams.get("id");
     if (jobId) {
-      const job = await getJobById(jobId);
+      const job = await getJobListing(jobId);
       if (!job) {
         return NextResponse.json({
           success: false,
@@ -67,12 +72,19 @@ export async function GET(req) {
 
     const requestedLimit = Number(searchParams.get("limit"));
     const requestedOffset = Number(searchParams.get("offset"));
+    const read = (name) => searchParams.get(name) || "";
     const params = {
       ...DEFAULT_SEARCH_PARAMS,
-      query: searchParams.get("query") || "",
-      remoteLocation: searchParams.get("remoteLocation") || "",
-      employmentType: searchParams.get("employmentType") || "",
-      experienceLevel: searchParams.get("experienceLevel") || "",
+      query: read("query").slice(0, 100),
+      workplaceType: read("workplaceType"),
+      location: read("location"),
+      employmentType: read("employmentType"),
+      seniority: read("seniority"),
+      companyType: read("companyType"),
+      companySize: read("companySize"),
+      techStack: read("techStack"),
+      industry: read("industry"),
+      salary: read("salary"),
       postedWithinDays: Number(searchParams.get("postedWithinDays")) || 0,
       limit:
         Number.isFinite(requestedLimit) && requestedLimit > 0
@@ -83,25 +95,18 @@ export async function GET(req) {
           ? Math.min(Math.floor(requestedOffset), MAX_SEARCH_OFFSET)
           : 0,
     };
-
-    const { jobs, failedProviders, hasMore } = await searchAllProviders(params);
-
-    // Every provider is down: that is an outage, not an empty result set. Only
-    // on the first page — a failed provider mid-scroll just ends the list.
-    if (!jobs.length && failedProviders.length && !params.offset) {
-      return NextResponse.json({
-        success: false,
-        message: "Job search is unavailable right now. Please try again shortly.",
-      });
+    // Without a plan: the open preview plus the blurred run beneath it, and
+    // no further pages.
+    if (!access.fullList) {
+      params.limit = Math.min(params.limit, FREE_PLAN_VISIBLE_JOBS + FREE_PLAN_PREVIEW_JOBS);
+      params.offset = 0;
     }
 
+    const { jobs, hasMore } = await searchJobListings(params);
     return NextResponse.json({
       success: true,
       data: jobs,
-      hasMore,
-      // Set when some (but not all) sources failed, so the UI can note that
-      // results are partial instead of implying the search was exhaustive.
-      partialSources: failedProviders,
+      hasMore: access.fullList && hasMore,
     });
   } catch (error) {
     console.error("Remote jobs search failed:", error);

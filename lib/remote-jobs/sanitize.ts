@@ -51,7 +51,24 @@ const STRIPPED_TAGS = [
 
 const isSafeHref = (href: string) => /^https?:\/\//i.test(href.trim());
 
-export const sanitizeJobHtml = (html: string): string => {
+const isFollowedHost = (href: string, hosts: string[]) => {
+  if (!hosts.length) return false;
+  try {
+    const host = new URL(href.trim()).hostname.replace(/^www\./, "");
+    return hosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`));
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * `followHosts`: links to these hosts keep a normal, followed `rel` — some
+ * sources' terms require that their attribution link not be nofollow.
+ */
+export const sanitizeJobHtml = (
+  html: string,
+  { followHosts = [] }: { followHosts?: string[] } = {}
+): string => {
   if (!html) return "";
   const $ = cheerio.load(html, null, false);
 
@@ -74,7 +91,7 @@ export const sanitizeJobHtml = (html: string): string => {
       if (isSafeHref(href)) {
         node.attr("href", href.trim());
         node.attr("target", "_blank");
-        node.attr("rel", "noopener noreferrer nofollow");
+        node.attr("rel", isFollowedHost(href, followHosts) ? "noopener" : "noopener noreferrer nofollow");
       } else {
         node.replaceWith(node.contents());
       }
