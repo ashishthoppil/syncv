@@ -4,6 +4,7 @@ import {
   DEFAULT_BILLING_PERIOD,
   PLAN_BY_KEY,
   PRICING_REGION_BY_KEY,
+  planOffersPeriod,
   resolvePlanSelection,
 } from "@/lib/subscription-plans";
 import { getAuthenticatedUser } from "@/lib/server/auth";
@@ -37,6 +38,13 @@ export async function POST(request) {
       : null;
     if (!selectedPlan || !selectedPeriod) {
       return NextResponse.json({ error: "Invalid plan selected." }, { status: 400 });
+    }
+    // Remote Jobs is monthly only; the cards never offer it on other periods.
+    if (!planOffersPeriod(selectedPlan, selectedPeriod.key)) {
+      return NextResponse.json(
+        { error: `${selectedPlan.name} isn't offered with ${selectedPeriod.label.toLowerCase()} billing.` },
+        { status: 400 }
+      );
     }
 
     // The currency comes from where the request is made, not from the client.
@@ -81,6 +89,18 @@ export async function POST(request) {
         planId: activeSubscription.plan_id,
         planKey: activeSubscription.plan_key,
       });
+      // Moving between Remote Jobs and Pro would also be a second, overlapping
+      // subscription, and how to credit the unused part of the first is
+      // undecided — so it goes through support, like a change of period.
+      const activePlan = activeSelection?.plan;
+      if (activePlan && activePlan.key !== selectedPlan.key) {
+        return NextResponse.json(
+          {
+            error: `You're on the ${activePlan.name} plan. To move to ${selectedPlan.name}, contact us from the Help Center and we'll switch your subscription over.`,
+          },
+          { status: 409 }
+        );
+      }
       const activePeriod = activeSelection?.billingPeriod;
       if (!activePeriod || activePeriod === selectedPeriod.key) {
         return NextResponse.json({ error: "Subscription already active." }, { status: 409 });

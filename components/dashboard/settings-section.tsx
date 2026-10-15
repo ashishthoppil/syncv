@@ -15,6 +15,7 @@ import {
   BILLING_PERIOD_BY_KEY,
   DEFAULT_BILLING_PERIOD,
   SUBSCRIPTION_PLANS,
+  planOffersPeriod,
   isActiveSubscriptionStatus,
   resolvePlanSelection,
 } from "@/lib/subscription-plans";
@@ -203,6 +204,9 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
 
     loadSettings();
   }, [loadSubscriptionStatus]);
+
+  // Only the plans sold on the selected period — Remote Jobs is monthly only.
+  const visiblePlans = ALL_PLANS.filter((plan) => planOffersPeriod(plan, billingPeriod));
 
   // Open the plan grid on the period the user already pays for, once known.
   useEffect(() => {
@@ -599,8 +603,17 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
           <BillingPeriodTabs value={billingPeriod} onChange={setBillingPeriod} />
         </div>
 
-        <div className="mx-auto mt-5 grid max-w-4xl gap-4 md:grid-cols-2">
-          {ALL_PLANS.map((plan) => {
+        {/* Two cards sit side by side from `md`, as before; three only from
+            `xl`, since below it the dashboard's main column is too narrow for
+            three (buttons clip), so they stack. */}
+        <div
+          className={cn(
+            "mx-auto mt-5 grid max-w-4xl gap-4",
+            visiblePlans.length > 2 ? "xl:grid-cols-3"
+              : "md:grid-cols-2"
+          )}
+        >
+          {visiblePlans.map((plan) => {
             const activePlanKey = subscription.hasActivePlan ? subscription.planKey : null;
             // The free plan is the fallback for anyone without an active paid
             // subscription, so it is "current" exactly when no plan is active.
@@ -618,6 +631,9 @@ export const SettingsSection = ({ onSubscriptionChange }: SettingsSectionProps =
               cta = "Included with every account";
             } else if (activePlanKey === plan.key) {
               cta = `Switch to ${BILLING_PERIOD_BY_KEY[billingPeriod]?.label.toLowerCase()} billing`;
+            } else if (activePlanKey) {
+              // On the other paid plan: checkout explains that support moves it.
+              cta = `Switch to ${plan.name}`;
             }
 
             return (

@@ -113,7 +113,8 @@ export const softwareApplicationNode = (): JsonLdNode => ({
     },
     ...SUBSCRIPTION_PLANS.flatMap((plan) =>
       PRICING_REGIONS.flatMap((region) =>
-        BILLING_PERIODS.map((period) => {
+        // Only the periods a plan is sold on (Remote Jobs has no quarterly).
+        BILLING_PERIODS.filter((period) => getPlanPrice(plan, period.key, region.key) != null).map((period) => {
           const price = String(getPlanPrice(plan, period.key, region.key));
           const { unitCode, units } = BILLING_UNITS[period.key];
           return {

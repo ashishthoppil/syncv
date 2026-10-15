@@ -127,7 +127,7 @@ const syncSubscription = async ({ supabase, subscription, paymentId, appUrl }) =
       email = userData?.user?.email || null;
     }
     try {
-      await sendSubscriptionEmail({ to: email, appUrl: `${appUrl}/scan` });
+      await sendSubscriptionEmail({ to: email, appUrl: `${appUrl}/scan`, plan: selection?.plan });
     } catch (emailError) {
       console.warn("[dodo/webhook] failed to send subscription email", emailError);
     }

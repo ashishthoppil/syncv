@@ -16,15 +16,16 @@ import {
 const MAX_LIMIT = 50;
 
 /**
- * Browsing needs a scan to spend: an active plan, or free-trial scans left.
- * The same condition the dashboard uses to draw the lock — enforced here too,
- * because a screen that merely hides the search still answers `curl`. Only a
- * plan pages past the preview, and that is enforced here as well.
+ * The full list comes with a plan that includes Remote Jobs (Remote Jobs or
+ * Pro). Without one, browsing the preview needs free-trial scans left, since
+ * a job you can't scan is a dead end. The same conditions the dashboard uses
+ * to draw the locks — enforced here too, because a screen that merely hides
+ * the search still answers `curl`.
  */
 const getAccess = async (userId) => {
   const supabase = getSupabaseAdminClient();
   const plan = await getPlanForUser(supabase, userId);
-  if (plan) return { canBrowse: true, fullList: true };
+  if (plan?.includesRemoteJobs) return { canBrowse: true, fullList: true };
   const used = await countFreeTrialScans(supabase, userId);
   return { canBrowse: used < FREE_TRIAL_SCAN_LIMIT, fullList: false };
 };
@@ -54,7 +55,7 @@ export async function GET(req) {
       return NextResponse.json({
         success: false,
         locked: true,
-        message: "Your free trial is used up. Subscribe to a plan to browse remote jobs.",
+        message: "Your free trial is used up. Get the Remote Jobs or Pro plan to browse remote jobs.",
       });
     }
 

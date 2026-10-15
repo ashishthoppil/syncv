@@ -10,7 +10,7 @@ import {
 import {
   countFreeTrialScans,
   FREE_TRIAL_SCAN_LIMIT,
-  getPlanForUser,
+  getResumeToolsPlanForUser,
   getSupabaseAdminClient,
 } from "@/lib/server/subscriptions";
 import { FREE_PLAN_OPTIMIZATIONS_PER_SCAN } from "@/lib/subscription-plans";
@@ -1864,7 +1864,8 @@ export async function POST(req) {
 
     let shouldGenerateCoverLetter = Boolean(includeCoverLetter);
     const supabase = getSupabaseAdminClient();
-    const activePlan = await getPlanForUser(supabase, userId);
+    // A plan without the resume tools (Remote Jobs) optimizes on the free trial.
+    const activePlan = await getResumeToolsPlanForUser(supabase, userId);
     if (activePlan) {
       if (!activePlan.allowsCoverLetter) {
         shouldGenerateCoverLetter = false;
@@ -1894,7 +1895,7 @@ export async function POST(req) {
       if (freeTrialUsed < 1 || freeTrialUsed > FREE_TRIAL_SCAN_LIMIT) {
         return NextResponse.json({
           success: false,
-          message: "Please subscribe to a plan to optimize your resume.",
+          message: "Upgrade to Pro to optimize your resume.",
         });
       }
       // A few goes at each free scan (say, after changing the keyword picks),
@@ -1904,7 +1905,7 @@ export async function POST(req) {
         return NextResponse.json({
           success: false,
           message:
-            "You've used the optimizations included with your free scan. Please subscribe to a plan to optimize more resumes.",
+            "You've used the optimizations included with your free scan. Upgrade to Pro to optimize more resumes.",
         });
       }
     }

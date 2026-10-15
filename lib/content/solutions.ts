@@ -493,7 +493,7 @@ export const SOLUTIONS = {
       {
         question: "Which plans include the job tracker?",
         answer:
-          "Pro, on any billing period, and the free trial. There is one paid plan, and it includes every feature.",
+          "Pro, on any billing period, and the free trial. The Remote Jobs plan covers the jobs board only; Pro includes every feature.",
       },
       FAQ_POOL.multipleJobs,
     ],

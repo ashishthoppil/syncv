@@ -24,28 +24,32 @@ export async function GET(request) {
       activeSubscription || (await getLatestSubscriptionForUser(supabase, userId));
     const normalized = normalizeSubscriptionView(latestSubscription);
     const plan = await getPlanForUser(supabase, userId);
+    // Scanning and the rest of the resume tools come only with a plan that
+    // includes them (Pro). A Remote Jobs subscriber is on the free trial for
+    // those, exactly like a Free account.
+    const toolsPlan = plan?.includesResumeTools ? plan : null;
     // Pro has no weekly cap (weeklyScanLimit null), so there is no balance to
     // count; a plan that sets a cap still reports what is left of it.
-    const unlimitedScans = Boolean(plan) && plan.weeklyScanLimit == null;
-    const weeklyScanLimit = plan && !unlimitedScans ? plan.weeklyScanLimit : 0;
+    const unlimitedScans = Boolean(toolsPlan) && toolsPlan.weeklyScanLimit == null;
+    const weeklyScanLimit = toolsPlan && !unlimitedScans ? toolsPlan.weeklyScanLimit : 0;
     const scansUsedThisWeek =
-      plan && !unlimitedScans ? await countWeeklyScans(supabase, userId) : 0;
+      toolsPlan && !unlimitedScans ? await countWeeklyScans(supabase, userId) : 0;
     const scansRemainingThisWeek = unlimitedScans
       ? null
       : weeklyScanLimit > 0
         ? Math.max(0, weeklyScanLimit - scansUsedThisWeek)
         : 0;
 
-    // Users without an active plan get a lifetime free-trial allowance before
-    // they are asked to subscribe.
-    const freeTrialUsed = plan ? 0 : await countFreeTrialScans(supabase, userId);
-    const freeTrialRemaining = plan
+    // Users without the resume tools get a lifetime free-trial allowance
+    // before they are asked to upgrade.
+    const freeTrialUsed = toolsPlan ? 0 : await countFreeTrialScans(supabase, userId);
+    const freeTrialRemaining = toolsPlan
       ? 0
       : Math.max(0, FREE_TRIAL_SCAN_LIMIT - freeTrialUsed);
-    const canScan = Boolean(plan) || freeTrialRemaining > 0;
-    // Paid plan only: the optimization fair-use state the header shows — the
-    // day's count and cap, and the break timer.
-    const optimizationUsage = plan ? await getOptimizationAllowance(supabase, userId) : null;
+    const canScan = Boolean(toolsPlan) || freeTrialRemaining > 0;
+    // Pro only: the optimization fair-use state the header shows — the day's
+    // count and cap, and the break timer.
+    const optimizationUsage = toolsPlan ? await getOptimizationAllowance(supabase, userId) : null;
 
     return NextResponse.json({
       data: {
@@ -53,9 +57,11 @@ export async function GET(request) {
         planKey: plan?.key || normalized.planKey || null,
         planName: plan?.name || normalized.planName || null,
         // `normalized` only describes the subscription row, and the admin
-        // account has a plan without one. The plan is what the UI gates read —
-        // Remote Jobs access and the scans-left badge both key off this.
+        // account has a plan without one. "Any paid plan" — Settings uses it
+        // to mark the current plan. Feature gates read the two flags below.
         hasActivePlan: Boolean(plan) || normalized.hasActivePlan,
+        hasResumeTools: Boolean(toolsPlan),
+        hasRemoteJobsAccess: Boolean(plan?.includesRemoteJobs),
         unlimitedScans,
         weeklyScanLimit,
         scansUsedThisWeek,
@@ -66,9 +72,9 @@ export async function GET(request) {
         canScan,
         optimizationUsage,
         // Free-trial users get the full experience (cover letter + job tracker)
-        // so the trial showcases every feature; paid plans use their own flags.
-        allowsJobTracker: plan ? Boolean(plan.allowsJobTracker) : true,
-        allowsCoverLetter: plan ? Boolean(plan.allowsCoverLetter) : true,
+        // so the trial showcases every feature; Pro uses its own flags.
+        allowsJobTracker: toolsPlan ? Boolean(toolsPlan.allowsJobTracker) : true,
+        allowsCoverLetter: toolsPlan ? Boolean(toolsPlan.allowsCoverLetter) : true,
       },
     });
   } catch (error) {

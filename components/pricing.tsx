@@ -16,8 +16,10 @@ import { TapTooltip } from "@/components/ui/tooltip";
 import {
   ALL_PLANS,
   BILLING_PERIOD_BY_KEY,
+  DEFAULT_BILLING_PERIOD,
   FREE_PLAN_SCAN_LIMIT,
   formatScanCount,
+  planOffersPeriod,
 } from "@/lib/subscription-plans";
 import { cn } from "@/lib/utils";
 import { CircleCheck, CircleHelp, CircleX } from "lucide-react";
@@ -37,6 +39,10 @@ const MARKETING_COPY: Record<
     description: `Try every feature with ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")}. No card required.`,
     buttonText: "Start for free",
   },
+  jobs: {
+    description: "Every remote and hybrid job we gather, refreshed daily. Resume tools stay on the free trial.",
+    buttonText: "Get Remote Jobs",
+  },
   pro: {
     description:
       "Everything SynCV does, with unlimited scans.",
@@ -48,13 +54,17 @@ const MARKETING_COPY: Record<
 const plans = ALL_PLANS.map((plan) => ({ ...plan, ...MARKETING_COPY[plan.key] }));
 
 const Pricing = () => {
-  // The homepage opens on Weekly, the smallest commitment; the dashboard and
-  // checkout still fall back to DEFAULT_BILLING_PERIOD.
-  const [billingPeriod, setBillingPeriod] = useState<string>("weekly");
+  // Opens on Monthly, like the dashboard — and the only tab that shows all
+  // three plans, since Remote Jobs is monthly only.
+  const [billingPeriod, setBillingPeriod] = useState<string>(DEFAULT_BILLING_PERIOD);
   const { region } = usePricingRegion();
   // The paid card wears the selected period's badge ("Most popular", "Best
   // value"); weekly has none.
   const periodBadge = BILLING_PERIOD_BY_KEY[billingPeriod]?.badge;
+  // Only the plans sold on this period: Remote Jobs is monthly only, so it
+  // shows on the Monthly tab alone.
+  const visiblePlans = plans.filter((plan) => planOffersPeriod(plan, billingPeriod));
+  const threeUp = visiblePlans.length > 2;
 
   return (
     <section id="pricing" className="w-full px-6 py-16 sm:py-24">
@@ -65,13 +75,21 @@ const Pricing = () => {
             Start Free. <span className="sm:block">Upgrade When You&apos;re Ready.</span>
           </>
         }
-        description={`Every account starts with ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")} and no card. Pick a plan when you're applying every week.`}
+        description={`Every account starts with ${formatScanCount(FREE_PLAN_SCAN_LIMIT, "free")} and no card. Get Remote Jobs for the full jobs board, or Pro for everything.`}
       />
       <Reveal className="mt-12 flex justify-center sm:mt-10">
         <BillingPeriodTabs value={billingPeriod} onChange={setBillingPeriod} />
       </Reveal>
-      <div className="mx-auto mt-12 grid max-w-4xl grid-cols-1 items-start gap-8 sm:mt-14 md:grid-cols-2">
-        {plans.map((plan, index) => (
+      {/* Two cards sit side by side from `md`, as before. Three only from `lg`;
+          below that they stack at a readable width rather than squeezing a
+          price into a third. */}
+      <div
+        className={cn(
+          "mx-auto mt-12 grid grid-cols-1 items-start gap-8 sm:mt-14",
+          threeUp ? "max-w-md lg:max-w-6xl lg:grid-cols-3 lg:gap-6" : "max-w-4xl md:grid-cols-2"
+        )}
+      >
+        {visiblePlans.map((plan, index) => (
           <Reveal
             key={plan.name}
             delay={index * 100}

@@ -64,6 +64,8 @@ const DashboardPageContent = () => {
   const [user, setUser] = useState(null);
   const [subscription, setSubscription] = useState({
     hasActivePlan: false,
+    hasResumeTools: false,
+    hasRemoteJobsAccess: false,
     planKey: null,
     planName: null,
     status: "none",
@@ -98,6 +100,10 @@ const DashboardPageContent = () => {
         const subscriptionData = json?.data || {};
         setSubscription({
           hasActivePlan: Boolean(subscriptionData.hasActivePlan),
+          // Pro: scans and the rest of the resume tools.
+          hasResumeTools: Boolean(subscriptionData.hasResumeTools),
+          // Remote Jobs or Pro: the full jobs board.
+          hasRemoteJobsAccess: Boolean(subscriptionData.hasRemoteJobsAccess),
           planKey: subscriptionData.planKey || null,
           planName: subscriptionData.planName || null,
           status: String(subscriptionData.status || "none"),
@@ -117,6 +123,8 @@ const DashboardPageContent = () => {
       } else if (!silent) {
         setSubscription({
           hasActivePlan: false,
+          hasResumeTools: false,
+          hasRemoteJobsAccess: false,
           planKey: null,
           planName: null,
           status: "none",
@@ -139,6 +147,8 @@ const DashboardPageContent = () => {
       if (!silent) {
         setSubscription({
           hasActivePlan: false,
+          hasResumeTools: false,
+          hasRemoteJobsAccess: false,
           planKey: null,
           planName: null,
           status: "none",
@@ -184,10 +194,10 @@ const DashboardPageContent = () => {
   const baseResumeLocked = !subscriptionLoading && !subscription.canScan;
   const isBaseResumeSection = (id) => id === "base-resume" || id === "profile";
 
-  // The full Remote Jobs list is a paid capability: an active Pro
-  // subscription. Free-trial users are not paid users here — they get the preview.
+  // The full Remote Jobs list comes with the Remote Jobs and Pro plans.
+  // Free-trial users are not paid users here — they get the preview.
   // Held false while loading so the list can't flash open then lock.
-  const hasRemoteJobsAccess = !subscriptionLoading && subscription.hasActivePlan;
+  const hasRemoteJobsAccess = !subscriptionLoading && subscription.hasRemoteJobsAccess;
 
   useEffect(() => {
     const sectionFromQuery = searchParams?.get("section");
@@ -272,7 +282,7 @@ const DashboardPageContent = () => {
           allowsCoverLetter={subscription.allowsCoverLetter}
           allowsJobTracker={subscription.allowsJobTracker}
           onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
-          optimizationUsage={subscription.hasActivePlan ? subscription.optimizationUsage : null}
+          optimizationUsage={subscription.hasResumeTools ? subscription.optimizationUsage : null}
           prefill={scanPrefill}
           onPrefillConsumed={() => setScanPrefill(null)}
           registerLeaveGuard={registerScanLeaveGuard}
@@ -288,17 +298,17 @@ const DashboardPageContent = () => {
     if (activeSection === "job-tracker") {
       return <JobTrackerSection subscriptionLocked={subscriptionLocked || !subscription.allowsJobTracker} />;
     }
-    // Reachable while a user still has a scan to spend — discovering a job is
-    // what leads them into the scanner, so the trial keeps browsing. Two gates,
-    // not one: without an active Pro plan the list stops after the
-    // first few results, and once the free trial is spent it stops entirely,
-    // since a job you can't scan is a dead end.
+    // The Remote Jobs and Pro plans open the whole list. Without one, it is
+    // reachable while a user still has a free scan to spend — discovering a job
+    // is what leads them into the scanner — but stops after the first few
+    // results, and once the trial is spent it stops entirely, since a job you
+    // can't scan is a dead end.
     if (activeSection === "remote-jobs") {
       return (
         <RemoteJobsSection
           userId={user?.id}
           hasFullAccess={hasRemoteJobsAccess}
-          locked={subscriptionLocked}
+          locked={subscriptionLoading || (!subscription.canScan && !subscription.hasRemoteJobsAccess)}
           onScanJob={handleScanRemoteJob}
         />
       );
@@ -317,7 +327,7 @@ const DashboardPageContent = () => {
         allowsCoverLetter={subscription.allowsCoverLetter}
         allowsJobTracker={subscription.allowsJobTracker}
         onUsageChange={() => refreshSubscription(user?.id, { silent: true })}
-        optimizationUsage={subscription.hasActivePlan ? subscription.optimizationUsage : null}
+        optimizationUsage={subscription.hasResumeTools ? subscription.optimizationUsage : null}
         registerLeaveGuard={registerScanLeaveGuard}
       />
     );
@@ -381,7 +391,7 @@ const DashboardPageContent = () => {
                   are unlimited on the paid plan, so there's no balance to show.
                   Everyone else keeps the scans-left badge. */}
               {!subscriptionLoading &&
-              subscription.hasActivePlan &&
+              subscription.hasResumeTools &&
               subscription.optimizationUsage ? (
                 <OptimizationMeter
                   usage={subscription.optimizationUsage}

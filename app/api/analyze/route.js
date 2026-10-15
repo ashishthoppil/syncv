@@ -20,7 +20,7 @@ import {
   countFreeTrialScans,
   FREE_TRIAL_PLAN_KEY,
   FREE_TRIAL_SCAN_LIMIT,
-  getPlanForUser,
+  getResumeToolsPlanForUser,
   getSupabaseAdminClient,
 } from "@/lib/server/subscriptions";
 
@@ -1831,7 +1831,8 @@ export async function POST(req) {
       Boolean(skipUsageTracking) && (await hasScannedJobDescription(supabase, userId, jdHash));
 
     let scansUsedThisWeek = 0;
-    const activePlan = await getPlanForUser(supabase, userId);
+    // A plan without the resume tools (Remote Jobs) scans on the free trial.
+    const activePlan = await getResumeToolsPlanForUser(supabase, userId);
     // Pro has no weekly cap (weeklyScanLimit null); a plan that sets one is
     // still held to it.
     const hasWeeklyCap = activePlan?.weeklyScanLimit != null;
@@ -1873,7 +1874,7 @@ export async function POST(req) {
           success: false,
           message: `You've used ${
             FREE_TRIAL_SCAN_LIMIT === 1 ? "your free scan" : `all ${FREE_TRIAL_SCAN_LIMIT} free scans`
-          }. Please subscribe to a plan to continue.`,
+          }. Upgrade to Pro to keep scanning.`,
         });
       }
     }

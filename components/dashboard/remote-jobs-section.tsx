@@ -929,9 +929,9 @@ const UpgradePrompt = ({
       Unlock every job
     </h2>
     <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">
-      Your free plan shows the first {FREE_PLAN_VISIBLE_JOBS}. Pro opens the
-      full list, so you can keep scrolling and scan any role against
-      your resume.
+      Your free plan shows the first {FREE_PLAN_VISIBLE_JOBS}. The Remote Jobs
+      plan opens the full list; Pro adds unlimited scans, so you can check
+      your resume against every role.
     </p>
     <Button
       className="mt-4 w-full rounded-md sm:w-auto"

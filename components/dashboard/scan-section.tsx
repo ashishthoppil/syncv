@@ -1980,7 +1980,7 @@ export const ScanSection = ({
         <SubscriptionGate
           event="scan_locked_upgrade_clicked"
           title="You're out of scans"
-          body="Scanning is paused until you pick a plan. Everything you've already built — your base resumes, scores and generated documents — stays exactly where it is."
+          body="Scanning is paused until you upgrade to Pro. Everything you've already built — your base resumes, scores and generated documents — stays exactly where it is."
           highlights={[
             "Scan any job description against your base resume",
             "Tailored CV and cover letter for every application",
