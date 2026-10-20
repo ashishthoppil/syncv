@@ -123,6 +123,24 @@ export const listBaseResumes = async (
   return (data || []).map((row) => rowToRecord(row as BaseResumeRow));
 };
 
+/**
+ * The "Professional title" on the user's default base resume — or on their
+ * oldest one, if none is flagged — or "" when there is none. Read straight out
+ * of the stored JSON, so no resume body comes down with it.
+ */
+export const getDefaultBaseResumeTitle = async (userId: string): Promise<string> => {
+  const { data, error } = await supabase
+    .from("base_resumes")
+    .select("title:resume->draft->>designation")
+    .eq("user_id", userId)
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return String((data as { title?: string | null } | null)?.title || "").trim();
+};
+
 export const countBaseResumes = async (userId: string): Promise<number> => {
   const { count, error } = await supabase
     .from("base_resumes")

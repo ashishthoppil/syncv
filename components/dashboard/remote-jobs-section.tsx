@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
+import { getDefaultBaseResumeTitle } from "@/lib/base-resume";
 import { cn } from "@/lib/utils";
 import {
   COMPANY_SIZES,
@@ -45,14 +46,6 @@ import {
   Wallet,
 } from "lucide-react";
 
-const EXAMPLE_QUERIES = [
-  "React Developer",
-  "Frontend Developer",
-  "Software Engineer",
-  "Product Designer",
-  "Data Analyst",
-];
-
 type Filters = {
   workplaceType: string;
   location: string;
@@ -80,6 +73,14 @@ const EMPTY_FILTERS: Filters = {
 };
 
 type FilterOption = { value: string; label: string };
+
+/**
+ * A resume title as a search: "Senior Software Engineer | React & Node" →
+ * "Senior Software Engineer". Keyword search needs every distinctive word to
+ * appear in a job, so the tagline after a separator would only narrow it.
+ */
+const searchableTitle = (title: string) =>
+  title.split(/\s[|•·–—-]\s|[|•·,(]/)[0].trim().slice(0, 80);
 
 /** The filter panel, in display order. "" is each filter's "any" choice. */
 const FILTER_FIELDS: {
@@ -324,6 +325,12 @@ export const RemoteJobsSection = ({
   const [hasSearched, setHasSearched] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Explains the list the section opened with — the user didn't type it.
+  const [autoNote, setAutoNote] = useState("");
+  // Set by any search or filter change the user starts, so the
+  // opening search never overwrites what they asked for.
+  const userSearchedRef = useRef(false);
+  const autoSearchStartedRef = useRef(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   // Mirrors the search that produced the current list, so the scroll loader
   // pages the right query even if the inputs have been edited since.
@@ -395,15 +402,19 @@ export const RemoteJobsSection = ({
     router.replace("/scan?section=remote-jobs");
   }, [hasFullAccess, activeJobId, lockedJobs, router]);
 
+  /**
+   * Runs a search, or loads its next page. Resolves to how many jobs the first
+   * page returned, or null if the search failed or didn't run.
+   */
   const runSearch = useCallback(
-    async (query: string, nextFilters: Filters, offset = 0) => {
+    async (query: string, nextFilters: Filters, offset = 0): Promise<number | null> => {
       if (!userId) {
         setError("Please log in to browse remote jobs.");
-        return;
+        return null;
       }
       // The gate below is what the user sees; this just saves the round trip,
       // since the route turns the same search away.
-      if (locked) return;
+      if (locked) return null;
       const append = offset > 0;
       if (append) {
         setLoadingMore(true);
@@ -437,11 +448,11 @@ export const RemoteJobsSection = ({
           // page is worth replacing the list with an error.
           if (append) {
             setHasMore(false);
-            return;
+            return null;
           }
           setJobs([]);
           setError(payload.message || "Unable to load remote jobs right now.");
-          return;
+          return null;
         }
         const incoming: RemoteJob[] = Array.isArray(payload.data)
           ? payload.data
@@ -461,16 +472,18 @@ export const RemoteJobsSection = ({
         setHasMore(
           hasFullAccess && Boolean(payload.hasMore) && incoming.length > 0
         );
+        return incoming.length;
       } catch (searchError) {
         console.error("Remote job search failed:", searchError);
         if (append) {
           setHasMore(false);
-          return;
+          return null;
         }
         setJobs([]);
         setError(
           "We couldn't reach the job sources. Check your connection and try again."
         );
+        return null;
       } finally {
         if (append) {
           setLoadingMore(false);
@@ -483,8 +496,44 @@ export const RemoteJobsSection = ({
     [userId, hasFullAccess, locked]
   );
 
+  // The section opens with results: jobs for the professional title on the
+  // default base resume, or the newest jobs when there's no title or it
+  // matches nothing. Once only — and not at all if the user gets there first.
+  useEffect(() => {
+    if (!userId || locked || autoSearchStartedRef.current) return;
+    autoSearchStartedRef.current = true;
+    const openWithResults = async () => {
+      // Covers the title lookup, so the empty "search for a role" state
+      // doesn't flash before the results arrive.
+      setLoading(true);
+      const title = searchableTitle(await getDefaultBaseResumeTitle(userId).catch(() => ""));
+      if (userSearchedRef.current) return;
+      if (title) {
+        setQueryInput(title);
+        track("remote_job_search", { query: title, location: "any", auto: true });
+        const found = await runSearch(title, EMPTY_FILTERS);
+        if (userSearchedRef.current || found === null) return;
+        if (found > 0) {
+          setAutoNote(`Matched to “${title}”, the title on your default base resume.`);
+          return;
+        }
+        setQueryInput("");
+        setAutoNote(`Nothing matches “${title}” right now, so here are the newest jobs.`);
+      }
+      await runSearch("", EMPTY_FILTERS);
+    };
+    openWithResults();
+  }, [userId, locked, runSearch]);
+
+  /** Marks a search as the user's own, ending the opening search's say. */
+  const takeOver = () => {
+    userSearchedRef.current = true;
+    setAutoNote("");
+  };
+
   const handleSearch = (event?: React.FormEvent) => {
     event?.preventDefault();
+    takeOver();
     track("remote_job_search", {
       query: queryInput.trim().slice(0, 100),
       location: filters.location || "any",
@@ -492,21 +541,17 @@ export const RemoteJobsSection = ({
     runSearch(queryInput, filters);
   };
 
-  const handleExample = (example: string) => {
-    setQueryInput(example);
-    track("remote_job_search", { query: example, location: filters.location || "any" });
-    runSearch(example, filters);
-  };
-
   // Changing a filter re-runs the search only once the user has searched at
   // least once — otherwise the empty state would vanish on a stray tap.
   const updateFilter = (key: keyof Filters, value: string) => {
+    takeOver();
     const nextFilters = { ...filters, [key]: value };
     setFilters(nextFilters);
     if (hasSearched) runSearch(queryInput, nextFilters);
   };
 
   const clearFilters = () => {
+    takeOver();
     setFilters(EMPTY_FILTERS);
     if (hasSearched) runSearch(queryInput, EMPTY_FILTERS);
   };
@@ -720,51 +765,47 @@ export const RemoteJobsSection = ({
                 enterKeyHint="search"
               />
             </div>
-            <Button type="submit" className="rounded-md sm:w-auto" disabled={loading}>
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="h-4 w-4" />
-              )}
-              Search
-            </Button>
-          </div>
-
-          <div className="flex flex-wrap gap-1.5">
-            {EXAMPLE_QUERIES.map((example) => (
+            {/* Search and Filters share a row: beside the field from `sm`, and
+                under it on phones, where three full-width controls would
+                push the results down. Filters stay folded away until asked
+                for; the badge counts the ones in use, so a folded panel never
+                hides an active filter. */}
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1 rounded-md sm:flex-none" disabled={loading}>
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                Search
+              </Button>
               <button
-                key={example}
                 type="button"
-                onClick={() => handleExample(example)}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-100 active:bg-slate-200"
+                onClick={() => setShowFilters((prev) => !prev)}
+                aria-expanded={showFilters}
+                aria-controls="remote-jobs-filters"
+                className={cn(
+                  "inline-flex h-11 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 md:h-9",
+                  showFilters ? "border-slate-300 bg-slate-50" : "border-slate-200"
+                )}
               >
-                {example}
+                <SlidersHorizontal className="h-4 w-4" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
               </button>
-            ))}
+            </div>
           </div>
         </form>
 
-        {/* Filters collapse on phones so the search field stays the first thing
-            on screen; from `lg` they're always open. */}
-        <button
-          type="button"
-          onClick={() => setShowFilters((prev) => !prev)}
-          aria-expanded={showFilters}
-          className="mt-4 inline-flex h-11 items-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-medium text-slate-700 lg:hidden"
-        >
-          <SlidersHorizontal className="h-4 w-4" />
-          Filters
-          {activeFilterCount > 0 && (
-            <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
-
         <div
+          id="remote-jobs-filters"
           className={cn(
             "mt-4 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-5",
-            showFilters ? "grid" : "hidden lg:grid"
+            showFilters ? "grid" : "hidden"
           )}
         >
           {FILTER_FIELDS.map((field) => (
@@ -852,6 +893,7 @@ export const RemoteJobsSection = ({
               {openJobs.length === 1 ? "job" : "jobs"}
             </p>
           </div>
+          {autoNote && <p className="-mt-1 text-xs text-slate-400">{autoNote}</p>}
 
           {openJobs.map((job) => (
             <JobCard key={job.id} job={job} onView={() => openJob(job)} />

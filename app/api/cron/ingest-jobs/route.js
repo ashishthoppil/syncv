@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
-import { cronHeaders, isCronRequest } from "@/lib/jobs-ingest/cron-auth";
+import { cronHeaders, internalBaseUrl, isCronRequest } from "@/lib/jobs-ingest/cron-auth";
 import { INGEST_SOURCES } from "@/lib/jobs-ingest/sources";
-import { createRun } from "@/lib/jobs-ingest/store";
+import { createRun, recordSourceResult } from "@/lib/jobs-ingest/store";
 import { JOB_LISTINGS_CACHE_TAG } from "@/lib/remote-jobs/search";
 import { getSupabaseAdminClient } from "@/lib/server/subscriptions";
 
@@ -29,22 +29,38 @@ export async function GET(req) {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
 
-  const origin = new URL(req.url).origin;
-  const runId = await createRun(getSupabaseAdminClient());
+  const base = internalBaseUrl();
+  const supabase = getSupabaseAdminClient();
+  const runId = await createRun(supabase);
 
-  const settled = await Promise.allSettled(
+  const sources = await Promise.all(
     INGEST_SOURCES.map(async (source) => {
-      const response = await fetch(
-        `${origin}/api/cron/ingest-jobs/${source.id}?run=${encodeURIComponent(runId)}`,
-        { headers: cronHeaders(), cache: "no-store", signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS) }
-      );
-      return response.json();
+      const url = `${base}/api/cron/ingest-jobs/${source.id}?run=${encodeURIComponent(runId)}`;
+      let failure;
+      try {
+        const response = await fetch(url, {
+          headers: cronHeaders(),
+          cache: "no-store",
+          signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS),
+        });
+        if (response.ok) return await response.json();
+        // Refused before the source could start (protection, auth, routing),
+        // so nothing recorded it. Say why, or the report can only say the
+        // source "never reported back".
+        const body = (await response.text()).replace(/\s+/g, " ").slice(0, 120);
+        failure = `HTTP ${response.status} calling ${url}: ${body}`;
+      } catch (error) {
+        // Timed out: the source may still be running and will record its own
+        // result, so leave its row alone.
+        if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+          return { source: source.id, status: "running", note: "still running at the dispatcher's time limit" };
+        }
+        failure = `Couldn't call ${url}: ${error?.message || error}`;
+      }
+      const summary = { source: source.id, status: "failed", fetched: 0, newJobs: 0, removed: 0, note: failure };
+      await recordSourceResult(supabase, runId, summary);
+      return summary;
     })
-  );
-  const sources = settled.map((outcome, index) =>
-    outcome.status === "fulfilled"
-      ? outcome.value
-      : { source: INGEST_SOURCES[index].id, status: "failed", note: String(outcome.reason) }
   );
 
   // Searches are cached until the data changes; it just did.
@@ -53,10 +69,11 @@ export async function GET(req) {
   let reportQueued = false;
   try {
     const response = await fetch(
-      `${origin}/api/cron/ingest-jobs/finalize?run=${encodeURIComponent(runId)}`,
+      `${base}/api/cron/ingest-jobs/finalize?run=${encodeURIComponent(runId)}`,
       { headers: cronHeaders(), cache: "no-store", signal: AbortSignal.timeout(5_000) }
     );
     reportQueued = response.ok;
+    if (!response.ok) console.error("Job ingest: report hand-off refused", response.status);
   } catch (error) {
     // The safety-net cron (vercel.json) sends the report if this hand-off fails.
     console.error("Job ingest: handing off the report failed", error);
