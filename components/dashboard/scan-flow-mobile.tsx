@@ -65,6 +65,7 @@ import type { ResumeTemplateId } from "@/components/resume-templates/types";
 import type { ResumeEditorSection } from "@/components/dashboard/resume-editor";
 import { TemplateThumbnail } from "@/components/dashboard/template-picker";
 import { useProductTour } from "@/components/onboarding/product-tour";
+import { DOC_FORMATS, type DocFormat } from "@/components/dashboard/download-format-menu";
 
 /**
  * The scan → optimize flow for phones, one step per screen:
@@ -196,7 +197,7 @@ type PreviewControl = {
   onTemplateChange: (id: ResumeTemplateId) => void;
   downloadingType: DocType | null;
   downloaded: Record<DocType, boolean>;
-  onDownload: (type: DocType) => void;
+  onDownload: (type: DocType, format?: DocFormat) => void;
   onRequestExit: (intent: MobileExitIntent) => void;
 };
 
@@ -1586,7 +1587,7 @@ const DownloadButton = ({
   downloadingType: DocType | null;
   downloaded: Record<DocType, boolean>;
   disabled: boolean;
-  onDownload: (type: DocType) => void;
+  onDownload: (type: DocType, format?: DocFormat) => void;
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1609,9 +1610,12 @@ const DownloadButton = ({
     };
   }, [menuOpen]);
 
-  const menuItems: { type: DocType; label: string; icon: LucideIcon }[] = [
+  // Each document in either format. The button itself stays one tap to the PDF.
+  const menuDocs: { type: DocType; label: string; icon: LucideIcon }[] = [
     { type: "cv", label: "Tailored CV", icon: FileText },
-    { type: "cover", label: "Cover letter", icon: NotepadText },
+    ...(allowsCoverLetter
+      ? [{ type: "cover" as const, label: "Cover letter", icon: NotepadText }]
+      : []),
   ];
 
   return (
@@ -1627,10 +1631,7 @@ const DownloadButton = ({
         type="button"
         disabled={disabled}
         onClick={() => onDownload(primary)}
-        className={cn(
-          "flex min-w-0 flex-1 items-center justify-center gap-2 px-3 text-[15px] font-medium",
-          allowsCoverLetter ? "rounded-l-xl" : "rounded-xl"
-        )}
+        className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-l-xl px-3 text-[15px] font-medium"
       >
         {busy ? (
           <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
@@ -1641,48 +1642,59 @@ const DownloadButton = ({
           {busy ? "Preparing…" : primary === "cover" ? "Download letter" : "Download CV"}
         </span>
       </button>
-      {allowsCoverLetter ? (
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="Choose a document to download"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((open) => !open)}
-          className="flex w-10 shrink-0 items-center justify-center rounded-r-xl border-l border-white/[0.08]"
-        >
-          <ChevronDown
-            className={cn("h-5 w-5 transition-transform", menuOpen && "rotate-180")}
-          />
-        </button>
-      ) : null}
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label="More download options"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((open) => !open)}
+        className="flex w-10 shrink-0 items-center justify-center rounded-r-xl border-l border-white/[0.08]"
+      >
+        <ChevronDown
+          className={cn("h-5 w-5 transition-transform", menuOpen && "rotate-180")}
+        />
+      </button>
       {menuOpen ? (
         <div
           role="menu"
-          className="absolute bottom-full left-0 z-10 mb-2 w-[min(17rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-1.5 text-slate-900 shadow-xl"
+          aria-label="Download"
+          className="absolute bottom-full left-0 z-10 mb-2 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-2 text-slate-900 shadow-xl"
         >
-          {menuItems.map(({ type, label, icon: Icon }) => (
-            <button
-              key={type}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                onDownload(type);
-              }}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-[15px] transition active:bg-slate-100"
-            >
-              <Icon className="h-5 w-5 text-slate-500" />
-              <span className="flex-1">{label}</span>
-              {downloaded[type] ? (
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
-                  <Check className="h-3.5 w-3.5" strokeWidth={2.75} /> Saved
-                </span>
-              ) : (
-                <span className="text-xs font-medium text-slate-400">PDF</span>
-              )}
-            </button>
+          {menuDocs.map(({ type, label, icon: Icon }) => (
+            <div key={type} role="group" aria-label={label} className="px-1 pb-2 pt-1">
+              <div className="flex items-center gap-2 px-1 pb-2 text-[13px] font-semibold text-slate-700">
+                <Icon className="h-4 w-4 text-slate-500" />
+                <span className="flex-1">{label}</span>
+                {downloaded[type] ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                    <Check className="h-3.5 w-3.5" strokeWidth={2.75} /> Saved
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {DOC_FORMATS.map(({ format, label: formatLabel, icon: FormatIcon }) => (
+                  <button
+                    key={format}
+                    type="button"
+                    role="menuitem"
+                    aria-label={`${label} as ${formatLabel}`}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDownload(type, format);
+                    }}
+                    className="flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 text-[15px] font-medium transition active:bg-slate-100"
+                  >
+                    <FormatIcon className="h-[18px] w-[18px] text-slate-500" />
+                    {format === "pdf" ? "PDF" : "Word"}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
+          <p className="border-t border-slate-100 px-2 pb-1 pt-2 text-xs leading-relaxed text-slate-500">
+            PDF is ready to send. Word stays editable.
+          </p>
         </div>
       ) : null}
     </div>

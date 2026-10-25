@@ -1901,6 +1901,26 @@ export const renderResumeFromData = ({
     useContactIcons,
   });
 
+// ---- Word export ------------------------------------------------------------
+// The DOCX writer (./docx.ts) lays out the same normalized sections as the
+// HTML above, so the PDF and Word downloads can never disagree about content.
+// These exports are its view into this file; it is loaded only on demand.
+export type ResumeSections = RenderedSections;
+export type ResumeSectionContactItem = ContactItem;
+export const resumeSectionsFromData = sectionsFromData;
+export const resumeSectionsFromText = sectionsFromText;
+export {
+  CEFR_LEVEL_RE,
+  displayLabelForUrl,
+  EUROPASS_CONTACT_LABELS,
+  formatDuration,
+  NATIVE_LANGUAGE_RE,
+  normalizeExperienceBullets,
+  parseCertificationLine,
+  splitLanguageLevel,
+  stripMarkdownBold,
+};
+
 // Plain-text projection of the structured resume — used client-side for the
 // analyzer re-evaluation and as a download fallback. Mirrors the server's
 // resumeObjectToText so scoring sees the same content the renderer shows.
@@ -2087,33 +2107,61 @@ export const highlightLinesInHtml = (html: string, lines: string[] = []): string
     .join("");
 };
 
-export const renderCoverLetterHtml = (content: string) => {
-  const plain = stripMarkdownBold(content);
-  const blocks = plain
+// The cover letter's structure, read once for both the PDF markup below and
+// the Word export (./docx.ts), so the two can't disagree about where the
+// greeting, body and sign-off are.
+export type CoverLetterBlock =
+  /** A sign-off ("Yours sincerely,") and the name/contact lines under it. */
+  | { kind: "closing"; closing: string; signature: string[] }
+  /** The opening block when its first line ends in a date. */
+  | { kind: "dated-opening"; recipient: string; date: string; rest: string }
+  | { kind: "opening"; text: string }
+  | { kind: "body"; text: string };
+
+// "Hiring Manager, Acme    12 March 2025" — recipient on the left, date right.
+const COVER_DATE_AT_LINE_END_RE =
+  /^(.*?)(?:\s{2,}|,\s+)(\w+\s+\d{1,2},\s+\d{4}|\d{1,2}\s+\w+\s+\d{4})\s*$/i;
+
+// The closing/sign-off block ("Yours sincerely," + name + contact lines).
+const COVER_CLOSING_RE =
+  /^(yours\s+(sincerely|faithfully|truly)|sincerely|faithfully|best\s+regards|kind\s+regards|warm\s+regards|regards|respectfully|thank\s+you|best|cheers)\b/i;
+
+export const parseCoverLetter = (content: string): CoverLetterBlock[] =>
+  stripMarkdownBold(content)
     .split(/\n{2,}/)
     .map((part) => part.trim())
-    .filter(Boolean);
-
-  const dateAtLineEndRegex =
-    /^(.*?)(?:\s{2,}|,\s+)(\w+\s+\d{1,2},\s+\d{4}|\d{1,2}\s+\w+\s+\d{4})\s*$/i;
-
-  // The closing/sign-off block ("Yours sincerely," + name + contact lines).
-  const closingRegex =
-    /^(yours\s+(sincerely|faithfully|truly)|sincerely|faithfully|best\s+regards|kind\s+regards|warm\s+regards|regards|respectfully|thank\s+you|best|cheers)\b/i;
-
-  const paragraphs = blocks
-    .map((part, index) => {
+    .filter(Boolean)
+    .map((part, index): CoverLetterBlock => {
       const lines = part.split("\n").map((line) => line.trim()).filter(Boolean);
+      if (COVER_CLOSING_RE.test(lines[0] || "")) {
+        return { kind: "closing", closing: lines[0], signature: lines.slice(1) };
+      }
+      if (index === 0) {
+        const firstLineMatch = (lines[0] || "").match(COVER_DATE_AT_LINE_END_RE);
+        if (firstLineMatch) {
+          return {
+            kind: "dated-opening",
+            recipient: firstLineMatch[1].trim(),
+            date: firstLineMatch[2].trim(),
+            rest: lines.slice(1).join("\n").trim(),
+          };
+        }
+        return { kind: "opening", text: part };
+      }
+      return { kind: "body", text: part };
+    });
 
+export const renderCoverLetterHtml = (content: string) => {
+  const paragraphs = parseCoverLetter(content)
+    .map((block) => {
       // Sign-off: give it clear space above, keep the closing line apart from
       // the name/contact lines, and breathe between those lines.
-      if (closingRegex.test(lines[0] || "")) {
+      if (block.kind === "closing") {
         const closing = `<p style="font-size:13px;line-height:1.7;color:#334155;margin:28px 0 12px;">${escapeHtml(
-          lines[0]
+          block.closing
         )}</p>`;
-        const rest = lines.slice(1);
-        const restMarkup = rest.length
-          ? `<p style="font-size:13px;line-height:1.9;color:#334155;margin:0;">${rest
+        const restMarkup = block.signature.length
+          ? `<p style="font-size:13px;line-height:1.9;color:#334155;margin:0;">${block.signature
               .map((line) => escapeHtml(line))
               .join("<br/>")}</p>`
           : "";
@@ -2122,32 +2170,28 @@ export const renderCoverLetterHtml = (content: string) => {
 
       // Greeting (first block): recipient / date line, with generous space
       // before the body.
-      if (index === 0) {
-        const firstLineMatch = (lines[0] || "").match(dateAtLineEndRegex);
-        if (firstLineMatch) {
-          const left = firstLineMatch[1].trim();
-          const date = firstLineMatch[2].trim();
-          const rest = lines.slice(1).join("\n").trim();
-          const row = `<div style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13px;line-height:1.7;color:#334155;margin:0 0 6px;\"><span>${escapeHtml(
-            left
-          )}</span><span style=\"text-align:right;white-space:nowrap;\">${escapeHtml(
-            date
-          )}</span></div>`;
-          const restMarkup = rest
-            ? `<p style=\"font-size:13px;line-height:1.7;color:#334155;margin:0 0 22px;\">${escapeHtml(
-                rest
-              ).replace(/\n/g, "<br/>")}</p>`
-            : "";
-          return `${row}${restMarkup}`;
-        }
+      if (block.kind === "dated-opening") {
+        const row = `<div style=\"display:flex;justify-content:space-between;align-items:flex-start;gap:12px;font-size:13px;line-height:1.7;color:#334155;margin:0 0 6px;\"><span>${escapeHtml(
+          block.recipient
+        )}</span><span style=\"text-align:right;white-space:nowrap;\">${escapeHtml(
+          block.date
+        )}</span></div>`;
+        const restMarkup = block.rest
+          ? `<p style=\"font-size:13px;line-height:1.7;color:#334155;margin:0 0 22px;\">${escapeHtml(
+              block.rest
+            ).replace(/\n/g, "<br/>")}</p>`
+          : "";
+        return `${row}${restMarkup}`;
+      }
+      if (block.kind === "opening") {
         return `<p style="font-size:13px;line-height:1.7;color:#334155;margin:0 0 22px;">${escapeHtml(
-          part
+          block.text
         ).replace(/\n/g, "<br/>")}</p>`;
       }
 
       // Body paragraph.
       return `<p style=\"font-size:13px;line-height:1.75;color:#334155;margin:0 0 16px;\">${escapeHtml(
-        part
+        block.text
       ).replace(/\n/g, "<br/>")}</p>`;
     })
     .join("");

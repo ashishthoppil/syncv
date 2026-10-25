@@ -145,6 +145,12 @@ const STEPS: Step[] = [
   },
 ];
 
+/** What building from scratch involves, for the screen that offers it. */
+export const WIZARD_SECTION_COUNTS = {
+  required: STEPS.filter((step) => !step.skippable).length,
+  optional: STEPS.filter((step) => step.skippable).length,
+};
+
 type BaseResumeWizardProps = {
   user: WizardUser;
   initialDraft: BaseResumeDraft;

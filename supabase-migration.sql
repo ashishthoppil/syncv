@@ -712,3 +712,55 @@ CREATE TABLE IF NOT EXISTS job_ingest_source_runs (
 
 ALTER TABLE job_ingest_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE job_ingest_source_runs ENABLE ROW LEVEL SECURITY;
+
+-- ---------------------------------------------------------------------------
+-- Remote Jobs: saved jobs
+-- ---------------------------------------------------------------------------
+-- Postings a user bookmarked. A jobs row is deleted once its posting expires,
+-- so `job` keeps a copy of the listing as it was saved (no description): it is
+-- what the saved list shows, marked expired, after the row has gone.
+--
+-- `refreshed_at` is when that copy last matched a live posting. startup.jobs'
+-- terms ask that their listings be refreshed or deleted within seven days, so
+-- a saved copy of one of theirs is removed a week after the posting leaves the
+-- listings (prune_saved_jobs, called by the nightly finalize).
+--
+-- Server-only, like the jobs tables: RLS on and no policies.
+CREATE TABLE IF NOT EXISTS saved_jobs (
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  job_id TEXT NOT NULL,
+  job JSONB NOT NULL,
+  saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_jobs_user_saved_at ON saved_jobs(user_id, saved_at DESC);
+
+ALTER TABLE saved_jobs ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION prune_saved_jobs(p_stale_days INTEGER DEFAULT 7)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  removed INTEGER;
+BEGIN
+  UPDATE saved_jobs s
+  SET refreshed_at = NOW()
+  FROM jobs j
+  WHERE j.id = s.job_id
+    AND s.job->>'source' = 'startupjobs';
+
+  DELETE FROM saved_jobs s
+  WHERE s.job->>'source' = 'startupjobs'
+    AND s.refreshed_at < NOW() - make_interval(days => p_stale_days)
+    AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = s.job_id);
+  GET DIAGNOSTICS removed = ROW_COUNT;
+  RETURN removed;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION prune_saved_jobs(INTEGER) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION prune_saved_jobs(INTEGER) TO service_role;

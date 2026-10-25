@@ -308,3 +308,32 @@ export const getJobListing = async (id: string): Promise<RemoteJob | null> => {
     plain: htmlToPlainText(raw),
   });
 };
+
+/** PostgREST puts `in` filters in the URL, so long id lists go in batches. */
+const ID_BATCH = 100;
+
+/**
+ * The listings (no descriptions) for these ids that are still live, keyed by
+ * id — for the saved list. An id is missing from the result once its row is
+ * gone (expired, or taken down at the source) or past its own expiry date.
+ */
+export const getLiveJobListings = async (ids: string[]): Promise<Map<string, RemoteJob>> => {
+  const supabase = getSupabaseAdminClient();
+  const live = new Map<string, RemoteJob>();
+  const now = new Date().toISOString();
+  for (let index = 0; index < ids.length; index += ID_BATCH) {
+    const batch = ids.slice(index, index + ID_BATCH);
+    const [listings, lapsed] = await Promise.all([
+      supabase.from("job_listings").select(LISTING_COLUMNS).in("id", batch),
+      // Still stored, but its closing date has passed since the nightly clean-up.
+      supabase.from("jobs").select("id").in("id", batch).lte("expires_at", now),
+    ]);
+    if (listings.error) throw new Error(`Loading saved jobs failed: ${listings.error.message}`);
+    if (lapsed.error) throw new Error(`Loading saved jobs failed: ${lapsed.error.message}`);
+    const lapsedIds = new Set((lapsed.data || []).map((row) => row.id as string));
+    for (const row of (listings.data || []) as unknown as ListingRow[]) {
+      if (!lapsedIds.has(row.id)) live.set(row.id, toRemoteJob(row));
+    }
+  }
+  return live;
+};

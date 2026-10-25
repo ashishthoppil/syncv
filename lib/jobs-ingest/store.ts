@@ -10,6 +10,7 @@ import type { CompanyRow, JobRow, SourceRunSummary } from "./types";
 const PAGE = 1000;
 const WRITE_BATCH = 200;
 /** startup.jobs' terms: refresh or delete what we fetched within seven days. */
+const STARTUP_JOBS_REFRESH_DAYS = 7;
 const STARTUP_JOBS_STALE_DAYS = 6;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -154,6 +155,19 @@ export const deleteExpiredJobs = async (supabase: SupabaseClient) => {
     removed += count || 0;
   }
   return removed;
+};
+
+/**
+ * startup.jobs' seven-day refresh-or-delete term reaches the copies kept in
+ * users' saved lists too: the SQL function deletes a saved one of theirs a
+ * week after the posting left the listings.
+ */
+export const pruneSavedJobs = async (supabase: SupabaseClient) => {
+  const { data, error } = await supabase.rpc("prune_saved_jobs", {
+    p_stale_days: STARTUP_JOBS_REFRESH_DAYS,
+  });
+  if (error) throw new Error(`Pruning saved jobs failed: ${error.message}`);
+  return Number(data) || 0;
 };
 
 export const countJobs = async (supabase: SupabaseClient) => {

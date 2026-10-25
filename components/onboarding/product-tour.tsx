@@ -135,7 +135,7 @@ const TOUR_STEPS: TourStep[] = [
     target: '[data-tour="preview-download"]',
     advance: "next",
     title: "Download your CV",
-    body: "Happy with it? Download the tailored resume as a PDF, ready to send with your application.",
+    body: "Happy with it? Download the tailored resume as a PDF, ready to send with your application. The arrow beside the button gets you a Word file instead, if you'd like to keep editing.",
     transient: true,
   },
   {

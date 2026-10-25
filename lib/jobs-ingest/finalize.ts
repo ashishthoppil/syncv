@@ -3,7 +3,13 @@ import { getSupabaseAdminClient } from "@/lib/server/subscriptions";
 import { JOB_RETENTION_DAYS, SOURCE_NAMES } from "@/lib/remote-jobs/types";
 import { enrichPendingCompanies } from "./enrich-companies";
 import { INGEST_SOURCES } from "./sources";
-import { countJobs, deleteExpiredJobs, finishRun, loadSourceResults } from "./store";
+import {
+  countJobs,
+  deleteExpiredJobs,
+  finishRun,
+  loadSourceResults,
+  pruneSavedJobs,
+} from "./store";
 
 /** What finalize may spend classifying companies before the report goes out. */
 const ENRICH_BUDGET_MS = 35_000;
@@ -47,6 +53,11 @@ export const finalizeIngestRun = async (runId: string | null) => {
     expired = await deleteExpiredJobs(supabase);
   } catch (cleanupError) {
     problems.push(String(cleanupError));
+  }
+  try {
+    await pruneSavedJobs(supabase);
+  } catch (pruneError) {
+    problems.push(String(pruneError));
   }
   try {
     companiesEnriched = await enrichPendingCompanies(supabase, startedAt + ENRICH_BUDGET_MS);

@@ -64,7 +64,7 @@ export default function SignUp() {
       console.warn("Failed to trigger welcome email.", welcomeEmailError);
     }
 
-    toast.success("Registered successfully! Let’s set up your profile.");
+    toast.success("Account created! Let’s get you started.");
     setEmail("");
     setPassword("");
     setConfirmPassword("");

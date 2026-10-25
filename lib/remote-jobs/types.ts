@@ -348,6 +348,20 @@ export const DEFAULT_SEARCH_PARAMS: RemoteJobSearchParams = {
   offset: 0,
 };
 
+/** A job the user saved, as the saved list shows it. */
+export type SavedRemoteJob = RemoteJob & {
+  /** ISO date string. */
+  savedAt: string;
+  /**
+   * The posting has left the listings — closed, past the retention window, or
+   * taken down at the source. The job is then the copy kept when it was saved.
+   */
+  expired: boolean;
+};
+
+/** Saved jobs per user. A list longer than this has stopped being a shortlist. */
+export const MAX_SAVED_JOBS = 200;
+
 /**
  * Ceiling on how deep "Load more" can page. Nobody scrolls 500 jobs looking
  * for one to scan; past this the answer is a better search, not more pages.

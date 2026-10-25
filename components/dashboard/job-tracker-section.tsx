@@ -24,7 +24,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Download,
   List,
   Loader2,
   Mic,
@@ -37,6 +36,11 @@ import { resolveResumePhotoUrl } from "@/lib/resume-photo";
 import { InterviewPrepDialog } from "@/components/dashboard/interview/interview-prep-dialog";
 import { MockInterviewDialog } from "@/components/dashboard/interview/mock-interview-dialog";
 import { MOCK_ATTEMPTS_PER_JOB } from "@/lib/interview-config";
+import {
+  DownloadFormatMenu,
+  type DocFormat,
+} from "@/components/dashboard/download-format-menu";
+import { downloadBlob } from "@/lib/download-blob";
 
 const STATUS_STYLES: Record<string, string> = {
   Applied: "border-blue-200 bg-blue-50 text-blue-700",
@@ -288,7 +292,11 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
       .replace(/^-+|-+$/g, "") || "unknown";
 
 
-  const downloadGeneratedDocument = async (job: Job, type: "resume" | "cover") => {
+  const downloadGeneratedDocument = async (
+    job: Job,
+    type: "resume" | "cover",
+    format: DocFormat
+  ) => {
     const coverText = job.generated_cover_letter_text || "";
     const payload = job.generated_resume_payload || null;
     // The resume is only downloadable once the user has downloaded the optimized
@@ -307,55 +315,71 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
 
     setDownloading(`${job.id}-${type}`);
     try {
-      // Reproduce the EXACT optimized resume the user downloaded — same renderer
-      // (structured object when available), template, and overrides.
+      // Reproduce the EXACT optimized resume the user downloaded — same content,
+      // template, and overrides — in whichever format is asked for now.
       const photoUrl =
         type === "resume" ? await resolveResumePhotoUrl(payload?.photoPath) : "";
-      const html =
-        type === "resume"
-          ? payload?.resumeData
-            ? renderResumeFromData({
-                data: payload.resumeData,
-                templateId: (payload.template || "classic-blue") as ResumeTemplateId,
-                candidateName: payloadCandidate,
-                designation: payload.designation || job.designation || "",
-                photoUrl,
-                overrides: payload.overrides || undefined,
-              })
-            : renderResumeHtml({
+      const template = (payload?.template || "classic-blue") as ResumeTemplateId;
+      const designation = payload?.designation || job.designation || "";
+      let blob: Blob;
+      if (format === "docx") {
+        const { renderResumeDocx, renderCoverLetterDocx } = await import(
+          "@/components/resume-templates/docx"
+        );
+        blob =
+          type === "resume"
+            ? await renderResumeDocx({
+                data: payload?.resumeData,
                 resumeText: payload?.resumeText || "",
-                templateId: (payload?.template || "classic-blue") as ResumeTemplateId,
+                templateId: template,
                 candidateName: payloadCandidate,
-                designation: payload?.designation || job.designation || "",
+                designation,
                 photoUrl,
                 overrides: payload?.overrides || undefined,
               })
-          : renderCoverLetterHtml(coverText);
-      const response = await fetch("/api/generate-pdf", {
-        method: "POST",
-        body: JSON.stringify({
-          html,
-          type: type === "resume" ? "saved-resume" : "saved-cover-letter",
-        }),
-      });
-      if (!response.ok) throw new Error("Failed to generate PDF.");
+            : await renderCoverLetterDocx(coverText, extractCandidateName(coverText));
+      } else {
+        const html =
+          type === "resume"
+            ? payload?.resumeData
+              ? renderResumeFromData({
+                  data: payload.resumeData,
+                  templateId: template,
+                  candidateName: payloadCandidate,
+                  designation,
+                  photoUrl,
+                  overrides: payload.overrides || undefined,
+                })
+              : renderResumeHtml({
+                  resumeText: payload?.resumeText || "",
+                  templateId: template,
+                  candidateName: payloadCandidate,
+                  designation,
+                  photoUrl,
+                  overrides: payload?.overrides || undefined,
+                })
+            : renderCoverLetterHtml(coverText);
+        const response = await fetch("/api/generate-pdf", {
+          method: "POST",
+          body: JSON.stringify({
+            html,
+            type: type === "resume" ? "saved-resume" : "saved-cover-letter",
+          }),
+        });
+        if (!response.ok) throw new Error("Failed to generate PDF.");
+        blob = await response.blob();
+      }
 
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
       const candidateSlug = toSlugPart(
         type === "resume" ? payloadCandidate : extractCandidateName(coverText)
       );
       const orgSlug = toSlugPart(job.organization || "organization");
-      anchor.download =
+      downloadBlob(
+        blob,
         type === "resume"
-          ? `${candidateSlug}-${orgSlug}-resume.pdf`
-          : `${candidateSlug}-${orgSlug}-cover-letter.pdf`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+          ? `${candidateSlug}-${orgSlug}-resume.${format}`
+          : `${candidateSlug}-${orgSlug}-cover-letter.${format}`
+      );
     } catch (error) {
       console.error(error);
       toast.error("Unable to download document.");
@@ -703,44 +727,58 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
               // The six cells are built once and composed twice: as a stacked
               // card on phones and as the original table row from `sm` up.
               // Sharing the pieces keeps the two layouts from drifting apart.
+              // Each opens a PDF / Word choice. A chevron rather than the
+              // download glyph says "choose", and keeps the joined pair inside
+              // the 172px Documents column.
               const resumeButton = (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    downloading === `${job.id}-resume` || !job.generated_resume_payload
+                <DownloadFormatMenu
+                  align="start"
+                  onPick={(format) => downloadGeneratedDocument(job, "resume", format)}
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        downloading === `${job.id}-resume` || !job.generated_resume_payload
+                      }
+                      title={
+                        job.generated_resume_payload
+                          ? "Download the resume as PDF or Word"
+                          : "Available after you download the optimized resume for this job"
+                      }
+                      className="flex-1 gap-1 rounded-md rounded-r-none sm:flex-none"
+                    >
+                      Resume
+                      {downloading === `${job.id}-resume` ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                      )}
+                    </Button>
                   }
-                  title={
-                    job.generated_resume_payload
-                      ? undefined
-                      : "Available after you download the optimized resume for this job"
-                  }
-                  className="flex-1 gap-0 rounded-md rounded-r-none sm:flex-none"
-                  onClick={() => downloadGeneratedDocument(job, "resume")}
-                >
-                  {downloading === `${job.id}-resume` ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="mr-1 h-4 w-4" />
-                  )}
-                  Resume
-                </Button>
+                />
               );
               const coverButton = (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={downloading === `${job.id}-cover`}
-                  className="flex-1 gap-0 rounded-md rounded-l-none border-l-0 sm:flex-none"
-                  onClick={() => downloadGeneratedDocument(job, "cover")}
-                >
-                  {downloading === `${job.id}-cover` ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="mr-1 h-4 w-4" />
-                  )}
-                  Cover
-                </Button>
+                <DownloadFormatMenu
+                  align="end"
+                  onPick={(format) => downloadGeneratedDocument(job, "cover", format)}
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={downloading === `${job.id}-cover`}
+                      title="Download the cover letter as PDF or Word"
+                      className="flex-1 gap-1 rounded-md rounded-l-none border-l-0 sm:flex-none"
+                    >
+                      Cover
+                      {downloading === `${job.id}-cover` ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                      )}
+                    </Button>
+                  }
+                />
               );
               // Before tailoring there is only the scan score. After it, both
               // are shown as "was → now", so the lift the optimization bought

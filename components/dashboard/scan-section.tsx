@@ -17,6 +17,11 @@ import {
 } from "@/lib/resume-review";
 import { ResumeReviewPopover } from "@/components/dashboard/resume-review-popover";
 import {
+  SplitDownloadButton,
+  type DocFormat,
+} from "@/components/dashboard/download-format-menu";
+import { downloadBlob } from "@/lib/download-blob";
+import {
   KeywordPriorityChips,
   KeywordPriorityHeading,
   KeywordPriorityInline,
@@ -422,8 +427,10 @@ export const ScanSection = ({
   // resume to compare with.
   const [review, setReview] = useState<ResumeReview | null>(null);
   const [reviewDecisions, setReviewDecisions] = useState<ReviewDecisions>({});
-  // Download was asked for with changes still unreviewed.
+  // Download was asked for with changes still unreviewed — and in which format,
+  // so "Accept all & download" delivers the file that was asked for.
   const [downloadGateOpen, setDownloadGateOpen] = useState(false);
+  const gatedFormatRef = useRef<DocFormat>("pdf");
   // The Design tab and Cover letter view unmount the resume editor; this is
   // how it comes back with its drafts and used Rephrase / Generate buttons.
   const resumeEditorSession = useRef<ResumeEditorSession | null>(null);
@@ -1286,7 +1293,7 @@ export const ScanSection = ({
     }
   };
 
-  const downloadPdf = async (type: "cv" | "cover") => {
+  const downloadDocument = async (type: "cv" | "cover", format: DocFormat = "pdf") => {
     if (!tailoredDocs) return;
     if (type === "cover" && !shouldAllowCoverLetter) return;
     setMobileAlert(null);
@@ -1296,63 +1303,80 @@ export const ScanSection = ({
         previewCandidateName.trim() || extractCandidateName(form.resume);
       const candidateSlug = toSlugPart(candidateName);
       const orgSlug = toSlugPart(form.organization || "organization");
-      // Prefer the structured object (the source of truth). Fall back to the
-      // derived text only when no object is present (old/guest cached docs).
-      const html =
-        type === "cv"
-          ? renderableResumeData
-            ? renderResumeFromData({
+      const resumeText = editableResumeText || tailoredDocs.optimizedResumeText;
+
+      let blob: Blob;
+      if (format === "docx") {
+        // Loaded on first use: the Word writer is only needed by people who ask for it.
+        const { renderResumeDocx, renderCoverLetterDocx } = await import(
+          "@/components/resume-templates/docx"
+        );
+        blob =
+          type === "cv"
+            ? await renderResumeDocx({
                 data: renderableResumeData,
+                resumeText,
                 templateId: selectedTemplate,
                 candidateName,
                 designation: previewDesignation,
                 photoUrl: resumePhotoUrl,
                 overrides: templateOverrides[selectedTemplate],
-                useContactIcons: !guestTrial,
               })
-            : renderResumeHtml({
-                resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
-                templateId: selectedTemplate,
-                candidateName,
-                designation: previewDesignation,
-                photoUrl: resumePhotoUrl,
-                overrides: templateOverrides[selectedTemplate],
-                useContactIcons: !guestTrial,
-              })
-          : renderCoverLetterHtml(tailoredDocs.coverLetter);
+            : await renderCoverLetterDocx(tailoredDocs.coverLetter, candidateName);
+      } else {
+        // Prefer the structured object (the source of truth). Fall back to the
+        // derived text only when no object is present (old/guest cached docs).
+        const html =
+          type === "cv"
+            ? renderableResumeData
+              ? renderResumeFromData({
+                  data: renderableResumeData,
+                  templateId: selectedTemplate,
+                  candidateName,
+                  designation: previewDesignation,
+                  photoUrl: resumePhotoUrl,
+                  overrides: templateOverrides[selectedTemplate],
+                  useContactIcons: !guestTrial,
+                })
+              : renderResumeHtml({
+                  resumeText,
+                  templateId: selectedTemplate,
+                  candidateName,
+                  designation: previewDesignation,
+                  photoUrl: resumePhotoUrl,
+                  overrides: templateOverrides[selectedTemplate],
+                  useContactIcons: !guestTrial,
+                })
+            : renderCoverLetterHtml(tailoredDocs.coverLetter);
 
-      const response = await fetch("/api/generate-pdf", {
-        method: "POST",
-        body: JSON.stringify({
-          html,
-          type: type === "cv" ? "tailored-cv" : "tailored-cover-letter",
-        }),
-      });
+        const response = await fetch("/api/generate-pdf", {
+          method: "POST",
+          body: JSON.stringify({
+            html,
+            type: type === "cv" ? "tailored-cv" : "tailored-cover-letter",
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error("Failed to generate PDF.");
+        if (!response.ok) {
+          throw new Error("Failed to generate PDF.");
+        }
+        blob = await response.blob();
       }
 
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download =
+      downloadBlob(
+        blob,
         type === "cv"
-          ? `${candidateSlug}-${orgSlug}-resume.pdf`
-          : `${candidateSlug}-${orgSlug}-cover-letter.pdf`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+          ? `${candidateSlug}-${orgSlug}-resume.${format}`
+          : `${candidateSlug}-${orgSlug}-cover-letter.${format}`
+      );
       // The browser owns the save dialog from here, so this records that the
       // download was started — the closest signal we can observe.
       setDownloadedDocs((prev) => ({ ...prev, [type]: true }));
 
       // Persist the EXACT optimized resume the user just downloaded, so the Job
-      // Tracker can reproduce an identical file. This is the only place the
-      // resume payload is stored — the Job Tracker resume download is available
-      // only after this runs (fire-and-forget).
+      // Tracker can reproduce an identical file in either format. This is the
+      // only place the resume payload is stored — the Job Tracker resume
+      // download is available only after this runs (fire-and-forget).
       if (type === "cv" && scanJobId && !guestTrial) {
         fetch("/api/job-tracker", {
           method: "PATCH",
@@ -1361,7 +1385,7 @@ export const ScanSection = ({
             resumeTemplateId: selectedTemplate,
             generatedResumePayload: {
               resumeData: renderableResumeData || null,
-              resumeText: editableResumeText || tailoredDocs.optimizedResumeText,
+              resumeText,
               template: selectedTemplate,
               overrides: templateOverrides[selectedTemplate] || null,
               candidateName,
@@ -1386,7 +1410,11 @@ export const ScanSection = ({
       }
     } catch (error) {
       console.error(error);
-      notify.error("Unable to download PDF right now.");
+      notify.error(
+        format === "docx"
+          ? "Unable to create the Word file right now."
+          : "Unable to download PDF right now."
+      );
     } finally {
       setDownloadingType(null);
     }
@@ -2376,17 +2404,18 @@ export const ScanSection = ({
   };
 
   // The resume downloads only once every change has been accepted or rejected.
-  const requestDownload = (type: "cv" | "cover") => {
+  const requestDownload = (type: "cv" | "cover", format: DocFormat = "pdf") => {
     if (type === "cv" && reviewBlocksDownload) {
+      gatedFormatRef.current = format;
       setDownloadGateOpen(true);
       return;
     }
-    downloadPdf(type);
+    downloadDocument(type, format);
   };
 
   // Mark pending changes — or, with no review to show, added keywords and
-  // unconfirmed figures — in the PREVIEW only. downloadPdf() renders its own
-  // HTML, so the PDF is never highlighted.
+  // unconfirmed figures — in the PREVIEW only. downloadDocument() renders its
+  // own, so neither the PDF nor the Word file is ever highlighted.
   const renderPreviewResumeHtml = () => {
     if (!tailoredDocs) return "";
     if (reviewed) {
@@ -2826,7 +2855,7 @@ export const ScanSection = ({
               onClick={() => {
                 acceptAllReviewChanges({ includeFigures: true });
                 setDownloadGateOpen(false);
-                downloadPdf("cv");
+                downloadDocument("cv", gatedFormatRef.current);
               }}
             >
               <Check className="mr-2 h-4 w-4" />
@@ -4049,33 +4078,28 @@ export const ScanSection = ({
                     Re-evaluate
                   </Button>
                 ) : null}
-                <Button
-                  data-tour="preview-download"
-                  className="flex-1 rounded-md sm:flex-none"
-                  disabled={
-                    guestTrial ||
-                    downloadingType === "cv" ||
-                    downloadingType === "cover" ||
-                    isComputingFinalScore
-                  }
-                  onClick={() => {
-                    if (guestTrial) return;
-                    requestDownload(previewView === "cover" ? "cover" : "cv");
-                  }}
-                >
-                  {guestTrial ? (
+                {guestTrial ? (
+                  <Button
+                    data-tour="preview-download"
+                    className="flex-1 rounded-md sm:flex-none"
+                    disabled
+                  >
                     <Download className="mr-2 h-4 w-4" />
-                  ) : downloadingType === "cv" || downloadingType === "cover" ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="mr-2 h-4 w-4" />
-                  )}
-                  {guestTrial
-                    ? "Login to download"
-                    : previewView === "cover"
-                      ? "Download cover letter"
-                      : "Download CV"}
-                </Button>
+                    Login to download
+                  </Button>
+                ) : (
+                  // PDF on the button itself; the chevron offers Word.
+                  <SplitDownloadButton
+                    data-tour="preview-download"
+                    className="flex-1 sm:flex-none"
+                    label={previewView === "cover" ? "Download cover letter" : "Download CV"}
+                    busy={downloadingType === "cv" || downloadingType === "cover"}
+                    disabled={isComputingFinalScore}
+                    onDownload={(format) =>
+                      requestDownload(previewView === "cover" ? "cover" : "cv", format)
+                    }
+                  />
+                )}
                 {remoteJob ? (
                   <Button
                     type="button"

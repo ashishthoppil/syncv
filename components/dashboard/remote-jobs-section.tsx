@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { toast } from "react-toastify";
+import swal from "sweetalert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
 import { getDefaultBaseResumeTitle } from "@/lib/base-resume";
+import { authedFetch } from "@/lib/authed-fetch";
 import { cn } from "@/lib/utils";
 import {
   COMPANY_SIZES,
@@ -29,10 +31,13 @@ import {
   TECH_STACK_FILTERS,
   WORKPLACE_TYPES,
   type RemoteJob,
+  type SavedRemoteJob,
 } from "@/lib/remote-jobs/types";
 import {
   ArrowLeft,
+  Bookmark,
   Building2,
+  CalendarX2,
   Clock,
   Code2,
   ExternalLink,
@@ -43,6 +48,7 @@ import {
   Search,
   SearchX,
   SlidersHorizontal,
+  Trash2,
   Wallet,
 } from "lucide-react";
 
@@ -168,6 +174,30 @@ const formatPostedAt = (iso: string) => {
   const months = Math.floor(days / 30);
   return months === 1 ? "Posted 1 month ago" : `Posted ${months} months ago`;
 };
+
+// "12 Oct 2026". Fixed month names, so it reads the same in every locale.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const formatSavedOn = (iso: string) => {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+};
+
+const newestSavedFirst = (list: SavedRemoteJob[]) =>
+  [...list].sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+
+/** The copy a save keeps: the listing without its description. */
+const toSavedJob = (job: RemoteJob): SavedRemoteJob => ({
+  ...job,
+  description: "",
+  descriptionHtml: "",
+  detailLoaded: false,
+  savedAt: new Date().toISOString(),
+  expired: false,
+});
+
+type ListView = "search" | "saved";
 
 /** "Full-time · Senior" — only the parts the source actually gave us. */
 const metaLine = (job: RemoteJob) =>
@@ -315,6 +345,9 @@ export const RemoteJobsSection = ({
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeJobId = searchParams?.get("job") || "";
+  // Search and Saved are two lists of the same section. The choice lives in the
+  // URL, so a job opened from either one leads back to it.
+  const view: ListView = searchParams?.get("view") === "saved" ? "saved" : "search";
 
   const [queryInput, setQueryInput] = useState("");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -345,6 +378,15 @@ export const RemoteJobsSection = ({
   const viewedJobIdRef = useRef("");
   const detailTopRef = useRef<HTMLElement | null>(null);
 
+  // Saved jobs. Updated through `updateSaved`, which keeps the ref in step: an
+  // undo fired from a toast runs long after the render that created it.
+  const [savedJobs, setSavedJobs] = useState<SavedRemoteJob[]>([]);
+  const savedJobsRef = useRef<SavedRemoteJob[]>([]);
+  const [savedStatus, setSavedStatus] = useState<"loading" | "ready" | "error">("loading");
+  // Jobs whose save or removal is in flight — their buttons wait for it.
+  const pendingSaveRef = useRef(new Set<string>());
+  const [pendingSaveIds, setPendingSaveIds] = useState<string[]>([]);
+
   useEffect(() => {
     track("remote_jobs_viewed");
   }, []);
@@ -354,10 +396,20 @@ export const RemoteJobsSection = ({
     [filters]
   );
 
-  /** The stripped record from the result list — header fields only, possibly no JD. */
+  const savedIds = useMemo(() => new Set(savedJobs.map((job) => job.id)), [savedJobs]);
+
+  /**
+   * The stripped record from the result list, or the saved list — header
+   * fields only, possibly no JD.
+   */
   const listJob = useMemo(
-    () => (activeJobId ? jobs.find((job) => job.id === activeJobId) || null : null),
-    [activeJobId, jobs]
+    () =>
+      activeJobId
+        ? jobs.find((job) => job.id === activeJobId) ||
+          savedJobs.find((job) => job.id === activeJobId && !job.expired) ||
+          null
+        : null,
+    [activeJobId, jobs, savedJobs]
   );
 
   // The ATS boards withhold descriptions from search responses (they run to
@@ -396,11 +448,12 @@ export const RemoteJobsSection = ({
 
   // The blurred cards aren't clickable, but the URL that opens a job is — so a
   // locked one is bounced back to the list rather than rendered.
+  // A saved job is the user's own pick, whatever the current search shows.
   useEffect(() => {
-    if (hasFullAccess || !activeJobId) return;
+    if (hasFullAccess || !activeJobId || savedIds.has(activeJobId)) return;
     if (!lockedJobs.some((job) => job.id === activeJobId)) return;
     router.replace("/scan?section=remote-jobs");
-  }, [hasFullAccess, activeJobId, lockedJobs, router]);
+  }, [hasFullAccess, activeJobId, lockedJobs, savedIds, router]);
 
   /**
    * Runs a search, or loads its next page. Resolves to how many jobs the first
@@ -583,12 +636,160 @@ export const RemoteJobsSection = ({
     return () => observer.disconnect();
   }, [activeJobId, hasFullAccess, hasMore, loading, loadingMore, runSearch]);
 
+  const listUrl = (target: ListView = view) =>
+    target === "saved" ? "/scan?section=remote-jobs&view=saved" : "/scan?section=remote-jobs";
+
+  const showView = (target: ListView) => {
+    if (target !== view) router.push(listUrl(target));
+  };
+
   const openJob = (job: RemoteJob) => {
-    router.push(`/scan?section=remote-jobs&job=${encodeURIComponent(job.id)}`);
+    router.push(`${listUrl()}&job=${encodeURIComponent(job.id)}`);
   };
 
   const closeJob = () => {
-    router.push("/scan?section=remote-jobs");
+    router.push(listUrl());
+  };
+
+  const updateSaved = useCallback(
+    (change: (list: SavedRemoteJob[]) => SavedRemoteJob[]) => {
+      savedJobsRef.current = change(savedJobsRef.current);
+      setSavedJobs(savedJobsRef.current);
+    },
+    []
+  );
+
+  const loadSavedJobs = useCallback(async () => {
+    setSavedStatus("loading");
+    try {
+      const response = await authedFetch("/api/remote-jobs/saved");
+      const payload = await response.json();
+      if (!payload.success) throw new Error(payload.message || "Loading saved jobs failed.");
+      updateSaved(() => (Array.isArray(payload.data) ? payload.data : []));
+      setSavedStatus("ready");
+    } catch (loadError) {
+      console.error("Loading saved jobs failed:", loadError);
+      setSavedStatus("error");
+    }
+  }, [updateSaved]);
+
+  // Loaded with the section rather than with the Saved list, so every card can
+  // show whether its job is already saved.
+  useEffect(() => {
+    if (!userId || locked) return;
+    loadSavedJobs();
+  }, [userId, locked, loadSavedJobs]);
+
+  /**
+   * Saves or removes a job. The bookmark flips at once and flips back if the
+   * request fails. `undoable` offers the removal back in a toast — for the
+   * Saved list, where the card disappears.
+   */
+  const setJobSaved = async (
+    job: RemoteJob,
+    save: boolean,
+    { undoable = false }: { undoable?: boolean } = {}
+  ) => {
+    if (pendingSaveRef.current.has(job.id)) return;
+    const previous = savedJobsRef.current.find((saved) => saved.id === job.id);
+    if (save === Boolean(previous)) return;
+    pendingSaveRef.current.add(job.id);
+    setPendingSaveIds([...pendingSaveRef.current]);
+    updateSaved((list) =>
+      save ? [toSavedJob(job), ...list] : list.filter((saved) => saved.id !== job.id)
+    );
+    track(save ? "remote_job_saved" : "remote_job_unsaved", { jobId: job.id, source: job.source });
+
+    try {
+      const response = save
+        ? await authedFetch("/api/remote-jobs/saved", {
+            method: "POST",
+            body: JSON.stringify({ jobId: job.id }),
+          })
+        : await authedFetch(`/api/remote-jobs/saved?id=${encodeURIComponent(job.id)}`, {
+            method: "DELETE",
+          });
+      const payload = await response.json().catch(() => ({}));
+      if (!payload.success) throw new Error(payload.message || "");
+      if (save && payload.data) {
+        updateSaved((list) => list.map((saved) => (saved.id === job.id ? payload.data : saved)));
+      }
+      // An expired job can't be saved again, so there is nothing to undo to.
+      if (!save && undoable && previous && !previous.expired) {
+        toast(({ closeToast }) => (
+          <div className="flex items-center justify-between gap-3">
+            <span>Removed from saved jobs.</span>
+            <button
+              type="button"
+              className="shrink-0 font-semibold text-slate-900 underline"
+              onClick={() => {
+                closeToast?.();
+                setJobSaved(previous, true);
+              }}
+            >
+              Undo
+            </button>
+          </div>
+        ));
+      }
+    } catch (saveError) {
+      updateSaved((list) =>
+        save
+          ? list.filter((saved) => saved.id !== job.id)
+          : previous
+            ? newestSavedFirst([...list, previous])
+            : list
+      );
+      const message = saveError instanceof Error ? saveError.message : "";
+      toast.error(
+        message ||
+          (save
+            ? "We couldn't save that job. Please try again."
+            : "We couldn't remove that job. Please try again.")
+      );
+    } finally {
+      pendingSaveRef.current.delete(job.id);
+      setPendingSaveIds([...pendingSaveRef.current]);
+    }
+  };
+
+  const toggleSaved = (job: RemoteJob) => setJobSaved(job, !savedIds.has(job.id));
+
+  const clearExpiredSaved = async () => {
+    const expired = savedJobsRef.current.filter((job) => job.expired);
+    if (!expired.length) return;
+    const confirmed = await swal({
+      title: `Remove ${expired.length} expired ${expired.length === 1 ? "job" : "jobs"}?`,
+      text: "They'll be cleared from your saved list. Expired postings can't be saved again.",
+      icon: "warning",
+      buttons: ["Cancel", "Remove"],
+      dangerMode: true,
+    });
+    if (!confirmed) return;
+    updateSaved((list) => list.filter((job) => !job.expired));
+    try {
+      const response = await authedFetch("/api/remote-jobs/saved?expired=1", { method: "DELETE" });
+      const payload = await response.json().catch(() => ({}));
+      if (!payload.success) throw new Error(payload.message || "");
+    } catch (clearError) {
+      console.error("Removing expired saved jobs failed:", clearError);
+      updateSaved((list) => newestSavedFirst([...list, ...expired]));
+      toast.error("We couldn't remove those jobs. Please try again.");
+    }
+  };
+
+  /** From an expired saved job: the same search, for roles still open. */
+  const findSimilar = (job: RemoteJob) => {
+    const title = searchableTitle(job.title);
+    takeOver();
+    setQueryInput(title);
+    showView("search");
+    track("remote_job_search", {
+      query: title,
+      location: filters.location || "any",
+      similar: true,
+    });
+    runSearch(title, filters);
   };
 
   // Fetches the complete record: either because the job was opened by URL
@@ -702,7 +903,7 @@ export const RemoteJobsSection = ({
           onClick={closeJob}
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to jobs
+          {view === "saved" ? "Back to saved jobs" : "Back to jobs"}
         </Button>
 
         {detailPending && !listJob ? (
@@ -712,7 +913,15 @@ export const RemoteJobsSection = ({
         ) : detailPending && listJob ? (
           // Header fields are already in hand from the result list, so show the
           // job immediately and keep only the description in a loading state.
-          <JobDetail job={listJob} descriptionLoading onScan={() => {}} onApply={() => handleApply(listJob)} />
+          <JobDetail
+            job={listJob}
+            descriptionLoading
+            onScan={() => {}}
+            onApply={() => handleApply(listJob)}
+            saved={savedIds.has(listJob.id)}
+            saving={pendingSaveIds.includes(listJob.id)}
+            onToggleSave={() => toggleSaved(listJob)}
+          />
         ) : !selectedJob ? (
           <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
             <SearchX className="mx-auto h-8 w-8 text-slate-300" />
@@ -723,7 +932,7 @@ export const RemoteJobsSection = ({
               Postings are removed once the source takes them down.
             </p>
             <Button className="mt-5 rounded-md" onClick={closeJob}>
-              Back to search
+              {view === "saved" ? "Back to saved jobs" : "Back to search"}
             </Button>
           </div>
         ) : (
@@ -731,226 +940,523 @@ export const RemoteJobsSection = ({
             job={selectedJob}
             onScan={() => handleScanJob(selectedJob)}
             onApply={() => handleApply(selectedJob)}
+            saved={savedIds.has(selectedJob.id)}
+            saving={pendingSaveIds.includes(selectedJob.id)}
+            onToggleSave={() => toggleSaved(selectedJob)}
           />
         )}
       </section>
     );
   }
 
+  const activeSaved = savedJobs.filter((job) => !job.expired);
+  const expiredSaved = savedJobs.filter((job) => job.expired);
+
   return (
     <section className="mx-auto max-w-5xl space-y-6">
-      <SectionHeading />
-
-      {/* The first-run tour ends here. */}
-      <div
-        data-tour="remote-jobs-search"
-        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
-      >
-        <form onSubmit={handleSearch} className="space-y-3">
-          <label
-            htmlFor="remote-jobs-search"
-            className="text-sm font-medium text-slate-600"
-          >
-            Search jobs
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
-                id="remote-jobs-search"
-                className="rounded-md pl-9"
-                placeholder="React Developer"
-                value={queryInput}
-                onChange={(event) => setQueryInput(event.target.value)}
-                enterKeyHint="search"
-              />
-            </div>
-            {/* Search and Filters share a row: beside the field from `sm`, and
-                under it on phones, where three full-width controls would
-                push the results down. Filters stay folded away until asked
-                for; the badge counts the ones in use, so a folded panel never
-                hides an active filter. */}
-            <div className="flex gap-2">
-              <Button type="submit" className="flex-1 rounded-md sm:flex-none" disabled={loading}>
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Search className="h-4 w-4" />
-                )}
-                Search
-              </Button>
-              <button
-                type="button"
-                onClick={() => setShowFilters((prev) => !prev)}
-                aria-expanded={showFilters}
-                aria-controls="remote-jobs-filters"
-                className={cn(
-                  "inline-flex h-11 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 md:h-9",
-                  showFilters ? "border-slate-300 bg-slate-50" : "border-slate-200"
-                )}
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                Filters
-                {activeFilterCount > 0 && (
-                  <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                    {activeFilterCount}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-        </form>
-
-        <div
-          id="remote-jobs-filters"
-          className={cn(
-            "mt-4 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-5",
-            showFilters ? "grid" : "hidden"
-          )}
-        >
-          {FILTER_FIELDS.map((field) => (
-            <div key={field.key} className="space-y-1.5">
-              <label
-                htmlFor={`remote-jobs-filter-${field.key}`}
-                className="text-xs font-medium text-slate-500"
-              >
-                {field.label}
-              </label>
-              <select
-                id={`remote-jobs-filter-${field.key}`}
-                className={SELECT_CLASS}
-                value={filters[field.key]}
-                onChange={(event) => updateFilter(field.key, event.target.value)}
-              >
-                <option value="">{field.anyLabel}</option>
-                {field.options.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
-          {activeFilterCount > 0 && (
-            <div className="flex items-end sm:col-span-2 lg:col-span-5">
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
-              >
-                Clear filters
-              </button>
-            </div>
-          )}
-        </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <SectionHeading />
+        <ViewSwitch view={view} savedCount={savedJobs.length} onChange={showView} />
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
-        </div>
-      ) : error ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-          <h2 className="text-base font-semibold text-amber-900">
-            Job search is unavailable
-          </h2>
-          <p className="mt-1 text-sm text-amber-800">{error}</p>
-          <Button
-            variant="outline"
-            className="mt-4 rounded-md"
-            onClick={() => runSearch(queryInput, filters)}
-          >
-            Try again
-          </Button>
-        </div>
-      ) : !hasSearched ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <Search className="mx-auto h-8 w-8 text-slate-300" />
-          <h2 className="mt-3 text-base font-semibold text-slate-900">
-            Find your next remote or hybrid job
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Search for a role above, or narrow it down with the filters.
-          </p>
-        </div>
-      ) : !jobs.length ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <SearchX className="mx-auto h-8 w-8 text-slate-300" />
-          <h2 className="mt-3 text-base font-semibold text-slate-900">
-            No matching jobs found
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Try a different job title or broaden your filters.
-          </p>
-        </div>
+      {view === "saved" ? (
+        <SavedJobsList
+          status={savedStatus}
+          active={activeSaved}
+          expired={expiredSaved}
+          pendingIds={pendingSaveIds}
+          onRetry={loadSavedJobs}
+          onBrowse={() => showView("search")}
+          onView={openJob}
+          onRemove={(job) => setJobSaved(job, false, { undoable: true })}
+          onClearExpired={clearExpiredSaved}
+          onFindSimilar={findSimilar}
+        />
       ) : (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {/* "Showing", not a total: more pages load as the user scrolls,
-                and without a plan the count is the three that are open. */}
-            <p className="text-sm text-slate-500">
-              Showing {openJobs.length}{" "}
-              {openJobs.length === 1 ? "job" : "jobs"}
-            </p>
-          </div>
-          {autoNote && <p className="-mt-1 text-xs text-slate-400">{autoNote}</p>}
-
-          {openJobs.map((job) => (
-            <JobCard key={job.id} job={job} onView={() => openJob(job)} />
-          ))}
-
-          {/* Without a plan the list stops after three, and the remainder is
-              shown blurred so the depth of the results is still visible. The
-              cards are inert and hidden from assistive tech — this is a teaser,
-              not content someone can reach. */}
-          {lockedJobs.length > 0 && (
-            <div className="relative">
-              <div
-                aria-hidden="true"
-                className="space-y-3 select-none blur-[6px]"
+        <>
+          {/* The first-run tour ends here. */}
+          <div
+            data-tour="remote-jobs-search"
+            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+          >
+            <form onSubmit={handleSearch} className="space-y-3">
+              <label
+                htmlFor="remote-jobs-search"
+                className="text-sm font-medium text-slate-600"
               >
-                {lockedJobs.map((job) => (
-                  <div key={job.id} className="pointer-events-none">
-                    <JobCard job={job} onView={() => {}} />
-                  </div>
-                ))}
+                Search jobs
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    id="remote-jobs-search"
+                    className="rounded-md pl-9"
+                    placeholder="React Developer"
+                    value={queryInput}
+                    onChange={(event) => setQueryInput(event.target.value)}
+                    enterKeyHint="search"
+                  />
+                </div>
+                {/* Search and Filters share a row: beside the field from `sm`, and
+                    under it on phones, where three full-width controls would
+                    push the results down. Filters stay folded away until asked
+                    for; the badge counts the ones in use, so a folded panel never
+                    hides an active filter. */}
+                <div className="flex gap-2">
+                  <Button type="submit" className="flex-1 rounded-md sm:flex-none" disabled={loading}>
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                    Search
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters((prev) => !prev)}
+                    aria-expanded={showFilters}
+                    aria-controls="remote-jobs-filters"
+                    className={cn(
+                      "inline-flex h-11 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 md:h-9",
+                      showFilters ? "border-slate-300 bg-slate-50" : "border-slate-200"
+                    )}
+                  >
+                    <SlidersHorizontal className="h-4 w-4" />
+                    Filters
+                    {activeFilterCount > 0 && (
+                      <span className="rounded-full bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-slate-50/40 to-slate-50"
-              />
-            </div>
-          )}
+            </form>
 
-          {/* Only when results were actually held back. A free search that
-              returned three or fewer has nothing locked, so claiming otherwise
-              would be a false upsell. */}
-          {withheldResults && <UpgradePrompt router={router} />}
-
-          {/* Scroll sentinel — crossing into view pulls the next page. */}
-          {hasFullAccess && (
-            <div ref={loadMoreRef} aria-hidden className="h-px w-full" />
-          )}
-
-          {loadingMore && (
             <div
-              className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500"
-              aria-live="polite"
+              id="remote-jobs-filters"
+              className={cn(
+                "mt-4 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 lg:grid-cols-5",
+                showFilters ? "grid" : "hidden"
+              )}
             >
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading more jobs…
+              {FILTER_FIELDS.map((field) => (
+                <div key={field.key} className="space-y-1.5">
+                  <label
+                    htmlFor={`remote-jobs-filter-${field.key}`}
+                    className="text-xs font-medium text-slate-500"
+                  >
+                    {field.label}
+                  </label>
+                  <select
+                    id={`remote-jobs-filter-${field.key}`}
+                    className={SELECT_CLASS}
+                    value={filters[field.key]}
+                    onChange={(event) => updateFilter(field.key, event.target.value)}
+                  >
+                    <option value="">{field.anyLabel}</option>
+                    {field.options.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              {activeFilterCount > 0 && (
+                <div className="flex items-end sm:col-span-2 lg:col-span-5">
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+            </div>
+          ) : error ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+              <h2 className="text-base font-semibold text-amber-900">
+                Job search is unavailable
+              </h2>
+              <p className="mt-1 text-sm text-amber-800">{error}</p>
+              <Button
+                variant="outline"
+                className="mt-4 rounded-md"
+                onClick={() => runSearch(queryInput, filters)}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : !hasSearched ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <Search className="mx-auto h-8 w-8 text-slate-300" />
+              <h2 className="mt-3 text-base font-semibold text-slate-900">
+                Find your next remote or hybrid job
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Search for a role above, or narrow it down with the filters.
+              </p>
+            </div>
+          ) : !jobs.length ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+              <SearchX className="mx-auto h-8 w-8 text-slate-300" />
+              <h2 className="mt-3 text-base font-semibold text-slate-900">
+                No matching jobs found
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Try a different job title or broaden your filters.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {/* "Showing", not a total: more pages load as the user scrolls,
+                    and without a plan the count is the three that are open. */}
+                <p className="text-sm text-slate-500">
+                  Showing {openJobs.length}{" "}
+                  {openJobs.length === 1 ? "job" : "jobs"}
+                </p>
+              </div>
+              {autoNote && <p className="-mt-1 text-xs text-slate-400">{autoNote}</p>}
+
+              {openJobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  onView={() => openJob(job)}
+                  saved={savedIds.has(job.id)}
+                  saving={pendingSaveIds.includes(job.id)}
+                  onToggleSave={() => toggleSaved(job)}
+                />
+              ))}
+
+              {/* Without a plan the list stops after three, and the remainder is
+                  shown blurred so the depth of the results is still visible. The
+                  cards are inert and hidden from assistive tech — this is a teaser,
+                  not content someone can reach. */}
+              {lockedJobs.length > 0 && (
+                <div className="relative">
+                  <div
+                    aria-hidden="true"
+                    className="space-y-3 select-none blur-[6px]"
+                  >
+                    {lockedJobs.map((job) => (
+                      <div key={job.id} className="pointer-events-none">
+                        <JobCard job={job} onView={() => {}} />
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-slate-50/40 to-slate-50"
+                  />
+                </div>
+              )}
+
+              {/* Only when results were actually held back. A free search that
+                  returned three or fewer has nothing locked, so claiming otherwise
+                  would be a false upsell. */}
+              {withheldResults && <UpgradePrompt router={router} />}
+
+              {/* Scroll sentinel — crossing into view pulls the next page. */}
+              {hasFullAccess && (
+                <div ref={loadMoreRef} aria-hidden className="h-px w-full" />
+              )}
+
+              {loadingMore && (
+                <div
+                  className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500"
+                  aria-live="polite"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading more jobs…
+                </div>
+              )}
+
+              {!withheldResults && !hasMore && !loadingMore && (
+                <p className="py-6 text-center text-xs text-slate-400">
+                  That&apos;s every job we found. Try a different title or
+                  broaden your filters for more.
+                </p>
+              )}
             </div>
           )}
-
-          {!withheldResults && !hasMore && !loadingMore && (
-            <p className="py-6 text-center text-xs text-slate-400">
-              That&apos;s every job we found. Try a different title or
-              broaden your filters for more.
-            </p>
-          )}
-        </div>
+        </>
       )}
     </section>
+  );
+};
+
+/**
+ * Search ⇄ Saved. Links in effect — each is a URL — so they are marked up as
+ * navigation rather than as tabs.
+ */
+const ViewSwitch = ({
+  view,
+  savedCount,
+  onChange,
+}: {
+  view: ListView;
+  savedCount: number;
+  onChange: (view: ListView) => void;
+}) => (
+  <nav
+    aria-label="Remote jobs lists"
+    className="grid shrink-0 grid-cols-2 rounded-lg bg-slate-100 p-1 sm:inline-grid"
+  >
+    {(
+      [
+        { id: "search", label: "Search", icon: Search },
+        { id: "saved", label: "Saved", icon: Bookmark },
+      ] as const
+    ).map(({ id, label, icon: Icon }) => {
+      const active = view === id;
+      return (
+        <button
+          key={id}
+          type="button"
+          aria-current={active ? "page" : undefined}
+          onClick={() => onChange(id)}
+          className={cn(
+            "inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors md:h-9",
+            active ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+          )}
+        >
+          <Icon className="h-4 w-4" />
+          {label}
+          {id === "saved" && savedCount > 0 ? (
+            <span
+              className={cn(
+                "min-w-[1.25rem] rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
+                active ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-700"
+              )}
+            >
+              {savedCount}
+            </span>
+          ) : null}
+        </button>
+      );
+    })}
+  </nav>
+);
+
+const SaveJobButton = ({
+  saved,
+  saving,
+  onClick,
+  className,
+}: {
+  saved: boolean;
+  saving: boolean;
+  onClick: () => void;
+  className?: string;
+}) => (
+  <Button
+    type="button"
+    variant="outline"
+    aria-pressed={saved}
+    title={saved ? "Remove from saved jobs" : "Save this job for later"}
+    disabled={saving}
+    onClick={onClick}
+    className={cn("rounded-md", saved && "border-slate-300 bg-slate-50", className)}
+  >
+    <Bookmark className={cn("h-4 w-4", saved && "fill-current")} />
+    {saved ? "Saved" : "Save"}
+  </Button>
+);
+
+const SavedJobsList = ({
+  status,
+  active,
+  expired,
+  pendingIds,
+  onRetry,
+  onBrowse,
+  onView,
+  onRemove,
+  onClearExpired,
+  onFindSimilar,
+}: {
+  status: "loading" | "ready" | "error";
+  active: SavedRemoteJob[];
+  expired: SavedRemoteJob[];
+  pendingIds: string[];
+  onRetry: () => void;
+  onBrowse: () => void;
+  onView: (job: RemoteJob) => void;
+  onRemove: (job: RemoteJob) => void;
+  onClearExpired: () => void;
+  onFindSimilar: (job: RemoteJob) => void;
+}) => {
+  if (status === "loading" && !active.length && !expired.length) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+      </div>
+    );
+  }
+  if (status === "error") {
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+        <h2 className="text-base font-semibold text-amber-900">
+          Your saved jobs didn&apos;t load
+        </h2>
+        <p className="mt-1 text-sm text-amber-800">
+          Check your connection and try again.
+        </p>
+        <Button variant="outline" className="mt-4 rounded-md" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+  if (!active.length && !expired.length) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+          <Bookmark className="h-6 w-6" />
+        </span>
+        <h2 className="mt-3 text-base font-semibold text-slate-900">No saved jobs yet</h2>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
+          Tap Save on any job to keep it here for later. If a posting closes,
+          it stays on your list marked as expired.
+        </p>
+        <Button className="mt-5 rounded-md" onClick={onBrowse}>
+          <Search className="h-4 w-4" />
+          Browse jobs
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-slate-500" aria-live="polite">
+        {active.length} saved {active.length === 1 ? "job" : "jobs"}
+        {expired.length ? ` · ${expired.length} expired` : ""}
+      </p>
+
+      {active.map((job) => (
+        <JobCard
+          key={job.id}
+          job={job}
+          savedAt={job.savedAt}
+          onView={() => onView(job)}
+          saved
+          saving={pendingIds.includes(job.id)}
+          onToggleSave={() => onRemove(job)}
+        />
+      ))}
+
+      {expired.length > 0 && (
+        <div className={cn("space-y-3", active.length > 0 && "pt-4")}>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Expired{" "}
+                <span className="font-normal text-slate-400">· {expired.length}</span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                These postings have closed or been taken down, so they can no
+                longer be opened or scanned.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClearExpired}
+              className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+            >
+              Remove all expired
+            </button>
+          </div>
+          {expired.map((job) => (
+            <ExpiredJobCard
+              key={job.id}
+              job={job}
+              removing={pendingIds.includes(job.id)}
+              onRemove={() => onRemove(job)}
+              onFindSimilar={() => onFindSimilar(job)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** A saved posting that has left the listings: what it was, and a way on. */
+const ExpiredJobCard = ({
+  job,
+  removing,
+  onRemove,
+  onFindSimilar,
+}: {
+  job: SavedRemoteJob;
+  removing: boolean;
+  onRemove: () => void;
+  onFindSimilar: () => void;
+}) => {
+  const saved = formatSavedOn(job.savedAt);
+  return (
+    <article className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-4">
+      <div className="flex items-start gap-3">
+        <span className="opacity-60 grayscale">
+          <CompanyLogo job={job} size="sm" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-semibold text-slate-600 break-words">
+            <JobTitle job={job} className="break-words" />
+          </h3>
+          {job.companyName && (
+            <p className="mt-0.5 text-sm text-slate-500 break-words">{job.companyName}</p>
+          )}
+        </div>
+        <span className="shrink-0 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-xs font-medium text-rose-700">
+          Expired
+        </span>
+      </div>
+
+      <p className="mt-3 flex items-start gap-1.5 text-sm text-slate-500">
+        <CalendarX2 className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+        <span>No longer accepting applications through this listing.</span>
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="text-xs text-slate-400">
+          {saved && <span>Saved {saved}</span>}
+          {saved && <span className="mx-1.5">·</span>}
+          <SourceCredit job={job} />
+        </div>
+        <div className="flex w-full gap-2 sm:w-auto">
+          <Button
+            variant="outline"
+            className="flex-1 rounded-md sm:flex-none"
+            onClick={onFindSimilar}
+          >
+            <Search className="h-4 w-4" />
+            Find similar jobs
+          </Button>
+          <Button
+            variant="ghost"
+            className="rounded-md text-slate-600"
+            onClick={onRemove}
+            disabled={removing}
+          >
+            <Trash2 className="h-4 w-4" />
+            Remove
+          </Button>
+        </div>
+      </div>
+    </article>
   );
 };
 
@@ -1000,7 +1506,24 @@ const WorkplaceBadge = ({ job }: { job: RemoteJob }) => (
   </span>
 );
 
-const JobCard = ({ job, onView }: { job: RemoteJob; onView: () => void }) => {
+const JobCard = ({
+  job,
+  onView,
+  saved = false,
+  saving = false,
+  onToggleSave,
+  savedAt,
+}: {
+  job: RemoteJob;
+  onView: () => void;
+  saved?: boolean;
+  saving?: boolean;
+  /** Left out for the blurred preview cards, which can't be acted on. */
+  onToggleSave?: () => void;
+  /** Shown in the Saved list. */
+  savedAt?: string;
+}) => {
+  const savedOn = savedAt ? formatSavedOn(savedAt) : "";
   const meta = metaLine(job);
   const company = companyLine(job);
   const tags = tagsFor(job);
@@ -1058,13 +1581,20 @@ const JobCard = ({ job, onView }: { job: RemoteJob; onView: () => void }) => {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs text-slate-400">
+          {savedOn && <span>Saved {savedOn}</span>}
+          {savedOn && <span className="mx-1.5">·</span>}
           {posted && <span>{posted}</span>}
           {posted && <span className="mx-1.5">·</span>}
           <SourceCredit job={job} />
         </div>
-        <Button className="w-full rounded-md sm:w-auto" onClick={onView}>
-          View Job
-        </Button>
+        <div className="flex w-full gap-2 sm:w-auto">
+          {onToggleSave ? (
+            <SaveJobButton saved={saved} saving={saving} onClick={onToggleSave} />
+          ) : null}
+          <Button className="flex-1 rounded-md sm:flex-none" onClick={onView}>
+            View Job
+          </Button>
+        </div>
       </div>
     </article>
   );
@@ -1099,12 +1629,18 @@ const JobDetail = ({
   onScan,
   onApply,
   descriptionLoading = false,
+  saved,
+  saving,
+  onToggleSave,
 }: {
   job: RemoteJob;
   onScan: () => void;
   onApply: () => void;
   /** The header is real but the JD is still being fetched. */
   descriptionLoading?: boolean;
+  saved: boolean;
+  saving: boolean;
+  onToggleSave: () => void;
 }) => {
   useSourceCanonical(job);
   const meta = metaLine(job);
@@ -1157,6 +1693,12 @@ const JobDetail = ({
         <ExternalLink className="h-4 w-4" />
         Apply
       </Button>
+      <SaveJobButton
+        saved={saved}
+        saving={saving}
+        onClick={onToggleSave}
+        className="w-full sm:w-auto"
+      />
     </div>
   );
 

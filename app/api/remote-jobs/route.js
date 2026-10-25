@@ -6,29 +6,9 @@ import {
   FREE_PLAN_VISIBLE_JOBS,
   MAX_SEARCH_OFFSET,
 } from "@/lib/remote-jobs/types";
-import {
-  countFreeTrialScans,
-  FREE_TRIAL_SCAN_LIMIT,
-  getPlanForUser,
-  getSupabaseAdminClient,
-} from "@/lib/server/subscriptions";
+import { getRemoteJobsAccess } from "@/lib/server/remote-jobs-access";
 
 const MAX_LIMIT = 50;
-
-/**
- * The full list comes with a plan that includes Remote Jobs (Remote Jobs or
- * Pro). Without one, browsing the preview needs free-trial scans left, since
- * a job you can't scan is a dead end. The same conditions the dashboard uses
- * to draw the locks — enforced here too, because a screen that merely hides
- * the search still answers `curl`.
- */
-const getAccess = async (userId) => {
-  const supabase = getSupabaseAdminClient();
-  const plan = await getPlanForUser(supabase, userId);
-  if (plan?.includesRemoteJobs) return { canBrowse: true, fullList: true };
-  const used = await countFreeTrialScans(supabase, userId);
-  return { canBrowse: used < FREE_TRIAL_SCAN_LIMIT, fullList: false };
-};
 
 /**
  * Remote Jobs search, over the jobs the daily ingest stores
@@ -50,7 +30,7 @@ export async function GET(req) {
       });
     }
 
-    const access = await getAccess(userId);
+    const access = await getRemoteJobsAccess(userId);
     if (!access.canBrowse) {
       return NextResponse.json({
         success: false,
