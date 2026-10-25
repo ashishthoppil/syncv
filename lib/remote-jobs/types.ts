@@ -325,9 +325,10 @@ export const POSTED_WITHIN_OPTIONS = [
 export const REMOTE_JOBS_PAGE_SIZE = 10;
 
 /**
- * What a user without an active Pro plan gets: two jobs they can open
- * and scan, then a short blurred run underneath so the depth of the list is
- * visible. They don't page on scroll — the rest is behind the plan.
+ * What a user without a plan that includes Remote Jobs gets, during the
+ * free trial and after it: two jobs they can open, then a short blurred run
+ * underneath so the depth of the list is visible. They don't page on scroll —
+ * the rest is behind the plan.
  */
 export const FREE_PLAN_VISIBLE_JOBS = 2;
 export const FREE_PLAN_PREVIEW_JOBS = 3;
@@ -384,13 +385,14 @@ export const SOURCE_NAMES: Record<string, string> = {
 };
 
 /**
- * Sources whose terms ask for a credit linking to their own site, not just to
- * the posting. Shown beside every job from them.
+ * Sources whose terms require that they be named, with a link to their own
+ * site. The app otherwise never says where a job came from; jobs from these
+ * carry a small credit on the job page only (the user's choice, 2026-10-25).
+ * Every job page links back to the original posting, which covers the
+ * sources that only ask for that.
  */
-export const SOURCE_HOMEPAGES: Record<string, string> = {
+export const SOURCE_CREDITS: Record<string, string> = {
   jobicy: "https://jobicy.com",
-  arbeitnow: "https://www.arbeitnow.com",
-  workingnomads: "https://www.workingnomads.com",
   himalayas: "https://himalayas.app",
   startupjobs: "https://startup.jobs",
 };

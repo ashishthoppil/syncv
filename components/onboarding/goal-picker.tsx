@@ -41,7 +41,7 @@ export const ONBOARDING_GOALS: GoalOption[] = [
   {
     id: "remote_jobs",
     title: "Find remote jobs",
-    description: "Browse remote and hybrid roles from 11 job boards, refreshed every night.",
+    description: "Browse remote and hybrid roles, refreshed every night.",
     icon: Globe2,
   },
   {

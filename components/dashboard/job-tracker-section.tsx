@@ -26,6 +26,7 @@ import {
   ChevronRight,
   List,
   Loader2,
+  Lock,
   Mic,
   SaveIcon,
   Search,
@@ -550,73 +551,15 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
     );
   }
 
-  if (subscriptionLocked) {
-    // Tracking jobs is a paid feature, but interview practice isn't only
-    // that: the free plan's trial includes a prep guide and one mock
-    // interview, and both need a scanned job to work from. The scan that
-    // produces that job is also what ends the trial and locks this section,
-    // so the jobs are listed here, read-only, with just those two buttons.
-    // (The server holds the actual allowance; see lib/server/interview.js.)
-    const practiceJobs = jobs.filter(hasKeywordData).slice(0, JOBS_PER_PAGE);
-    return (
-      <section className="space-y-8 max-w-6xl mx-auto">
-        <div className="flex items-start gap-3 sm:items-center">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
-            <List className="h-5 w-5" />
-          </span>
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Job Tracker</h1>
-            <p className="text-sm text-slate-500">
-              Keep tabs on every opportunity you are pursuing.
-            </p>
-          </div>
-        </div>
-        {practiceJobs.length ? (
-          <div className="mx-auto max-w-xl rounded-2xl border border-violet-200 bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold text-slate-900">Interview practice</h2>
-              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
-                Included free
-              </span>
-            </div>
-            <p className="mt-1 text-sm leading-relaxed text-slate-500">
-              An interview prep guide and one mock interview, for a job you&apos;ve scanned.
-            </p>
-            <ul className="mt-3 divide-y divide-slate-100">
-              {practiceJobs.map((job) => (
-                <li
-                  key={job.id}
-                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0">
-                    <p className="break-anywhere text-sm font-semibold text-slate-900">
-                      {job.organization}
-                    </p>
-                    <p className="break-anywhere text-sm text-slate-600">{job.designation}</p>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    {renderInterviewButtons(job, false, false)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        <SubscriptionGate
-          event="job_tracker_locked_upgrade_clicked"
-          title="You're out of scans"
-          body="Job Tracker keeps every role you've scanned in one place, with the score it earned and the documents you generated for it."
-          highlights={[
-            "Every scan saved automatically, with its score",
-            "Track each application from applied to offer",
-            "Re-download the exact CV and cover letter you sent",
-            `Interview prep and ${MOCK_ATTEMPTS_PER_JOB} mock interviews for every job you scan`,
-          ]}
-        />
-        {interviewDialogs}
-      </section>
-    );
-  }
+  // Once the free trial is over, tracking stops but the jobs don't disappear:
+  // the tracker stays on screen, greyed and inert, under the upgrade card, so
+  // it is clear what a plan keeps going. Interview practice isn't part of the
+  // lock — the free plan's prep guide and mock interview need a scanned job,
+  // and the scan that produced it is what ended the trial — so those jobs get
+  // their own live list. (The server holds the allowance; lib/server/interview.js.)
+  const practiceJobs = subscriptionLocked
+    ? jobs.filter(hasKeywordData).slice(0, JOBS_PER_PAGE)
+    : [];
 
   return (
     <section className="mx-auto max-w-6xl space-y-6">
@@ -632,369 +575,428 @@ export const JobTrackerSection = ({ subscriptionLocked = false }: JobTrackerSect
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-900">Add a role</h2>
-        <p className="mt-0.5 text-sm text-slate-500">
-          Manually add jobs, or they&apos;re saved automatically when you run a scan.
-        </p>
-
-        <form onSubmit={handleAddJob} className="mt-4 grid gap-3 md:grid-cols-3">
-          <Input
-            className="rounded-md"
-            placeholder="Organization"
-            value={newJob.organization}
-            onChange={(event) =>
-              setNewJob((prev) => ({ ...prev, organization: event.target.value }))
-            }
+      {subscriptionLocked ? (
+        <>
+          <SubscriptionGate
+            event="job_tracker_locked_upgrade_clicked"
+            title="Your free trial has expired"
+            body="Your tracked jobs are still here, read-only. Pick a plan to update their status, add new roles and re-download the documents you sent."
+            highlights={[
+              "Every scan saved automatically, with its score",
+              "Track each application from applied to offer",
+              "Re-download the exact CV and cover letter you sent",
+              `Interview prep and ${MOCK_ATTEMPTS_PER_JOB} mock interviews for every job you scan`,
+            ]}
           />
-          <Input
-            className="rounded-md"
-            placeholder="Designation / Role"
-            value={newJob.designation}
-            onChange={(event) =>
-              setNewJob((prev) => ({ ...prev, designation: event.target.value }))
-            }
-          />
-          <div className="relative">
-            <select
-              value={newJob.status}
-              onChange={(event) =>
-                setNewJob((prev) => ({ ...prev, status: event.target.value }))
-              }
-              aria-label="Interview status"
-              className="h-11 w-full appearance-none rounded-md border border-slate-200 bg-white pl-3 pr-10 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 md:h-9"
-            >
-              {STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-            <SelectChevron className="right-3 text-slate-400" />
-          </div>
-          <div className="md:col-span-3">
-            <Button type="submit" className="w-full rounded-md md:w-auto">
-              <SaveIcon className="mr-2 h-4 w-4" />
-              Save job
-            </Button>
-          </div>
-        </form>
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-4 py-3 sm:px-5">
-          <div className="relative w-full sm:max-w-sm">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              className="rounded-md pl-9"
-              placeholder="Search by organization, role, or status"
-              value={searchQuery}
-              onChange={(event) => {
-                setSearchQuery(event.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-        </div>
-        {/* The table needs ~950px for seven columns, so it starts at xl;
-            narrower screens get the row as a card (below). */}
-        <div className="hidden items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 xl:grid xl:grid-cols-[minmax(0,1.6fr),minmax(0,1.3fr),172px,104px,120px,168px,36px]">
-          <span>Organization</span>
-          <span>Role</span>
-          <span>Documents</span>
-          <span>Score</span>
-          <span>Status</span>
-          <span>Interview</span>
-          <span></span>
-        </div>
-        <div className="divide-y divide-slate-100">
-          {filteredJobs.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
-                <Briefcase className="h-6 w-6" />
-              </span>
-              <p className="text-sm font-medium text-slate-600">
-                {jobs.length === 0 ? "No jobs tracked yet" : "No matching jobs"}
+          {practiceJobs.length ? (
+            <div className="mx-auto max-w-xl rounded-2xl border border-violet-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-semibold text-slate-900">Interview practice</h2>
+                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
+                  Included free
+                </span>
+              </div>
+              <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                An interview prep guide and one mock interview, for a job you&apos;ve scanned.
               </p>
-              <p className="text-xs text-slate-400">
-                {jobs.length === 0
-                  ? "Run a scan or add a job manually to start tracking."
-                  : "Try a different search term."}
-              </p>
+              <ul className="mt-3 divide-y divide-slate-100">
+                {practiceJobs.map((job) => (
+                  <li
+                    key={job.id}
+                    className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="break-anywhere text-sm font-semibold text-slate-900">
+                        {job.organization}
+                      </p>
+                      <p className="break-anywhere text-sm text-slate-600">{job.designation}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      {renderInterviewButtons(job, false, false)}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </div>
-          ) : (
-            paginatedJobs.map((job) => {
-              // The six cells are built once and composed twice: as a stacked
-              // card on phones and as the original table row from `sm` up.
-              // Sharing the pieces keeps the two layouts from drifting apart.
-              // Each opens a PDF / Word choice. A chevron rather than the
-              // download glyph says "choose", and keeps the joined pair inside
-              // the 172px Documents column.
-              const resumeButton = (
-                <DownloadFormatMenu
-                  align="start"
-                  onPick={(format) => downloadGeneratedDocument(job, "resume", format)}
-                  trigger={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={
-                        downloading === `${job.id}-resume` || !job.generated_resume_payload
-                      }
-                      title={
-                        job.generated_resume_payload
-                          ? "Download the resume as PDF or Word"
-                          : "Available after you download the optimized resume for this job"
-                      }
-                      className="flex-1 gap-1 rounded-md rounded-r-none sm:flex-none"
-                    >
-                      Resume
-                      {downloading === `${job.id}-resume` ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                      )}
-                    </Button>
-                  }
-                />
-              );
-              const coverButton = (
-                <DownloadFormatMenu
-                  align="end"
-                  onPick={(format) => downloadGeneratedDocument(job, "cover", format)}
-                  trigger={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={downloading === `${job.id}-cover`}
-                      title="Download the cover letter as PDF or Word"
-                      className="flex-1 gap-1 rounded-md rounded-l-none border-l-0 sm:flex-none"
-                    >
-                      Cover
-                      {downloading === `${job.id}-cover` ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                      )}
-                    </Button>
-                  }
-                />
-              );
-              // Before tailoring there is only the scan score. After it, both
-              // are shown as "was → now", so the lift the optimization bought
-              // is readable at a glance instead of overwriting the original.
-              const optimized = job.optimized_score ?? null;
-              const scoreChip = (
-                // shrink-0: on the phone card this sits next to the company
-                // name, and a long name would otherwise squash the badge.
-                <span
-                  className="inline-flex shrink-0 items-center gap-1"
-                  title={
-                    optimized !== null
-                      ? `Scan score ${job.initial_score ?? "—"} → optimized ${optimized}`
-                      : "Scan score"
-                  }
-                >
+          ) : null}
+          <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+            <Lock className="h-3.5 w-3.5" />
+            Read-only until you pick a plan
+          </p>
+        </>
+      ) : null}
+
+      <div
+        inert={subscriptionLocked}
+        className={cn(
+          "space-y-6",
+          subscriptionLocked && "pointer-events-none select-none opacity-60 grayscale"
+        )}
+      >
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-900">Add a role</h2>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Manually add jobs, or they&apos;re saved automatically when you run a scan.
+          </p>
+
+          <form onSubmit={handleAddJob} className="mt-4 grid gap-3 md:grid-cols-3">
+            <Input
+              className="rounded-md"
+              placeholder="Organization"
+              value={newJob.organization}
+              onChange={(event) =>
+                setNewJob((prev) => ({ ...prev, organization: event.target.value }))
+              }
+            />
+            <Input
+              className="rounded-md"
+              placeholder="Designation / Role"
+              value={newJob.designation}
+              onChange={(event) =>
+                setNewJob((prev) => ({ ...prev, designation: event.target.value }))
+              }
+            />
+            <div className="relative">
+              <select
+                value={newJob.status}
+                onChange={(event) =>
+                  setNewJob((prev) => ({ ...prev, status: event.target.value }))
+                }
+                aria-label="Interview status"
+                className="h-11 w-full appearance-none rounded-md border border-slate-200 bg-white pl-3 pr-10 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 md:h-9"
+              >
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+              <SelectChevron className="right-3 text-slate-400" />
+            </div>
+            <div className="md:col-span-3">
+              <Button type="submit" className="w-full rounded-md md:w-auto">
+                <SaveIcon className="mr-2 h-4 w-4" />
+                Save job
+              </Button>
+            </div>
+          </form>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-4 py-3 sm:px-5">
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                className="rounded-md pl-9"
+                placeholder="Search by organization, role, or status"
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+          </div>
+          {/* The table needs ~950px for seven columns, so it starts at xl;
+              narrower screens get the row as a card (below). */}
+          <div className="hidden items-center gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 xl:grid xl:grid-cols-[minmax(0,1.6fr),minmax(0,1.3fr),172px,104px,120px,168px,36px]">
+            <span>Organization</span>
+            <span>Role</span>
+            <span>Documents</span>
+            <span>Score</span>
+            <span>Status</span>
+            <span>Interview</span>
+            <span></span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {filteredJobs.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                  <Briefcase className="h-6 w-6" />
+                </span>
+                <p className="text-sm font-medium text-slate-600">
+                  {jobs.length === 0 ? "No jobs tracked yet" : "No matching jobs"}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {jobs.length === 0
+                    ? "Run a scan or add a job manually to start tracking."
+                    : "Try a different search term."}
+                </p>
+              </div>
+            ) : (
+              paginatedJobs.map((job) => {
+                // The six cells are built once and composed twice: as a stacked
+                // card on phones and as the original table row from `sm` up.
+                // Sharing the pieces keeps the two layouts from drifting apart.
+                // Each opens a PDF / Word choice. A chevron rather than the
+                // download glyph says "choose", and keeps the joined pair inside
+                // the 172px Documents column.
+                const resumeButton = (
+                  <DownloadFormatMenu
+                    align="start"
+                    onPick={(format) => downloadGeneratedDocument(job, "resume", format)}
+                    trigger={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={
+                          downloading === `${job.id}-resume` || !job.generated_resume_payload
+                        }
+                        title={
+                          job.generated_resume_payload
+                            ? "Download the resume as PDF or Word"
+                            : "Available after you download the optimized resume for this job"
+                        }
+                        className="flex-1 gap-1 rounded-md rounded-r-none sm:flex-none"
+                      >
+                        Resume
+                        {downloading === `${job.id}-resume` ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                        )}
+                      </Button>
+                    }
+                  />
+                );
+                const coverButton = (
+                  <DownloadFormatMenu
+                    align="end"
+                    onPick={(format) => downloadGeneratedDocument(job, "cover", format)}
+                    trigger={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={downloading === `${job.id}-cover`}
+                        title="Download the cover letter as PDF or Word"
+                        className="flex-1 gap-1 rounded-md rounded-l-none border-l-0 sm:flex-none"
+                      >
+                        Cover
+                        {downloading === `${job.id}-cover` ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                        )}
+                      </Button>
+                    }
+                  />
+                );
+                // Before tailoring there is only the scan score. After it, both
+                // are shown as "was → now", so the lift the optimization bought
+                // is readable at a glance instead of overwriting the original.
+                const optimized = job.optimized_score ?? null;
+                const scoreChip = (
+                  // shrink-0: on the phone card this sits next to the company
+                  // name, and a long name would otherwise squash the badge.
                   <span
-                    className={cn(
-                      "inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
+                    className="inline-flex shrink-0 items-center gap-1"
+                    title={
                       optimized !== null
-                        ? "bg-slate-100 text-slate-400"
-                        : scoreClass(job.initial_score)
+                        ? `Scan score ${job.initial_score ?? "—"} → optimized ${optimized}`
+                        : "Scan score"
+                    }
+                  >
+                    <span
+                      className={cn(
+                        "inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
+                        optimized !== null
+                          ? "bg-slate-100 text-slate-400"
+                          : scoreClass(job.initial_score)
+                      )}
+                    >
+                      {job.initial_score !== null ? job.initial_score : "—"}
+                    </span>
+                    {optimized !== null ? (
+                      <>
+                        <span aria-hidden className="text-xs text-slate-400">
+                          →
+                        </span>
+                        <span
+                          className={cn(
+                            "inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
+                            scoreClass(optimized)
+                          )}
+                        >
+                          {optimized}
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
+                );
+                // The status colours sit on the wrapper so the chevron can pick up
+                // the same text colour; the select inherits them.
+                const statusSelect = (
+                  <div
+                    className={cn(
+                      "relative inline-flex rounded-md shadow-sm",
+                      statusClass(job.interview_status)
                     )}
                   >
-                    {job.initial_score !== null ? job.initial_score : "—"}
-                  </span>
-                  {optimized !== null ? (
-                    <>
-                      <span aria-hidden className="text-xs text-slate-400">
-                        →
-                      </span>
-                      <span
-                        className={cn(
-                          "inline-flex min-w-[2.25rem] items-center justify-center rounded-md px-2 py-1 text-sm font-bold tabular-nums",
-                          scoreClass(optimized)
-                        )}
-                      >
-                        {optimized}
-                      </span>
-                    </>
-                  ) : null}
-                </span>
-              );
-              // The status colours sit on the wrapper so the chevron can pick up
-              // the same text colour; the select inherits them.
-              const statusSelect = (
-                <div
-                  className={cn(
-                    "relative inline-flex rounded-md shadow-sm",
-                    statusClass(job.interview_status)
-                  )}
-                >
-                  <select
-                    value={job.interview_status}
-                    onChange={(event) => updateStatus(job.id, event.target.value)}
-                    disabled={updating === job.id}
-                    aria-label={`Status for ${job.designation} at ${job.organization}`}
-                    className="peer h-9 cursor-pointer appearance-none rounded-md border border-inherit bg-transparent pl-3 pr-8 text-xs font-semibold text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 disabled:opacity-50 sm:h-8"
-                  >
-                    {STATUS_OPTIONS.map((status) => (
-                      <option key={status} value={status} className="bg-white text-slate-700">
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                  <SelectChevron className="right-2.5 peer-disabled:opacity-50" />
-                </div>
-              );
-              const deleteButton = (
-                <button
-                  type="button"
-                  aria-label="Delete job"
-                  onClick={() => handleDelete(job.id)}
-                  className="-mr-1.5 rounded-md p-2.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 sm:mr-0 sm:p-1.5"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              );
-              const canPractise = hasKeywordData(job);
-              const interviewButtons = (compact: boolean) =>
-                renderInterviewButtons(job, compact);
-
-              return (
-                <div key={job.id} className="transition hover:bg-slate-50/70">
-                  {/* Phone: a tappable card. The score reads as an attribute of
-                      the company, so it sits on the title line; the status is
-                      the one thing you change here, so it gets the right edge
-                      of its own row where a thumb lands. */}
-                  <div className="flex flex-col gap-3 px-4 py-4 sm:hidden">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="break-anywhere text-sm font-semibold text-slate-900">
-                            {job.organization}
-                          </p>
-                          {scoreChip}
-                        </div>
-                        <p className="break-anywhere mt-0.5 text-sm text-slate-600">
-                          {job.designation}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {new Date(job.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      {deleteButton}
-                    </div>
-                    <div className="flex justify-end">{statusSelect}</div>
-                    <div className="flex">
-                      {resumeButton}
-                      {coverButton}
-                    </div>
-                    {canPractise ? (
-                      <div className="flex gap-2">{interviewButtons(false)}</div>
-                    ) : null}
+                    <select
+                      value={job.interview_status}
+                      onChange={(event) => updateStatus(job.id, event.target.value)}
+                      disabled={updating === job.id}
+                      aria-label={`Status for ${job.designation} at ${job.organization}`}
+                      className="peer h-9 cursor-pointer appearance-none rounded-md border border-inherit bg-transparent pl-3 pr-8 text-xs font-semibold text-inherit transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900/20 disabled:opacity-50 sm:h-8"
+                    >
+                      {STATUS_OPTIONS.map((status) => (
+                        <option key={status} value={status} className="bg-white text-slate-700">
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                    <SelectChevron className="right-2.5 peer-disabled:opacity-50" />
                   </div>
+                );
+                const deleteButton = (
+                  <button
+                    type="button"
+                    aria-label="Delete job"
+                    onClick={() => handleDelete(job.id)}
+                    className="-mr-1.5 rounded-md p-2.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 sm:mr-0 sm:p-1.5"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                );
+                const canPractise = hasKeywordData(job);
+                const interviewButtons = (compact: boolean) =>
+                  renderInterviewButtons(job, compact);
 
-                  {/* Tablet up to xl: the same row on two lines. What the job
-                      is and where it stands on top; everything you can do
-                      with it underneath, documents left, interview right. */}
-                  <div className="hidden px-5 py-4 sm:block xl:hidden">
-                    <div className="flex items-start gap-4">
-                      <div className="min-w-0 flex-1">
-                        <p className="break-anywhere text-sm font-semibold text-slate-900">
-                          {job.organization}
-                        </p>
-                        <p className="break-anywhere mt-0.5 text-sm text-slate-600">
-                          {job.designation}
-                          <span className="text-slate-400">
-                            {" · "}
+                return (
+                  <div key={job.id} className="transition hover:bg-slate-50/70">
+                    {/* Phone: a tappable card. The score reads as an attribute of
+                        the company, so it sits on the title line; the status is
+                        the one thing you change here, so it gets the right edge
+                        of its own row where a thumb lands. */}
+                    <div className="flex flex-col gap-3 px-4 py-4 sm:hidden">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="break-anywhere text-sm font-semibold text-slate-900">
+                              {job.organization}
+                            </p>
+                            {scoreChip}
+                          </div>
+                          <p className="break-anywhere mt-0.5 text-sm text-slate-600">
+                            {job.designation}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
                             {new Date(job.created_at).toLocaleDateString()}
-                          </span>
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-3">
-                        {scoreChip}
-                        {statusSelect}
+                          </p>
+                        </div>
                         {deleteButton}
                       </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex justify-end">{statusSelect}</div>
                       <div className="flex">
                         {resumeButton}
                         {coverButton}
                       </div>
                       {canPractise ? (
-                      <div className="flex gap-2">{interviewButtons(false)}</div>
-                    ) : null}
+                        <div className="flex gap-2">{interviewButtons(false)}</div>
+                      ) : null}
                     </div>
-                  </div>
 
-                  {/* xl and up: the table row, with the interview buttons as
-                      its last column. */}
-                  <div className="hidden items-center gap-3 px-5 py-4 xl:grid xl:grid-cols-[minmax(0,1.6fr),minmax(0,1.3fr),172px,104px,120px,168px,36px]">
-                    <div className="flex min-w-0 flex-col justify-center">
-                      <p className="break-anywhere text-sm font-semibold text-slate-900">
-                        {job.organization}
+                    {/* Tablet up to xl: the same row on two lines. What the job
+                        is and where it stands on top; everything you can do
+                        with it underneath, documents left, interview right. */}
+                    <div className="hidden px-5 py-4 sm:block xl:hidden">
+                      <div className="flex items-start gap-4">
+                        <div className="min-w-0 flex-1">
+                          <p className="break-anywhere text-sm font-semibold text-slate-900">
+                            {job.organization}
+                          </p>
+                          <p className="break-anywhere mt-0.5 text-sm text-slate-600">
+                            {job.designation}
+                            <span className="text-slate-400">
+                              {" · "}
+                              {new Date(job.created_at).toLocaleDateString()}
+                            </span>
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          {scoreChip}
+                          {statusSelect}
+                          {deleteButton}
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex">
+                          {resumeButton}
+                          {coverButton}
+                        </div>
+                        {canPractise ? (
+                        <div className="flex gap-2">{interviewButtons(false)}</div>
+                      ) : null}
+                      </div>
+                    </div>
+
+                    {/* xl and up: the table row, with the interview buttons as
+                        its last column. */}
+                    <div className="hidden items-center gap-3 px-5 py-4 xl:grid xl:grid-cols-[minmax(0,1.6fr),minmax(0,1.3fr),172px,104px,120px,168px,36px]">
+                      <div className="flex min-w-0 flex-col justify-center">
+                        <p className="break-anywhere text-sm font-semibold text-slate-900">
+                          {job.organization}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {new Date(job.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <p className="break-anywhere flex items-center text-sm text-slate-600">
+                        {job.designation}
                       </p>
-                      <p className="text-xs text-slate-400">
-                        {new Date(job.created_at).toLocaleDateString()}
-                      </p>
+                      <div className="flex items-center">
+                        {resumeButton}
+                        {coverButton}
+                      </div>
+                      <div className="flex items-center justify-start gap-2">{scoreChip}</div>
+                      <div className="flex items-center">{statusSelect}</div>
+                      <div className="flex items-center gap-2">
+                        {canPractise ? interviewButtons(true) : null}
+                      </div>
+                      <div className="flex items-center justify-end">{deleteButton}</div>
                     </div>
-                    <p className="break-anywhere flex items-center text-sm text-slate-600">
-                      {job.designation}
-                    </p>
-                    <div className="flex items-center">
-                      {resumeButton}
-                      {coverButton}
-                    </div>
-                    <div className="flex items-center justify-start gap-2">{scoreChip}</div>
-                    <div className="flex items-center">{statusSelect}</div>
-                    <div className="flex items-center gap-2">
-                      {canPractise ? interviewButtons(true) : null}
-                    </div>
-                    <div className="flex items-center justify-end">{deleteButton}</div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })
+            )}
+          </div>
+          {/* Four items won't fit one phone row, so the count moves to its own
+              line above the controls and the arrows split the width evenly. */}
+          {filteredJobs.length > JOBS_PER_PAGE && (
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <p className="text-xs text-slate-500">
+                Showing {(currentPage - 1) * JOBS_PER_PAGE + 1}–
+                {Math.min(currentPage * JOBS_PER_PAGE, filteredJobs.length)} of{" "}
+                {filteredJobs.length} jobs
+              </p>
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-md"
+                  disabled={currentPage === 1}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Previous
+                </Button>
+                <span className="text-xs font-medium tabular-nums text-slate-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-md"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           )}
         </div>
-        {/* Four items won't fit one phone row, so the count moves to its own
-            line above the controls and the arrows split the width evenly. */}
-        {filteredJobs.length > JOBS_PER_PAGE && (
-          <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <p className="text-xs text-slate-500">
-              Showing {(currentPage - 1) * JOBS_PER_PAGE + 1}–
-              {Math.min(currentPage * JOBS_PER_PAGE, filteredJobs.length)} of{" "}
-              {filteredJobs.length} jobs
-            </p>
-            <div className="flex items-center justify-between gap-2 sm:justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-md"
-                disabled={currentPage === 1}
-                onClick={() => setPage(currentPage - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Previous
-              </Button>
-              <span className="text-xs font-medium tabular-nums text-slate-600">
-                Page {currentPage} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-md"
-                disabled={currentPage === totalPages}
-                onClick={() => setPage(currentPage + 1)}
-              >
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
 
       {interviewDialogs}

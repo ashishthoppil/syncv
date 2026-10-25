@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/server/auth";
 import { getSupabaseAdminClient } from "@/lib/server/subscriptions";
-import { getRemoteJobsAccess } from "@/lib/server/remote-jobs-access";
 import { getLiveJobListings } from "@/lib/remote-jobs/search";
 import { MAX_SAVED_JOBS } from "@/lib/remote-jobs/types";
 
@@ -14,8 +13,8 @@ import { MAX_SAVED_JOBS } from "@/lib/remote-jobs/types";
  *   DELETE ?id=   remove one; `?expired=1` removes every expired one
  *
  * The caller is resolved from their access token (lib/server/auth.js), never
- * from a user id in the request. Reading and saving follow the same access
- * rule as the search; removing never does — your own list stays yours to tidy.
+ * from a user id in the request. Any signed-in user may keep a list: the
+ * preview everyone browses can be saved from, plan or no plan.
  */
 
 const fail = (status, message, extra = {}) =>
@@ -24,21 +23,6 @@ const fail = (status, message, extra = {}) =>
 const requireUser = async (req) => {
   const user = await getAuthenticatedUser(req);
   return user ? { user } : { response: fail(401, "Please log in to save jobs.") };
-};
-
-const requireBrowsingUser = async (req) => {
-  const result = await requireUser(req);
-  if (result.response) return result;
-  const access = await getRemoteJobsAccess(result.user.id);
-  return access.canBrowse
-    ? result
-    : {
-        response: fail(
-          403,
-          "Your free trial is used up. Get the Remote Jobs or Pro plan to browse remote jobs.",
-          { locked: true }
-        ),
-      };
 };
 
 /** Newest first. A live posting shows as it is now; an expired one as saved. */
@@ -60,7 +44,7 @@ const loadSavedJobs = async (supabase, userId) => {
 
 export async function GET(req) {
   try {
-    const { user, response } = await requireBrowsingUser(req);
+    const { user, response } = await requireUser(req);
     if (response) return response;
     const jobs = await loadSavedJobs(getSupabaseAdminClient(), user.id);
     return NextResponse.json({ success: true, data: jobs });
@@ -72,7 +56,7 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
-    const { user, response } = await requireBrowsingUser(req);
+    const { user, response } = await requireUser(req);
     if (response) return response;
     const body = await req.json().catch(() => ({}));
     const jobId = typeof body?.jobId === "string" ? body.jobId.trim() : "";

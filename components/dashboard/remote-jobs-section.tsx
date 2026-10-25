@@ -7,7 +7,6 @@ import { toast } from "react-toastify";
 import swal from "sweetalert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SubscriptionGate } from "@/components/dashboard/subscription-gate";
 import { getDefaultBaseResumeTitle } from "@/lib/base-resume";
 import { authedFetch } from "@/lib/authed-fetch";
 import { cn } from "@/lib/utils";
@@ -27,7 +26,7 @@ import {
   REMOTE_JOBS_PAGE_SIZE,
   SALARY_OPTIONS,
   SENIORITY_LEVELS,
-  SOURCE_HOMEPAGES,
+  SOURCE_CREDITS,
   TECH_STACK_FILTERS,
   WORKPLACE_TYPES,
   type RemoteJob,
@@ -125,11 +124,10 @@ type RemoteJobsSectionProps = {
    */
   hasFullAccess?: boolean;
   /**
-   * No plan and no free scans left. Browsing stops entirely: a job you can't
-   * scan is a dead end, and the search is the product, not a teaser. Defaults
-   * to false so an unknown state still renders — the host knows first.
+   * The plan is still loading. The opening search waits for it, since the plan
+   * decides how many results to ask for.
    */
-  locked?: boolean;
+  accessLoading?: boolean;
   /**
    * Hands the selected job to the existing scanner. The host maps it onto the
    * scan form's fields and switches section — nothing about the scan flow
@@ -273,23 +271,6 @@ const JobTitle = ({ job, className }: { job: RemoteJob; className: string }) =>
     <span className={className}>{job.title}</span>
   );
 
-/** "via Jobicy" — credit to the source, linking to its homepage where asked. */
-const SourceCredit = ({ job }: { job: RemoteJob }) => {
-  const homepage = SOURCE_HOMEPAGES[job.source];
-  return (
-    <span>
-      via{" "}
-      {homepage ? (
-        <a href={homepage} target="_blank" rel="noopener" className="underline hover:text-slate-600">
-          {job.sourceName}
-        </a>
-      ) : (
-        job.sourceName
-      )}
-    </span>
-  );
-};
-
 const SectionHeading = () => (
   <div className="flex items-start gap-3 sm:items-center">
     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">
@@ -300,7 +281,7 @@ const SectionHeading = () => (
         Remote Jobs
       </h1>
       <p className="text-sm text-slate-500">
-        Remote and hybrid roles from 11 job sources, refreshed every night.
+        Remote and hybrid roles, refreshed every night.
       </p>
     </div>
   </div>
@@ -339,7 +320,7 @@ const CompanyLogo = ({ job, size }: { job: RemoteJob; size: "sm" | "lg" }) => {
 export const RemoteJobsSection = ({
   userId,
   hasFullAccess = false,
-  locked = false,
+  accessLoading = false,
   onScanJob,
 }: RemoteJobsSectionProps) => {
   const router = useRouter();
@@ -465,9 +446,7 @@ export const RemoteJobsSection = ({
         setError("Please log in to browse remote jobs.");
         return null;
       }
-      // The gate below is what the user sees; this just saves the round trip,
-      // since the route turns the same search away.
-      if (locked) return null;
+      if (accessLoading) return null;
       const append = offset > 0;
       if (append) {
         setLoadingMore(true);
@@ -534,7 +513,7 @@ export const RemoteJobsSection = ({
         }
         setJobs([]);
         setError(
-          "We couldn't reach the job sources. Check your connection and try again."
+          "We couldn't load jobs right now. Check your connection and try again."
         );
         return null;
       } finally {
@@ -546,14 +525,14 @@ export const RemoteJobsSection = ({
         }
       }
     },
-    [userId, hasFullAccess, locked]
+    [userId, hasFullAccess, accessLoading]
   );
 
   // The section opens with results: jobs for the professional title on the
   // default base resume, or the newest jobs when there's no title or it
   // matches nothing. Once only — and not at all if the user gets there first.
   useEffect(() => {
-    if (!userId || locked || autoSearchStartedRef.current) return;
+    if (!userId || accessLoading || autoSearchStartedRef.current) return;
     autoSearchStartedRef.current = true;
     const openWithResults = async () => {
       // Covers the title lookup, so the empty "search for a role" state
@@ -576,7 +555,7 @@ export const RemoteJobsSection = ({
       await runSearch("", EMPTY_FILTERS);
     };
     openWithResults();
-  }, [userId, locked, runSearch]);
+  }, [userId, accessLoading, runSearch]);
 
   /** Marks a search as the user's own, ending the opening search's say. */
   const takeOver = () => {
@@ -676,9 +655,9 @@ export const RemoteJobsSection = ({
   // Loaded with the section rather than with the Saved list, so every card can
   // show whether its job is already saved.
   useEffect(() => {
-    if (!userId || locked) return;
+    if (!userId) return;
     loadSavedJobs();
-  }, [userId, locked, loadSavedJobs]);
+  }, [userId, loadSavedJobs]);
 
   /**
    * Saves or removes a job. The bookmark flips at once and flips back if the
@@ -796,7 +775,7 @@ export const RemoteJobsSection = ({
   // (refresh, shared link, back/forward) and isn't in the result list at all,
   // or because the list record came back without its description.
   useEffect(() => {
-    if (!activeJobId || !userId || locked) return;
+    if (!activeJobId || !userId) return;
     if (listJob?.detailLoaded) return;
     if (linkedJob?.id === activeJobId) return;
 
@@ -827,7 +806,7 @@ export const RemoteJobsSection = ({
     return () => {
       cancelled = true;
     };
-  }, [activeJobId, userId, locked, listJob, linkedJob]);
+  }, [activeJobId, userId, listJob, linkedJob]);
 
   // Opening a detail view mid-scroll would otherwise land the user halfway down
   // the description. scrollIntoView rather than window.scrollTo because the
@@ -873,26 +852,6 @@ export const RemoteJobsSection = ({
     track("remote_job_apply_clicked", { jobId: job.id, source: job.source });
     window.open(job.applicationUrl, "_blank", "noopener,noreferrer");
   };
-
-  // Ahead of the detail view on purpose: `?job=<id>` is a shareable URL, and a
-  // locked user following one would otherwise walk straight past the gate.
-  if (locked) {
-    return (
-      <section className="space-y-6">
-        <SectionHeading />
-        <SubscriptionGate
-          event="remote_jobs_locked_upgrade_clicked"
-          title="You're out of scans"
-          body="Remote Jobs finds the roles, and a scan tells you where you stand against each one. Pick a plan to carry on with both."
-          highlights={[
-            "Browse every remote job we pull in, not just the first few",
-            "Send any posting straight to a scan, prefilled",
-            "Tailored CV and cover letter for each application",
-          ]}
-        />
-      </section>
-    );
-  }
 
   if (activeJobId) {
     return (
@@ -1431,11 +1390,7 @@ const ExpiredJobCard = ({
       </p>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs text-slate-400">
-          {saved && <span>Saved {saved}</span>}
-          {saved && <span className="mx-1.5">·</span>}
-          <SourceCredit job={job} />
-        </div>
+        <div className="text-xs text-slate-400">{saved && <span>Saved {saved}</span>}</div>
         <div className="flex w-full gap-2 sm:w-auto">
           <Button
             variant="outline"
@@ -1528,9 +1483,21 @@ const JobCard = ({
   const company = companyLine(job);
   const tags = tagsFor(job);
   const posted = formatPostedAt(job.postedAt);
+  const dates = [savedOn ? `Saved ${savedOn}` : "", posted].filter(Boolean);
 
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-slate-300">
+    // The whole card opens the job. "View Job" stays the control keyboard and
+    // screen-reader users reach, so the card itself adds no second tab stop.
+    <article
+      onClick={(event) => {
+        // Its own buttons and links keep their jobs, and selecting text to
+        // copy it shouldn't open anything.
+        if ((event.target as HTMLElement).closest("a, button")) return;
+        if (window.getSelection()?.toString()) return;
+        onView();
+      }}
+      className="cursor-pointer rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-[border-color,box-shadow] hover:border-slate-300 hover:shadow-md"
+    >
       <div className="flex items-start gap-3">
         <CompanyLogo job={job} size="sm" />
         <div className="min-w-0 flex-1">
@@ -1581,11 +1548,12 @@ const JobCard = ({
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="text-xs text-slate-400">
-          {savedOn && <span>Saved {savedOn}</span>}
-          {savedOn && <span className="mx-1.5">·</span>}
-          {posted && <span>{posted}</span>}
-          {posted && <span className="mx-1.5">·</span>}
-          <SourceCredit job={job} />
+          {dates.map((date, index) => (
+            <span key={date}>
+              {index > 0 && <span className="mx-1.5">·</span>}
+              {date}
+            </span>
+          ))}
         </div>
         <div className="flex w-full gap-2 sm:w-auto">
           {onToggleSave ? (
@@ -1648,7 +1616,7 @@ const JobDetail = ({
   const posted = formatPostedAt(job.postedAt);
   const scannable = !descriptionLoading && isScannable(job);
   const hasDescription = scannable || Boolean(job.descriptionHtml);
-  const homepage = SOURCE_HOMEPAGES[job.source];
+  const credit = SOURCE_CREDITS[job.source];
   // Followed links where the source's terms ask for them (startup.jobs).
   const sourceRel = job.source === "startupjobs" ? "noopener" : "noopener noreferrer";
 
@@ -1761,7 +1729,7 @@ const JobDetail = ({
         ) : !scannable ? (
           <p className="mt-2 text-xs text-slate-500">
             This posting didn&apos;t include enough of a description to scan
-            against. Open it on {job.sourceName} to read the full listing.
+            against. Open the original posting to read the full listing.
           </p>
         ) : null}
       </div>
@@ -1806,30 +1774,30 @@ const JobDetail = ({
           </p>
         )}
 
-        {/* Attribution — the job APIs grant access on condition that listings
-            stay credited and link back to the original posting (and, for some,
-            to the source's own site). */}
+        {/* The job APIs grant access on condition that listings link back to
+            the original posting; three of them also want to be named. Nothing
+            else on the screen says where a job came from (SOURCE_CREDITS). */}
         {job.sourceUrl && (
           <p className="mt-6 border-t border-slate-100 pt-4 text-xs text-slate-400">
-            Originally posted on{" "}
             <a
               href={job.sourceUrl}
               target="_blank"
               rel={sourceRel}
               className="font-medium text-slate-600 underline"
             >
-              {job.sourceName}
+              View original posting
             </a>
-            {homepage && (
+            {credit && (
               <>
                 {" · "}
+                Listing courtesy of{" "}
                 <a
-                  href={homepage}
+                  href={credit}
                   target="_blank"
                   rel={sourceRel}
                   className="font-medium text-slate-600 underline"
                 >
-                  More jobs on {new URL(homepage).hostname.replace(/^www\./, "")}
+                  {job.sourceName}
                 </a>
               </>
             )}

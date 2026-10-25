@@ -31,13 +31,6 @@ export async function GET(req) {
     }
 
     const access = await getRemoteJobsAccess(userId);
-    if (!access.canBrowse) {
-      return NextResponse.json({
-        success: false,
-        locked: true,
-        message: "Your free trial is used up. Get the Remote Jobs or Pro plan to browse remote jobs.",
-      });
-    }
 
     const jobId = searchParams.get("id");
     if (jobId) {

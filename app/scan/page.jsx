@@ -298,17 +298,15 @@ const DashboardPageContent = () => {
     if (activeSection === "job-tracker") {
       return <JobTrackerSection subscriptionLocked={subscriptionLocked || !subscription.allowsJobTracker} />;
     }
-    // The Remote Jobs and Pro plans open the whole list. Without one, it is
-    // reachable while a user still has a free scan to spend — discovering a job
-    // is what leads them into the scanner — but stops after the first few
-    // results, and once the trial is spent it stops entirely, since a job you
-    // can't scan is a dead end.
+    // The Remote Jobs and Pro plans open the whole list. Without one — on the
+    // free trial or after it — the list stops after the first few results, so
+    // the board always shows something to come back for.
     if (activeSection === "remote-jobs") {
       return (
         <RemoteJobsSection
           userId={user?.id}
           hasFullAccess={hasRemoteJobsAccess}
-          locked={subscriptionLoading || (!subscription.canScan && !subscription.hasRemoteJobsAccess)}
+          accessLoading={subscriptionLoading}
           onScanJob={handleScanRemoteJob}
         />
       );
