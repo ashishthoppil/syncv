@@ -17,10 +17,13 @@ import { EXAMPLES, type BeforeAfterExample } from "./examples";
  */
 export type ArticleSection = {
   heading: string;
+  /** Prose. May contain contextual links as `[anchor text](/path)`; see InlineText. */
   body: string[];
   bullets?: string[];
   /** Ordered steps, rendered as <ol>. */
   steps?: { title: string; detail: string }[];
+  /** A small data table, e.g. a worked example. Cells are plain text. */
+  table?: { caption: string; columns: string[]; rows: string[][] };
   example?: BeforeAfterExample;
   callout?: string;
 };
@@ -64,7 +67,7 @@ export const ARTICLES: Article[] = [
         body: [
           "The first read tells you whether you want the job. The second read is the one that matters for tailoring, and it has a specific goal: find the requirements the posting cares about most.",
           "Two signals give it away. The first is repetition — anything mentioned in both the summary paragraph and the responsibilities list is a genuine priority, not boilerplate. The second is specificity. \"Strong communication skills\" appears in every posting ever written and tells you nothing. \"Experience presenting roadmap trade-offs to non-technical stakeholders\" is a real requirement someone argued for in a hiring meeting.",
-          "Write down the four or five items that pass both tests. That short list, not the full posting, is what you tailor against.",
+          "Write down the four or five items that pass both tests. That short list, not the full posting, is what you tailor against. A [job description analyzer](/job-description-analyzer) can do this first pass for you, grouping the posting's keywords by priority.",
         ],
         bullets: [
           "Requirements repeated in more than one section of the posting",
@@ -111,6 +114,7 @@ export const ARTICLES: Article[] = [
         heading: "A repeatable checklist",
         body: [
           "Once you have done this a few times it takes ten minutes per application. The order matters more than the speed.",
+          "If you would rather not do it by hand, SynCV can [tailor your resume to a job description](/resume-tailor) using only the experience already on it, and draft a [cover letter](/ai-cover-letter-generator) for the same posting. Review the result against this same checklist before you send it.",
         ],
         steps: [
           {
@@ -187,7 +191,7 @@ export const ARTICLES: Article[] = [
         heading: "Why one resume for everything underperforms",
         body: [
           "A generic resume is optimised for an average of all jobs, and no employer is hiring for the average. The stronger your background, the more this costs you: a resume covering eight years across three specialisms has to bury two of them to describe all three.",
-          "There is a mechanical version of the same problem. Most applicant tracking systems rank applicants by overlap between the resume and the posting. A resume written for nobody in particular overlaps moderately with everything and strongly with nothing.",
+          "There is a mechanical version of the same problem. Most applicant tracking systems rank applicants by overlap between the resume and the posting. A resume written for nobody in particular overlaps moderately with everything and strongly with nothing. Running an [ATS resume check](/ats-resume-checker) against a real posting makes that gap visible.",
         ],
       },
       {
@@ -226,7 +230,7 @@ export const ARTICLES: Article[] = [
           },
         ],
         callout:
-          "Batching helps: group similar postings and tailor once per group, then adjust the summary line per application.",
+          "Batching helps: group similar postings and tailor once per group, then adjust the summary line per application. Keep a [job application tracker](/job-application-tracker) so you always know which version went to which employer.",
       },
       {
         heading: "What tailoring cannot fix",
@@ -299,7 +303,7 @@ export const ARTICLES: Article[] = [
       {
         heading: "Four rewrites that are not",
         body: [
-          "These are the ones that appear when someone lets a tool rewrite unsupervised, and they are the reason SynCV works only from what is already on your resume.",
+          "These are the ones that appear when someone lets a tool rewrite unsupervised, and they are the reason [SynCV's resume tailoring](/resume-tailor) works only from what is already on your resume.",
         ],
         bullets: [
           "Adding a technology from the job description that you have not used",
@@ -323,7 +327,7 @@ export const ARTICLES: Article[] = [
           "Applying without a perfect match is normal and frequently successful. Applying with an invented match is a problem that arrives later, in the interview or in a reference check, when it is more expensive.",
         ],
         callout:
-          "This is also why SynCV will not tell you whether you are qualified or whether to apply. It shows you where your resume and the posting overlap; the judgement stays with you.",
+          "This is also why SynCV will not tell you whether you are qualified or whether to apply. It [shows you where your resume and the posting overlap](/ats-resume-checker); the judgement stays with you.",
       },
     ],
     faqs: [
@@ -374,7 +378,7 @@ export const ARTICLES: Article[] = [
           "Comparing two documents for overlap is a task models do well and humans do inconsistently, mostly because humans already know what their resume says and read past its gaps.",
         ],
         bullets: [
-          "Pulling the real requirements out of a long posting",
+          "Pulling the real requirements out of a long posting — what a [job description analyzer](/job-description-analyzer) is for",
           "Noticing that a skill in your skills list never appears in your experience bullets",
           "Rephrasing a true bullet in the posting's vocabulary",
           "Reordering bullets and sections by relevance to one job",
@@ -394,7 +398,7 @@ export const ARTICLES: Article[] = [
         heading: "How SynCV is constrained",
         body: [
           "SynCV tailors from your uploaded resume and the job description you paste, and its output is bounded by the first of those. It changes which experience leads, how bullets are phrased, and what the summary emphasises. It does not add skills, employers, dates or achievements that are not already in your resume.",
-          "It also does not assess you. SynCV reports how well the document matches the posting; it does not decide whether you are qualified, and it does not tell you whether to apply.",
+          "It also does not assess you. SynCV [reports how well the document matches the posting](/ats-resume-checker); it does not decide whether you are qualified, and it does not tell you whether to apply.",
         ],
         example: EXAMPLES.dataAnalyst,
       },
@@ -529,7 +533,7 @@ export const ARTICLES: Article[] = [
           {
             title: "Re-check wording against each posting",
             detail:
-              "This is the per-application step, and it is the one that changes your ranking.",
+              "This is the per-application step, and it is the one that changes your ranking. An [ATS resume checker](/ats-resume-checker) shows which of the posting's requirements you still miss, and [tailoring the resume](/resume-tailor) closes the ones you genuinely have.",
           },
         ],
       },
@@ -579,7 +583,7 @@ export const ARTICLES: Article[] = [
       {
         heading: "Which words are actually keywords",
         body: [
-          "Not everything in a posting counts. Keywords are the concrete, checkable terms — the ones a recruiter could search for and get a meaningful shortlist.",
+          "Not everything in a posting counts. Keywords are the concrete, checkable terms — the ones a recruiter could search for and get a meaningful shortlist. A [job description analyzer](/job-description-analyzer) will list them for a specific posting, split into must-have, important and nice to have.",
         ],
         bullets: [
           "Tools and technologies: Kubernetes, Figma, Salesforce, Power BI",
@@ -595,7 +599,7 @@ export const ARTICLES: Article[] = [
         heading: "Placement beats frequency",
         body: [
           "One mention inside a real accomplishment outperforms five mentions scattered around the page. This is true for the human reviewer for obvious reasons, and true for keyword matching because most systems weight where a term appears — a skill in your current role counts for more than one in a list at the bottom.",
-          "So the question to ask of each keyword is not \"is it on my resume\" but \"does the reader learn what I did with it.\"",
+          "So the question to ask of each keyword is not \"is it on my resume\" but \"does the reader learn what I did with it.\" An [ATS resume check](/ats-resume-checker) against the posting shows which keywords you cover and which you never mention.",
         ],
         example: EXAMPLES.backendScale,
       },
@@ -688,12 +692,12 @@ export const ARTICLES: Article[] = [
           "Optimise the base resume until you would be happy sending it cold. Then tailor from it, per job.",
         ],
         callout:
-          "This is why SynCV keeps one base resume and generates tailored versions from it, rather than editing a single file in place.",
+          "This is why SynCV keeps one base resume and [generates tailored versions from it](/resume-tailor), rather than editing a single file in place.",
       },
       {
         heading: "Where ATS checking fits",
         body: [
-          "An ATS check spans both. The parsing half is an optimisation problem you solve once. The matching half — how closely your wording tracks the posting — is a tailoring problem you re-solve per application, which is why match scores move when the job description changes and your resume has not.",
+          "An [ATS check](/ats-resume-checker) spans both. The parsing half is an optimisation problem you solve once. The matching half — how closely your wording tracks the posting — is a tailoring problem you re-solve per application, which is why match scores move when the job description changes and your resume has not.",
         ],
       },
     ],

@@ -18,7 +18,7 @@ const geistSans = Geist({
   display: "swap",
 });
 
-const DEFAULT_TITLE = "Job-Specific Resume Tailoring – Match Any Job Description | SynCV";
+const DEFAULT_TITLE = "SynCV – Job-Specific Resume Tailoring for Any Job Description";
 const DEFAULT_DESCRIPTION =
   "SynCV tailors your existing resume to a specific job description in a single click — highlighting the experience you already have, without inventing skills or achievements.";
 

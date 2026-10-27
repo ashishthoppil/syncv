@@ -37,9 +37,22 @@ const toLocal = (absoluteUrl) => {
 
 const matchAll = (html, regex) => [...html.matchAll(regex)].map((match) => match[1]);
 
+/**
+ * Undoes the escaping React applies to text and attribute values, so lengths
+ * and comparisons see what a searcher sees: "&amp;" is one character in a
+ * SERP title, not five.
+ */
+const decodeEntities = (value) =>
+  value
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
 const attr = (html, selector) => {
   const match = html.match(selector);
-  return match ? match[1] : null;
+  return match ? decodeEntities(match[1]) : null;
 };
 
 // ─── robots.txt ──────────────────────────────────────────────────────────────

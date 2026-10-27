@@ -12,6 +12,20 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/generate-pdf": ["./node_modules/@sparticuz/chromium/bin/**"],
   },
+  // https://syncv.app is the only canonical host. The www → apex redirect is
+  // owned by the Vercel domain settings, which answer before the app runs, so
+  // this rule is a backstop: it only takes effect if www.syncv.app is ever
+  // pointed straight at the deployment. Permanent (308), path and query kept.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.syncv.app" }],
+        destination: "https://syncv.app/:path*",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

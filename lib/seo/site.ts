@@ -14,6 +14,8 @@ const RAW_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://syncv.app";
 export const SITE_URL = RAW_SITE_URL.trim().replace(/\/+$/, "");
 
 export const SITE_NAME = "SynCV";
+/** Other names people use for the site. Feeds WebSite/Organization.alternateName. */
+export const SITE_ALTERNATE_NAMES = ["syncv.app"];
 export const SITE_TAGLINE =
   "Your resume should change for every job. Your experience shouldn't.";
 export const SUPPORT_EMAIL = "info@syncv.app";

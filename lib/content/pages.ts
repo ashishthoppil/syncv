@@ -55,6 +55,20 @@ export const ABOUT: StaticPage = {
     "SynCV is a resume tailoring tool. It takes a resume you already have and a job description you are applying to, and produces a version of that resume aimed at that job — reordered, re-emphasised and rephrased around what the posting asks for. The single rule the product is built around is that it works only from experience you have actually claimed.",
   sections: [
     {
+      heading: "What SynCV does",
+      body: [
+        "SynCV is a web app for one part of the job search: getting the right version of your resume in front of each employer. You upload your resume once, and every tool below works from it.",
+      ],
+      bullets: [
+        "[Resume tailoring](/resume-tailor): paste a job description and get a version of your resume aimed at that posting.",
+        "[ATS resume check](/ats-resume-checker): see which of the posting's requirements your resume already covers, and which it doesn't.",
+        "[Job description analysis](/job-description-analyzer): the skills, tools and requirements a posting actually screens on, ranked by priority.",
+        "[Cover letters](/ai-cover-letter-generator): a letter for the same job, drafted from the same resume.",
+        "[Job application tracker](/job-application-tracker): every application, its status and the tailored resume you sent, in one place.",
+        "Interview prep and mock interviews for jobs you have scanned, and a remote and hybrid jobs board on the Remote Jobs and Pro plans.",
+      ],
+    },
+    {
       heading: "The problem we built it for",
       body: [
         "Almost everyone applies with one resume. It is a reasonable thing to do — tailoring by hand takes half an hour per application and it is hard to tell whether it made any difference.",

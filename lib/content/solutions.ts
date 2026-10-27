@@ -1,6 +1,7 @@
 import type { ArticleSection } from "./articles";
 import { EXAMPLES } from "./examples";
 import { FAQ_POOL, pickFaqs, type Faq } from "./faqs";
+import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
 
 /**
  * Product / intent landing pages.
@@ -42,10 +43,11 @@ export type Solution = {
 export const SOLUTIONS = {
   resumeTailor: {
     path: "/resume-tailor",
-    title: "Tailor Your Resume to a Job Description in a Single Click",
+    // "Free to try" rather than "free": the free plan is a one-off trial
+    // allowance, and the title should not promise more than that.
+    title: "Tailor Your Resume to a Job Description – Free to Try",
     h1: "Tailor your resume to a job description",
-    description:
-      "Upload your resume once, paste a job description, and SynCV rewrites it for that job using the experience you already have. Tailor, don't fabricate.",
+    description: `Paste a job description and SynCV tailors your resume to it, using only the experience you already have. Try ${formatScanCount(FREE_PLAN_SCAN_LIMIT)} free, no card needed.`,
     // The homepage owns the broad "job-specific resume tailoring" query; this page owns the
     // specific action. Splitting them this way is what stops the two pages
     // competing for the same result.
@@ -110,6 +112,22 @@ export const SOLUTIONS = {
         ],
       },
       {
+        heading: "What you get for each job description",
+        body: [
+          "One run against one posting gives you everything below. You review all of it, and nothing reaches an employer until you download it and send it yourself.",
+        ],
+        bullets: [
+          "A tailored version of your resume, built from your base resume and aimed at this posting",
+          "A match score for your resume against the job description, before and after tailoring",
+          "The posting's keywords grouped as must-have, important and nice to have, with the ones your resume covers marked",
+          "Every change shown against your original, old text struck through and new text highlighted, to accept or reject line by line",
+          "Any figure that isn't on your original resume flagged for you to confirm or correct",
+          "A choice of resume templates, with downloads as PDF or Word (.docx)",
+          "A cover letter for the same job, drafted from the same resume",
+          "The application saved to your [job application tracker](/job-application-tracker) with the version you sent",
+        ],
+      },
+      {
         heading: "Tailor. Don't fabricate.",
         body: [
           "The default behaviour of a language model asked to make a resume match a posting is to write the missing experience. It reads beautifully and it is not yours, and you find out in the interview.",
@@ -159,6 +177,8 @@ export const SOLUTIONS = {
     internalLinks: [
       { label: "how to tailor your resume to a job description", href: "/resources/how-to-tailor-your-resume-to-a-job-description" },
       { label: "how to tailor a resume without lying", href: "/resources/how-to-tailor-a-resume-without-lying" },
+      { label: "should you tailor your resume for every job?", href: "/resources/should-you-tailor-your-resume-for-every-job" },
+      { label: "resume tailoring vs resume optimization", href: "/resources/resume-tailoring-vs-resume-optimization" },
       { label: "check your resume against an ATS", href: "/ats-resume-checker" },
       { label: "analyse a job description", href: "/job-description-analyzer" },
       { label: "tailoring guides by role", href: "/resume-for" },
@@ -265,7 +285,9 @@ export const SOLUTIONS = {
     internalLinks: [
       { label: "how to optimise a resume for ATS", href: "/resources/how-to-optimize-a-resume-for-ats" },
       { label: "resume keywords without keyword stuffing", href: "/resources/resume-keywords-without-keyword-stuffing" },
+      { label: "resume tailoring vs resume optimization", href: "/resources/resume-tailoring-vs-resume-optimization" },
       { label: "tailor the resume after checking it", href: "/resume-tailor" },
+      { label: "find the keywords in a job description", href: "/job-description-analyzer" },
     ],
   },
 
@@ -348,6 +370,7 @@ export const SOLUTIONS = {
     },
     internalLinks: [
       { label: "how to tailor your resume to a job description", href: "/resources/how-to-tailor-your-resume-to-a-job-description" },
+      { label: "resume keywords without keyword stuffing", href: "/resources/resume-keywords-without-keyword-stuffing" },
       { label: "tailor your resume to the posting", href: "/resume-tailor" },
       { label: "check keyword coverage", href: "/ats-resume-checker" },
     ],
@@ -430,42 +453,105 @@ export const SOLUTIONS = {
     internalLinks: [
       { label: "tailor the resume it is attached to", href: "/resume-tailor" },
       { label: "how AI tailors a resume", href: "/resources/how-ai-tailors-a-resume" },
+      { label: "how to tailor a resume without lying", href: "/resources/how-to-tailor-a-resume-without-lying" },
       { label: "analyse the job description first", href: "/job-description-analyzer" },
+      { label: "keep track of every application", href: "/job-application-tracker" },
     ],
   },
 
   jobTracker: {
     path: "/job-application-tracker",
-    title: "Job Application Tracker for Tailored Resumes",
-    h1: "Track applications alongside the resume you sent",
+    title: "Job Application Tracker: Track Job Applications & Resumes",
+    h1: "Job application tracker: every application, and the resume you sent",
     description:
-      "Keep every application, the tailored resume you sent, and its match score in one place — so you know which version went where when the call comes.",
+      "Track job applications in one place: company, role, status, dates and the exact tailored resume you sent. What to record, an example tracker, and a short FAQ.",
     primaryKeyword: "job application tracker",
-    alsoTargets: ["job search tracker", "track job applications", "application tracking spreadsheet alternative"],
+    alsoTargets: [
+      "track job applications",
+      "resume tracker",
+      "job search tracker",
+      "application tracking spreadsheet alternative",
+    ],
     answer:
-      "SynCV's job tracker records each application together with the tailored resume you sent and the job description you sent it for. Because tailoring produces a different resume per application, the thing a spreadsheet cannot do is tell you which version an employer actually has — which matters the moment somebody calls you about a role you applied to five weeks ago.",
+      "A job application tracker is a running record of every job you have applied to: the company, the role, when you applied, where the application stands, who you have spoken to, when to follow up, and which version of your resume you sent. SynCV's job tracker keeps that record next to the resume itself — each application is saved with its status, its match score and the exact tailored resume and cover letter you generated for it, so you always know what an employer is holding.",
     sections: [
       {
-        heading: "The problem with a spreadsheet",
+        heading: "What to track for each job application",
         body: [
-          "Most people track applications in a spreadsheet, and for dates and statuses it works fine. It breaks once you start tailoring, because the resume becomes a per-application artefact and the spreadsheet has nowhere to put it.",
-          "You end up with a folder of files named resume_final_v3_acme.pdf and no reliable way to know which one you sent. When a recruiter calls about a role from last month, you are reconstructing your own application from memory.",
+          "A useful tracker answers one question quickly: if this company called right now, would you know what you sent them and what happens next? Each row needs enough to answer that, and not much more.",
         ],
-      },
-      {
-        heading: "What gets stored per application",
-        body: ["Each entry keeps the full context of the application rather than a row of metadata."],
         bullets: [
-          "The job description you applied against",
-          "The exact tailored resume version you exported",
-          "The match breakdown from that scan",
-          "Status and dates as the application moves",
+          "Company — and the team or department, if the posting names one",
+          "Role — the exact job title from the posting, plus a link to it or its reference number, since postings are often taken down once they close",
+          "Date applied — the anchor for every follow-up",
+          "Status — applied, interviewing, offer or rejected, with the date it last changed",
+          "Contacts — the recruiter or hiring manager's name, and how you reached them",
+          "Follow-ups — the next action and the date you will take it",
+          "Resume version — which tailored resume and cover letter went to this employer",
+          "Source — the job board, referral or careers page it came from",
         ],
       },
       {
-        heading: "Why it matters at interview stage",
+        heading: "Why it helps to track job applications",
         body: [
-          "Interviewers ask about bullets on the resume in front of them. If you have sent five tailored versions, you want the one they are reading — including which achievements you led with and how you phrased them.",
+          "Once you have more than a handful of applications open, memory stops being reliable. Tracking them is less about organisation for its own sake and more about four practical outcomes.",
+        ],
+        bullets: [
+          "You follow up on time. A follow-up date written down is a follow-up that happens; one kept in your head usually doesn't.",
+          "You walk into the call prepared. When a recruiter rings about a role from five weeks ago, you can open the resume they are reading instead of reconstructing it.",
+          "You see what is working. After twenty or thirty applications, the status column shows which kinds of role and which resume versions get replies.",
+          "You avoid duplicates. Applying twice to the same posting, or to the same team through two boards, is easy to do without a record.",
+        ],
+      },
+      {
+        heading: "Example: a well-organised job application tracker",
+        body: [
+          "The example below uses made-up companies, but the shape is what matters: one row per application, every column filled, and a next step on anything still open.",
+        ],
+        table: {
+          caption: "Example tracker with four applications at different stages",
+          columns: ["Company", "Role", "Applied", "Status", "Contact", "Next follow-up", "Resume sent"],
+          rows: [
+            ["Northwind Logistics", "Operations Analyst", "6 Oct", "Interviewing (2nd round, 30 Oct)", "Priya, recruiter (email)", "Thank-you note after interview", "Northwind – Ops Analyst v2"],
+            ["Larkspur Software", "Backend Engineer", "9 Oct", "Applied", "None yet", "Check in 23 Oct if no reply", "Larkspur – Backend"],
+            ["Brightpath Health", "Data Analyst", "13 Oct", "Applied (referral)", "Sam, former colleague", "Ask Sam for an update 27 Oct", "Brightpath – Data Analyst"],
+            ["Harbour & Finch", "Business Analyst", "18 Sep", "Rejected", "Generic careers inbox", "None — closed", "Harbour – BA"],
+          ],
+        },
+        bullets: [
+          "Resume versions are named company plus role, so the file and the row always match",
+          "Statuses are updated the same day something changes, not in a weekly catch-up",
+          "Every open application has a next step with a date; closed ones say so",
+          "Contacts include how you reached them, so you know which channel to follow up on",
+        ],
+      },
+      {
+        heading: "Where a spreadsheet stops working: the resume tracker problem",
+        body: [
+          "Most people track job applications in a spreadsheet, and for dates and statuses it works fine. It breaks once you start tailoring, because the resume becomes a per-application artefact and the spreadsheet has nowhere to put it.",
+          "You end up with a folder of files named resume_final_v3_acme.pdf and no reliable way to know which one you sent. A resume tracker — knowing which version went where — is the column a spreadsheet handles worst and the one that matters most when the interview comes.",
+        ],
+      },
+      {
+        heading: "What SynCV's job tracker stores",
+        body: [
+          "Every time you [tailor your resume to a job description](/resume-tailor), the application is saved to your tracker automatically. You can also add a role by hand for jobs you applied to elsewhere.",
+        ],
+        bullets: [
+          "Company, role and the date the application was added",
+          "Status: Applied, Interviewing, Offer or Rejected, updated from the tracker",
+          "The match score from the scan, before and after tailoring",
+          "The keywords SynCV found in the job description, and which ones your resume covered",
+          "The tailored resume and cover letter you generated, ready to re-download as PDF or Word",
+          "Interview prep and mock interviews for jobs you scanned",
+        ],
+        callout:
+          "SynCV doesn't store recruiter contacts, follow-up dates or notes. Keep those in your calendar or a notes file alongside the tracker.",
+      },
+      {
+        heading: "Why the resume matters at interview stage",
+        body: [
+          "Interviewers ask about the bullets on the resume in front of them. If you have sent five tailored versions, you want the one they are reading — including which achievements you led with and how you phrased them.",
           "It also makes the next application cheaper: a similar role usually starts from a version you already tailored rather than from your base resume.",
         ],
       },
@@ -475,27 +561,42 @@ export const SOLUTIONS = {
           "Anyone running more than a handful of applications at once, particularly across different role types where the tailored versions genuinely diverge.",
         ],
         callout:
-          "The job tracker is included with Pro and with the free trial.",
+          "The job tracker is included with Pro and with the free trial. When a free trial ends, tracked applications stay visible, read-only.",
       },
     ],
     limits: [
       "It does not apply to jobs for you or submit applications on your behalf.",
       "It does not import applications automatically from job boards or your email.",
+      "It does not store contacts, follow-up reminders or free-text notes.",
       "It does not tell you your odds on any application.",
     ],
     faqs: [
-      FAQ_POOL.whereScans,
+      {
+        question: "What should a job application tracker include?",
+        answer:
+          "At minimum: company, role, date applied, current status, the contact you are dealing with, the next follow-up and its date, and which version of your resume you sent. A link to the posting is worth keeping too, because postings are often removed once they close.",
+      },
+      {
+        question: "Is a spreadsheet good enough to track job applications?",
+        answer:
+          "For dates, statuses and contacts, yes. Where it struggles is the resume itself: once you tailor per application, a spreadsheet can only hold a file name, not the version you sent. A tracker that stores the resume alongside the application closes that gap.",
+      },
       {
         question: "Can I see which resume version I sent to a specific company?",
         answer:
-          "Yes — that is the main reason the tracker exists. Each application stores the tailored resume you exported for it alongside the job description it was aimed at.",
+          "Yes — that is the main reason SynCV's tracker exists. Each application keeps the tailored resume and cover letter you generated for it, and you can download them again as PDF or Word.",
       },
+      {
+        question: "Can I track applications I didn't tailor in SynCV?",
+        answer:
+          "Yes. You can add a role by hand with the company, job title and status. Applications you scan in SynCV are added automatically.",
+      },
+      FAQ_POOL.whereScans,
       {
         question: "Which plans include the job tracker?",
         answer:
           "Pro, on any billing period, and the free trial. The Remote Jobs plan covers the jobs board only; Pro includes every feature.",
       },
-      FAQ_POOL.multipleJobs,
     ],
     cta: {
       heading: "Keep your applications and their resumes together",
@@ -505,6 +606,9 @@ export const SOLUTIONS = {
     internalLinks: [
       { label: "tailor a resume per application", href: "/resume-tailor" },
       { label: "should you tailor your resume for every job", href: "/resources/should-you-tailor-your-resume-for-every-job" },
+      { label: "how to tailor your resume to a job description", href: "/resources/how-to-tailor-your-resume-to-a-job-description" },
+      { label: "write a cover letter for each application", href: "/ai-cover-letter-generator" },
+      { label: "resume advice by role", href: "/resume-for" },
     ],
   },
 } satisfies Record<string, Solution>;

@@ -1,5 +1,32 @@
 import BeforeAfterBlock from "@/components/marketing/before-after-example";
 import type { ArticleSection } from "@/lib/content/articles";
+import Link from "next/link";
+import type { ReactNode } from "react";
+
+/**
+ * Content strings may carry contextual links as `[anchor text](/path)`. Only
+ * site-relative paths are linked, so a stray bracket pair in prose can never
+ * turn into an outbound link. Everything else renders as plain text.
+ */
+const INLINE_LINK = /\[([^\]]+)\]\((\/[^)\s]*)\)/g;
+
+export function InlineText({ text }: { text: string }) {
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const match of text.matchAll(INLINE_LINK)) {
+    const [whole, label, href] = match;
+    const start = match.index ?? 0;
+    if (start > last) parts.push(text.slice(last, start));
+    parts.push(
+      <Link key={start} href={href} className="font-medium text-foreground underline underline-offset-4 hover:no-underline">
+        {label}
+      </Link>
+    );
+    last = start + whole.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
 
 /**
  * Renders the body of an article or landing page from structured content.
@@ -18,7 +45,7 @@ export function ContentSections({ sections }: { sections: ArticleSection[] }) {
 
           {section.body.map((paragraph) => (
             <p key={paragraph} className="mt-4 text-[17px] leading-relaxed text-foreground/80">
-              {paragraph}
+              <InlineText text={paragraph} />
             </p>
           ))}
 
@@ -29,7 +56,7 @@ export function ContentSections({ sections }: { sections: ArticleSection[] }) {
                   key={bullet}
                   className="relative pl-6 text-[17px] leading-relaxed text-foreground/80 before:absolute before:left-1 before:top-[0.7em] before:h-1.5 before:w-1.5 before:rounded-full before:bg-foreground/40"
                 >
-                  {bullet}
+                  <InlineText text={bullet} />
                 </li>
               ))}
             </ul>
@@ -48,7 +75,7 @@ export function ContentSections({ sections }: { sections: ArticleSection[] }) {
                   <div>
                     <h3 className="text-[17px] font-semibold">{step.title}</h3>
                     <p className="mt-1 text-[17px] leading-relaxed text-foreground/80">
-                      {step.detail}
+                      <InlineText text={step.detail} />
                     </p>
                   </div>
                 </li>
@@ -56,11 +83,43 @@ export function ContentSections({ sections }: { sections: ArticleSection[] }) {
             </ol>
           ) : null}
 
+          {section.table ? (
+            // The table scrolls inside its own box on narrow screens so the
+            // page itself never scrolls sideways.
+            <div className="mt-6 overflow-x-auto rounded-xl border bg-background">
+              <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                <caption className="px-4 pt-4 text-left text-sm text-muted-foreground">
+                  {section.table.caption}
+                </caption>
+                <thead>
+                  <tr className="border-b">
+                    {section.table.columns.map((column) => (
+                      <th key={column} scope="col" className="px-4 py-3 font-semibold">
+                        {column}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {section.table.rows.map((row) => (
+                    <tr key={row.join("|")} className="border-b last:border-b-0 align-top">
+                      {row.map((cell, index) => (
+                        <td key={index} className="px-4 py-3 leading-relaxed text-foreground/80">
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+
           {section.example ? <BeforeAfterBlock example={section.example} /> : null}
 
           {section.callout ? (
             <p className="mt-6 rounded-xl border-l-4 border-foreground/80 bg-muted/50 p-5 text-[17px] leading-relaxed">
-              {section.callout}
+              <InlineText text={section.callout} />
             </p>
           ) : null}
         </section>

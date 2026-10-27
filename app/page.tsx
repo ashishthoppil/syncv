@@ -25,12 +25,14 @@ import { absoluteUrl } from "@/lib/seo/site";
 import { FREE_PLAN_SCAN_LIMIT, formatScanCount } from "@/lib/subscription-plans";
 
 const PATH = "/";
-const TITLE = "Job-Specific Resume Tailoring – Match Any Job Description";
+// Brand first: searches for "syncv" should land on a result that says SynCV.
+const TITLE = "SynCV – Job-Specific Resume Tailoring for Any Job Description";
 const DESCRIPTION =
   `Tailor your resume to every job in a single click. SynCV leads with the experience each job asks for — no invented skills, experience, or achievements. Try ${formatScanCount(FREE_PLAN_SCAN_LIMIT)} free.`;
 
 export const metadata = buildMetadata({
   title: TITLE,
+  absoluteTitle: true,
   description: DESCRIPTION,
   path: PATH,
   // The tagline is the strongest thing SynCV has to say and it survives being

@@ -77,6 +77,10 @@ export default async function RolePage({ params }: Props) {
     .map((articleSlug) => getArticle(articleSlug))
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
+  // Every guide links to every other, so a new role is reachable from the
+  // established pages the day it ships rather than only from the hub.
+  const otherRoles = ROLE_GUIDES.filter((other) => other.slug !== role.slug);
+
   return (
     <PageShell>
       <JsonLd id={`ld-role-${role.slug}`} data={graph} />
@@ -141,12 +145,12 @@ export default async function RolePage({ params }: Props) {
 
         <section className="mt-12">
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            Skills worth naming — when they are yours
+            Skills and keywords worth naming — when they are yours
           </h2>
           <p className="mt-4 text-[17px] leading-relaxed text-foreground/80">
-            These are the terms {role.role.toLowerCase()} postings tend to name. Use this as a
-            prompt for things you have genuinely done and left off your resume — not as a list
-            to copy.
+            These are the terms {role.role.toLowerCase()} postings tend to name, and the ones
+            recruiters and applicant tracking systems search for. Use this as a prompt for things
+            you have genuinely done and left off your resume — not as a list to copy.
           </p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {role.skills.map((group) => (
@@ -216,7 +220,8 @@ export default async function RolePage({ params }: Props) {
 
         <section className="mt-12">
           <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            Tailoring a {role.role.toLowerCase()} resume with SynCV
+            Tailoring {/^[aeiou]/i.test(role.role) ? "an" : "a"} {role.role.toLowerCase()} resume
+            with SynCV
           </h2>
           <ol className="mt-6 space-y-4">
             {role.workflow.map((step, index) => (
@@ -284,6 +289,29 @@ export default async function RolePage({ params }: Props) {
           </li>
         </ul>
       </section>
+
+      {otherRoles.length ? (
+        <section className="mt-16">
+          <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            Resume guides for other roles
+          </h2>
+          <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+            {otherRoles.map((other) => (
+              <li key={other.slug}>
+                <Link
+                  href={`/resume-for/${other.slug}`}
+                  className="block rounded-xl border bg-background p-5 hover:border-foreground/30"
+                >
+                  <span className="font-semibold">{other.role} resume</span>
+                  <span className="mt-1 block text-sm text-muted-foreground">
+                    {other.title}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <CtaSection
         heading={`Tailor your ${role.role.toLowerCase()} resume to a real posting`}

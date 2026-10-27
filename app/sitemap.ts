@@ -19,7 +19,7 @@ import type { MetadataRoute } from "next";
  * Bumped by hand when the marketing pages are genuinely rewritten. An accurate
  * stale date is worth more to a crawler than a fresh lie.
  */
-const LAST_REVIEWED = new Date("2026-09-14T00:00:00.000Z");
+const LAST_REVIEWED = new Date("2026-10-28T00:00:00.000Z");
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const staticRoutes: MetadataRoute.Sitemap = PUBLIC_ROUTES.map((route) => ({

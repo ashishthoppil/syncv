@@ -6,6 +6,7 @@ import {
   getPlanPrice,
 } from "@/lib/subscription-plans";
 import {
+  SITE_ALTERNATE_NAMES,
   SITE_NAME,
   SITE_URL,
   SOCIAL_PROFILES,
@@ -29,6 +30,7 @@ export const organizationNode = (): JsonLdNode => ({
   "@type": "Organization",
   "@id": ORGANIZATION_ID,
   name: SITE_NAME,
+  alternateName: SITE_ALTERNATE_NAMES,
   url: absoluteUrl("/"),
   logo: {
     "@type": "ImageObject",
@@ -57,6 +59,9 @@ export const websiteNode = (): JsonLdNode => ({
   "@id": WEBSITE_ID,
   url: absoluteUrl("/"),
   name: SITE_NAME,
+  // Google reads WebSite.name / alternateName on the homepage to pick the site
+  // name shown above results; listing the domain ties "syncv.app" to SynCV.
+  alternateName: SITE_ALTERNATE_NAMES,
   description:
     "Tailor your resume to any job description in a single click using the experience you already have.",
   publisher: { "@id": ORGANIZATION_ID },

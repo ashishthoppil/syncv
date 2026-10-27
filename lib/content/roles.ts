@@ -50,9 +50,9 @@ export const ROLE_GUIDES: RoleGuide[] = [
     title: "How to Tailor a Software Engineer Resume",
     h1: "How to tailor a software engineer resume",
     description:
-      "What engineering hiring managers screen for, which bullets carry weight, and how to re-aim the same resume at a frontend, backend or platform posting.",
+      "The skills and keywords engineering screens look for, example achievement bullets, common mistakes, and how to aim one resume at frontend, backend or platform roles.",
     primaryKeyword: "software engineer resume tailoring",
-    updated: "2026-09-14",
+    updated: "2026-10-28",
     answer:
       "Tailoring a software engineer resume comes down to three moves: lead with the part of the stack the posting names, turn duty bullets into bullets about systems you changed and what happened as a result, and make sure any language or tool in your skills list also appears inside a project. Engineering screens are unusually specific — a backend posting and a platform posting want different halves of the same career — so the resume that works for both is usually the one working well for neither.",
     intro: [
@@ -112,12 +112,26 @@ export const ROLE_GUIDES: RoleGuide[] = [
         label: "Data stores",
         items: ["PostgreSQL", "MySQL", "Redis", "DynamoDB", "Elasticsearch", "Kafka"],
       },
+      {
+        label: "Practices",
+        items: [
+          "System design",
+          "Code review",
+          "Automated testing",
+          "Observability",
+          "Incident response",
+          "Agile delivery",
+        ],
+      },
     ],
     strongBullets: [
       "Rebuilt the order-import pipeline in Go, cutting nightly processing from 4 hours to 35 minutes for 2M records.",
       "Introduced contract tests across six internal services, reducing integration failures in staging by roughly half over two quarters.",
       "Led the migration of authentication to OAuth 2.0 across three products, coordinating rollout with two other teams and zero downtime.",
       "Cut p95 API latency from 800ms to 240ms by adding query indexes and a Redis cache layer.",
+      "Rewrote the on-call runbook and alerting for the checkout service after two repeat incidents; pages for that service fell from about 12 a month to 3.",
+      "Shipped the React Native onboarding flow end to end — API, client and analytics events — lifting completed sign-ups from 41% to 52% in an A/B test.",
+      "Reduced monthly AWS spend by about $18K by rightsizing EC2 instances and moving nightly batch jobs to spot capacity.",
     ],
     mistakes: [
       {
@@ -139,6 +153,16 @@ export const ROLE_GUIDES: RoleGuide[] = [
         mistake: "Bullets with no result",
         instead:
           "End with what changed — latency, error rate, cost, release cadence. If nothing was measured, describe the technical outcome rather than inventing a number.",
+      },
+      {
+        mistake: "Leaving your level of ownership ambiguous",
+        instead:
+          "Say whether you designed, led or implemented. All three are fine; when a bullet doesn't say, reviewers assume the smallest.",
+      },
+      {
+        mistake: "Internal names nobody outside your company knows",
+        instead:
+          "\"Migrated Hermes to Atlas\" means nothing to a reviewer. \"Migrated the internal job scheduler to Kubernetes\" says what the system was and what you did to it.",
       },
     ],
     examples: [EXAMPLES.frontend, EXAMPLES.backendScale],
@@ -179,6 +203,11 @@ export const ROLE_GUIDES: RoleGuide[] = [
         question: "How do I tailor when I've only worked on one product?",
         answer:
           "Tailor at the component level. One product still contains many systems — pick the ones closest to the posting and lead with those, and describe the technical problem rather than the business feature.",
+      },
+      {
+        question: "Which keywords should a software engineer resume include?",
+        answer:
+          "The languages, frameworks, cloud platforms and practices the posting names — and only the ones you have used. Put each inside the experience bullet where you used it, not just in the skills list, because that is where a reviewer looks for evidence.",
       },
     ],
     relatedArticles: [
@@ -343,9 +372,9 @@ export const ROLE_GUIDES: RoleGuide[] = [
     title: "How to Tailor a Data Analyst Resume",
     h1: "How to tailor a data analyst resume",
     description:
-      "Analyst postings screen on stack, domain and whether your analysis changed anything. How to lead with the right one for each job description.",
+      "The SQL, BI and domain keywords analyst screens look for, example achievement bullets, common mistakes, and how to lead with the right stack for each posting.",
     primaryKeyword: "data analyst resume tailoring",
-    updated: "2026-09-14",
+    updated: "2026-10-28",
     answer:
       "A data analyst resume is tailored along three axes: the stack the posting names (SQL dialect, BI tool, Python or R), the business domain it sits in (marketing, finance, operations, product), and evidence that your analysis led to a decision. Most analyst resumes describe outputs — dashboards built, reports delivered — when the thing being screened for is what somebody did differently as a result.",
     intro: [
@@ -395,7 +424,7 @@ export const ROLE_GUIDES: RoleGuide[] = [
       },
       {
         label: "BI and visualisation",
-        items: ["Power BI", "Tableau", "Looker", "Metabase", "Google Data Studio"],
+        items: ["Power BI", "Tableau", "Looker", "Metabase", "Looker Studio"],
       },
       {
         label: "Languages and libraries",
@@ -405,12 +434,26 @@ export const ROLE_GUIDES: RoleGuide[] = [
         label: "Warehouses",
         items: ["Snowflake", "BigQuery", "Redshift", "PostgreSQL"],
       },
+      {
+        label: "Analysis methods",
+        items: [
+          "A/B testing",
+          "Cohort analysis",
+          "Regression",
+          "Forecasting",
+          "Funnel analysis",
+          "Metric definition",
+        ],
+      },
     ],
     strongBullets: [
       "Built weekly SQL-backed Power BI dashboards for the marketing team, tracking campaign spend and lead quality across five channels.",
       "Rebuilt the churn definition after finding three teams measuring it differently, aligning reporting across sales, success and finance.",
       "Analysed 18 months of delivery data to identify two routes responsible for 40% of late shipments, informing a carrier renegotiation.",
       "Automated a monthly reconciliation previously done by hand in Excel, saving about two days of analyst time per month.",
+      "Designed and analysed a pricing-page A/B test across 46,000 visitors; the winning variant lifted trial starts by 9% and was rolled out to all traffic.",
+      "Modelled order and inventory data in dbt, replacing 14 hand-maintained queries with three tested models used by finance and operations.",
+      "Built a cohort retention analysis showing paid-social customers churned twice as fast as search customers, which moved 20% of the next quarter's budget to search.",
     ],
     mistakes: [
       {
@@ -433,8 +476,18 @@ export const ROLE_GUIDES: RoleGuide[] = [
         instead:
           "Row counts, time ranges and channel counts give a reviewer a sense of the work. \"Large datasets\" does not.",
       },
+      {
+        mistake: "\"Delivered actionable insights\" with no insight named",
+        instead:
+          "It is the analyst version of \"hard-working\". Name one finding and what the business did with it.",
+      },
+      {
+        mistake: "Listing methods you can't defend",
+        instead:
+          "Regression, A/B testing and machine learning on a resume invite questions about them. Include the methods you have applied to real data and can explain your choices for.",
+      },
     ],
-    examples: [EXAMPLES.dataAnalyst, EXAMPLES.summary],
+    examples: [EXAMPLES.dataAnalyst, EXAMPLES.dataAnalystSummary],
     workflow: [
       {
         title: "Upload a base resume covering every domain you have supported",
@@ -471,6 +524,11 @@ export const ROLE_GUIDES: RoleGuide[] = [
         question: "Is Excel worth listing?",
         answer:
           "Only if the posting asks for it, in which case it matters a great deal. In a SQL-and-BI posting it reads as filler next to your real stack.",
+      },
+      {
+        question: "What keywords should a data analyst resume include?",
+        answer:
+          "The query language, BI tool, warehouse and methods the posting names — usually SQL plus one of Tableau, Power BI or Looker, and often Python. Name the business domain as well, such as marketing, finance or product, because many postings screen on it as much as on tools.",
       },
     ],
     relatedArticles: [
@@ -625,6 +683,577 @@ export const ROLE_GUIDES: RoleGuide[] = [
     relatedArticles: [
       "should-you-tailor-your-resume-for-every-job",
       "how-to-tailor-your-resume-to-a-job-description",
+      "resume-tailoring-vs-resume-optimization",
+    ],
+  },
+  {
+    slug: "nurse",
+    role: "Registered Nurse",
+    title: "Registered Nurse Resume: Skills, Keywords and Examples",
+    h1: "How to write and tailor a registered nurse resume",
+    description:
+      "The licenses, certifications and clinical keywords nurse recruiters screen for, example achievement bullets, common mistakes, and how to tailor for each unit.",
+    primaryKeyword: "registered nurse resume",
+    updated: "2026-10-28",
+    answer:
+      "A strong registered nurse resume leads with what nurse recruiters check first: an active license, current certifications such as BLS and ACLS, and experience in the same specialty and unit type as the opening. Tailoring it means re-leading for each posting — an ICU application should see your critical care and ventilator experience first, an emergency department application your triage work and trauma certification — and describing every role by its unit, patient load and acuity rather than by duties every nurse performs.",
+    intro: [
+      "Nursing resumes have a problem most professions don't: the core duties are the same for every candidate. Every RN assesses patients, administers medications and documents care, so a resume built from those lines gives a recruiter nothing to choose between applicants.",
+      "What does differ is specific and checkable — the specialty, the unit, the patient ratio, the acuity, the certifications and the systems you have charted in. Nurse recruiters also screen on credentials before anything else, so where your license and certifications sit on the page matters more than it does in most fields.",
+    ],
+    responsibilities: [
+      "Assessing patients, planning care and recognising when a patient's condition is changing",
+      "Administering medications and IV therapy, and monitoring how patients respond",
+      "Escalating concerns to physicians and rapid response teams, and acting on new orders",
+      "Educating patients and families, especially around discharge, medications and wound care",
+      "Documenting assessments and interventions in the electronic health record",
+      "Coordinating with physicians, therapists, pharmacists and case managers across a shift",
+    ],
+    recruiterSignals: [
+      "An active RN license, where it is valid, and multistate or compact status if the posting is in another state",
+      "Current certifications the posting requires — BLS almost always, ACLS, PALS, NRP or TNCC depending on the unit",
+      "Experience in the same specialty and unit type: med-surg, telemetry, ICU, emergency, labor and delivery, pediatrics",
+      "Patient load and acuity: how many patients per shift, on what kind of unit, in what size of hospital",
+      "Leadership beyond the assignment: charge shifts, precepting, rapid response, unit committees",
+      "The EHR you have charted in, when the posting names one",
+    ],
+    sectionsThatMatter: [
+      {
+        section: "Licenses and certifications",
+        guidance:
+          "Give them their own section near the top, with the license type, where it is valid and each certification's expiry date. This is the first thing a nurse recruiter checks, and a credential buried at the bottom of page two can be missed by both the reader and the parser.",
+      },
+      {
+        section: "Summary",
+        guidance:
+          "Two lines: years of experience, your specialty and unit type, and the certifications the posting asks for. \"RN, 6 years in acute care, the last 2 in a Level II trauma ED; TNCC and ACLS\" tells a recruiter more than any list of qualities.",
+      },
+      {
+        section: "Experience",
+        guidance:
+          "Open each role with the unit, its size and your usual patient load, then two to four bullets on what you did beyond the baseline. Lead with the role or float experience closest to the unit you are applying to.",
+      },
+      {
+        section: "Clinical rotations",
+        guidance:
+          "Essential for new graduates and worth keeping for a specialty change. List the unit, the facility and the hours, and put your preceptorship first — it is the closest thing to independent practice on the page.",
+      },
+    ],
+    skills: [
+      {
+        label: "Licenses and certifications",
+        items: ["RN license (state or compact)", "BLS", "ACLS", "PALS", "NRP", "TNCC", "CCRN", "CEN"],
+      },
+      {
+        label: "Clinical skills",
+        items: [
+          "Patient assessment",
+          "Medication administration",
+          "IV insertion and therapy",
+          "Telemetry monitoring",
+          "Wound care",
+          "Central line care",
+          "Sepsis protocols",
+          "Ventilator management",
+        ],
+      },
+      {
+        label: "Specialties and settings",
+        items: [
+          "Medical-surgical",
+          "Telemetry and step-down",
+          "Intensive care",
+          "Emergency department",
+          "Labor and delivery",
+          "Pediatrics",
+          "Oncology",
+          "Perioperative",
+        ],
+      },
+      {
+        label: "Systems and quality",
+        items: [
+          "Epic",
+          "Oracle Health (Cerner)",
+          "MEDITECH",
+          "Infection prevention",
+          "Falls prevention",
+          "Patient and family education",
+          "Discharge planning",
+        ],
+      },
+    ],
+    strongBullets: [
+      "Cared for 4–5 patients per shift on a 32-bed cardiac step-down unit, managing titrated drips, telemetry and post-catheterisation recovery.",
+      "Took charge 3–4 shifts a month on a 28-bed med-surg unit, coordinating admissions, discharges and assignments for 6 RNs and 3 nursing assistants.",
+      "Precepted 9 new-graduate nurses through a 12-week orientation; all completed it, and 8 were still on the unit a year later.",
+      "Introduced hourly rounding for high-fall-risk patients through the unit practice council; reported falls dropped from 11 to 4 over the next two quarters.",
+      "Responded as a member of the rapid response team for a 400-bed teaching hospital, averaging 5–6 calls per shift.",
+      "Served as an Epic super-user for go-live, training 40 nurses across two units and giving at-the-elbow support for the first two weeks.",
+      "Completed a 180-hour emergency department preceptorship, triaging with the Emergency Severity Index and caring for up to 3 patients under supervision.",
+    ],
+    mistakes: [
+      {
+        mistake: "Burying your license and certifications",
+        instead:
+          "Put them in their own section near the top with where the license is valid and when each certification expires. Recruiters check credentials first; make them impossible to miss.",
+      },
+      {
+        mistake: "Bullets that describe every nurse's job",
+        instead:
+          "\"Administered medications and monitored vital signs\" is true of every applicant. State the unit, the patient load and the acuity, then spend your bullets on what went beyond the assignment: charge shifts, precepting, committees, outcomes.",
+      },
+      {
+        mistake: "Naming the hospital but not the unit",
+        instead:
+          "\"Registered Nurse, City General Hospital\" says nothing about fit. \"Registered Nurse, 24-bed medical ICU, City General Hospital\" tells an ICU recruiter in one line that you belong in the pile.",
+      },
+      {
+        mistake: "Sending the same resume to every specialty",
+        instead:
+          "An emergency department and a labor and delivery unit screen for different experience. Lead with the role, rotation or float work closest to the unit you are applying to, and move the rest down.",
+      },
+      {
+        mistake: "Including details that could identify a patient",
+        instead:
+          "Keep examples aggregate — patient load, unit outcomes, numbers over a quarter. A memorable case is fine to describe in an interview in general terms; it does not belong on a document you send to strangers.",
+      },
+      {
+        mistake: "Leaving clinical rotations off as a new graduate",
+        instead:
+          "Rotations are your clinical experience. List each with the unit and hours, preceptorship first, before any non-nursing jobs.",
+      },
+    ],
+    examples: [EXAMPLES.nurseCriticalCare, EXAMPLES.nurseSummary],
+    workflow: [
+      {
+        title: "Put every unit, rotation and certification in your base resume",
+        detail:
+          "Include the unit type, bed count, usual patient load and each certification with its expiry date. SynCV can only bring forward what is already there, so a complete base resume is what makes each application quick.",
+      },
+      {
+        title: "Paste the posting",
+        detail:
+          "SynCV picks out the specialty, the required certifications and the clinical skills the posting names, grouped as must-have, important and nice to have.",
+      },
+      {
+        title: "Check that your credentials and closest unit lead",
+        detail:
+          "If the posting requires ACLS or TNCC and you hold it, it belongs in the top third of page one, and the experience nearest to this unit should be the first thing in your work history.",
+      },
+      {
+        title: "Review every change before you download",
+        detail:
+          "Each rewritten line is shown against your original, to accept or reject. Make sure nothing claims a unit, certification or skill you do not have.",
+      },
+    ],
+    faqs: [
+      {
+        question: "What certifications should go on a nursing resume?",
+        answer:
+          "Every current certification the posting asks for, plus any others relevant to the unit, each with its expiry date. BLS is expected almost everywhere; ACLS, PALS, NRP, TNCC, CCRN and CEN matter for the units that use them. Leave off certifications that have lapsed unless you are renewing them and say so.",
+      },
+      {
+        question: "Should I include my nursing license number on my resume?",
+        answer:
+          "It is optional. What a resume needs is the license type, where it is valid and that it is active. Employers verify licenses with the issuing board either way, and many ask for the number on the application form instead.",
+      },
+      {
+        question: "How do I tailor a nursing resume when changing specialty?",
+        answer:
+          "Lead with the experience that overlaps with the new specialty — float shifts, rotations, patients you cared for who would also appear on the new unit, and any certifications it uses. Be accurate about where that experience came from; do not present float or rotation work as a home-unit role.",
+      },
+      {
+        question: "How should a new graduate nurse structure their resume?",
+        answer:
+          "License (or your exam date if you are still waiting), certifications, education, then clinical rotations with units and hours, preceptorship first. Earlier healthcare jobs such as nursing assistant work go after the rotations.",
+      },
+    ],
+    relatedArticles: [
+      "how-to-tailor-your-resume-to-a-job-description",
+      "how-to-optimize-a-resume-for-ats",
+      "resume-keywords-without-keyword-stuffing",
+    ],
+  },
+  {
+    slug: "marketing-manager",
+    role: "Marketing Manager",
+    title: "Marketing Manager Resume: Keywords and Bullet Examples",
+    h1: "How to tailor a marketing manager resume to the job",
+    description:
+      "The channels, tools and metrics marketing hiring managers screen for, example achievement bullets, common mistakes, and how to tailor for brand or growth roles.",
+    primaryKeyword: "marketing manager resume",
+    updated: "2026-10-28",
+    answer:
+      "A marketing manager resume is screened on three things: which channels you have run, the numbers you were accountable for, and the size of what you managed. Tailoring it means leading with the channel mix and metrics the posting cares about — a demand generation role wants pipeline and cost per lead first, a brand role wants campaigns, positioning and awareness — and being precise about your share of a result when a whole team moved the number.",
+    intro: [
+      "Marketing manager is one title covering several different jobs. A growth role at a software company, a brand role at a consumer business and a product marketing role at an enterprise vendor share a title and very little else, and each screens for its own channels and metrics.",
+      "Marketing resumes also have an attribution problem. Results are almost always shared with sales, product or an agency, and reviewers know it. The bullets that hold up say what you owned, what you measured and what moved — without claiming the whole revenue line.",
+    ],
+    responsibilities: [
+      "Planning and running campaigns across paid, owned and earned channels",
+      "Owning a budget and allocating it across channels and agencies",
+      "Setting targets for pipeline, acquisition or awareness, and reporting against them",
+      "Positioning and messaging, usually with product and sales",
+      "Managing a team, freelancers or agencies",
+      "Testing and improving landing pages, creative, audiences and email flows",
+    ],
+    recruiterSignals: [
+      "Channel experience that matches the posting: paid search and social, SEO, lifecycle and email, events, product marketing or brand",
+      "Metrics you owned, with numbers: pipeline, MQLs and SQLs, acquisition cost, return on ad spend, conversion, retention",
+      "Budget and team size — the clearest seniority signal in marketing",
+      "B2B or B2C, and the sales motion behind it: self-serve, sales-led, retail, marketplace",
+      "The platforms the team runs on: HubSpot, Salesforce, Marketo, GA4, Google Ads, Meta Ads Manager",
+      "Campaigns and launches you led, as distinct from ones you supported",
+    ],
+    sectionsThatMatter: [
+      {
+        section: "Summary",
+        guidance:
+          "Channel, market and scale in one line: \"Marketing manager, 7 years in B2B software demand generation, $1.2M annual paid budget, team of 3.\" That line does more than \"creative and data-driven\" ever will.",
+      },
+      {
+        section: "Experience",
+        guidance:
+          "Open each role with your scope — budget, channels, team — then the results. Reorder per posting so the channel the role is built around comes first.",
+      },
+      {
+        section: "Skills and platforms",
+        guidance:
+          "Separate channels from platforms, and lead with the platforms the posting names. A HubSpot team and a Marketo team both want to know which one you have actually run.",
+      },
+      {
+        section: "Portfolio",
+        guidance:
+          "For brand, content and creative roles, a link to campaign work often decides the shortlist. Make sure it shows your part in the work, not only the agency's.",
+      },
+    ],
+    skills: [
+      {
+        label: "Channels",
+        items: [
+          "Paid search",
+          "Paid social",
+          "SEO",
+          "Content marketing",
+          "Email and lifecycle",
+          "Events",
+          "Partnerships",
+          "Product marketing",
+        ],
+      },
+      {
+        label: "Metrics",
+        items: [
+          "Pipeline",
+          "MQLs and SQLs",
+          "Customer acquisition cost",
+          "Return on ad spend",
+          "Conversion rate",
+          "Lifetime value",
+          "Retention",
+          "Brand awareness",
+        ],
+      },
+      {
+        label: "Platforms",
+        items: [
+          "HubSpot",
+          "Salesforce",
+          "Marketo",
+          "Google Analytics 4",
+          "Google Ads",
+          "Meta Ads Manager",
+          "LinkedIn Campaign Manager",
+        ],
+      },
+      {
+        label: "Strategy and management",
+        items: [
+          "Go-to-market planning",
+          "Positioning and messaging",
+          "Budget management",
+          "Agency management",
+          "A/B testing",
+          "Marketing attribution",
+        ],
+      },
+    ],
+    strongBullets: [
+      "Managed a $1.2M annual paid media budget across Google, LinkedIn and Meta, lowering cost per SQL from $410 to $290 over three quarters.",
+      "Launched a lifecycle email programme in HubSpot for trial users; trial-to-paid conversion rose from 11% to 15% within two quarters.",
+      "Led go-to-market for a new analytics product, coordinating sales enablement, launch content and a six-week paid campaign; marketing-sourced pipeline reached $2.4M in the first quarter.",
+      "Rebuilt the site's structure and content plan with an SEO agency; organic sign-ups grew 62% year over year.",
+      "Hired and managed a team of 3 marketers and two agencies, introducing a shared campaign calendar and weekly pipeline reviews with sales.",
+      "Ran more than 40 landing-page and ad-creative tests in a year, recording each in a test log that became the team's standard.",
+      "Repositioned a regional consumer brand for a younger audience; aided awareness in the target group rose from 18% to 27% in the post-campaign survey.",
+    ],
+    mistakes: [
+      {
+        mistake: "Claiming the company's growth as your own",
+        instead:
+          "Reviewers know marketing shares results with sales and product. Say what you owned and what moved — pipeline sourced, cost per lead, conversion on your channel — and say \"contributed to\" where a result was shared.",
+      },
+      {
+        mistake: "Campaigns with no numbers attached",
+        instead:
+          "\"Ran social campaigns for product launches\" gives a reviewer nothing to compare. Add the budget, reach or conversion figure that was actually measured.",
+      },
+      {
+        mistake: "Leaving out budget and team size",
+        instead:
+          "They are the clearest seniority signals in marketing. State them for each role, even as a range.",
+      },
+      {
+        mistake: "One resume for brand and growth roles",
+        instead:
+          "A demand generation posting wants pipeline and acquisition cost in the first bullets; a brand posting wants campaigns, positioning and awareness. Re-lead for each.",
+      },
+      {
+        mistake: "Vanity metrics without context",
+        instead:
+          "Followers, impressions and open rates matter only when they connect to something the business cared about. Pair them with the outcome, or lead with the outcome instead.",
+      },
+      {
+        mistake: "Platforms listed but never shown",
+        instead:
+          "Name the platform inside a bullet. \"Built the lead-scoring model in HubSpot\" proves more than HubSpot in a skills list.",
+      },
+    ],
+    examples: [EXAMPLES.marketingPipeline, EXAMPLES.marketingBrand],
+    workflow: [
+      {
+        title: "Keep every channel, budget and result in your base resume",
+        detail:
+          "Including channels you only ran for a quarter. Tailoring for a role built around a channel you have touched depends on that work being written down somewhere.",
+      },
+      {
+        title: "Paste the posting",
+        detail:
+          "SynCV picks out the channels, platforms and metrics it names, grouped as must-have, important and nice to have.",
+      },
+      {
+        title: "Check the lead channel and metric",
+        detail:
+          "A demand generation posting should open on pipeline and cost per lead; a brand posting on campaigns and awareness. The first bullet in each role should match.",
+      },
+      {
+        title: "Review the numbers before you download",
+        detail:
+          "Accept or reject each change against your original. Any figure that isn't on your base resume is flagged for you to confirm — keep only the ones you can source.",
+      },
+    ],
+    faqs: [
+      {
+        question: "What metrics should a marketing manager put on a resume?",
+        answer:
+          "The ones the role is judged on, with numbers you can source: pipeline, SQLs, acquisition cost and conversion for growth roles; reach, engagement and awareness for brand roles; budget and team size for every role. Give the starting figure or the time period, so a reviewer can see the size of the change.",
+      },
+      {
+        question: "How do I show results when the whole team moved the number?",
+        answer:
+          "Say what you owned and how it contributed — \"ran the paid channel that sourced 40% of pipeline\" rather than \"tripled revenue\". Interviewers will ask, and a precise claim survives the question.",
+      },
+      {
+        question: "Should I include a marketing portfolio?",
+        answer:
+          "For brand, content and creative roles, yes: a link to two or three campaigns with your role stated can matter more than the resume. For performance roles, a short case study with the numbers does the same job.",
+      },
+      {
+        question: "How do I tailor between B2B and B2C marketing roles?",
+        answer:
+          "Lead with the experience that matches the buying motion — sales-led pipeline and account-based work for B2B, acquisition, retention and brand for B2C. Name the motion you worked in plainly rather than relabelling it.",
+      },
+    ],
+    relatedArticles: [
+      "how-to-tailor-your-resume-to-a-job-description",
+      "resume-keywords-without-keyword-stuffing",
+      "how-to-tailor-a-resume-without-lying",
+    ],
+  },
+  {
+    slug: "accountant",
+    role: "Accountant",
+    title: "Accountant Resume: Certifications, Skills and Examples",
+    h1: "How to tailor an accountant resume for each posting",
+    description:
+      "The qualifications, software and month-end keywords accounting recruiters screen for, example bullets, common mistakes and how to tailor for each posting.",
+    primaryKeyword: "accountant resume",
+    updated: "2026-10-28",
+    answer:
+      "An accountant resume is screened first on qualification and specialism — CPA, ACCA, CA or CMA status, and whether your experience is in general ledger, payables and receivables, tax, audit or financial reporting — and then on the standards and systems you have worked with. Tailoring it means leading with the specialism and standards the posting names, such as US GAAP or IFRS, SOX or a specific ERP, and describing your work by its cycle, volume and accuracy: how fast you closed, how many entities or accounts you handled, and what you fixed.",
+    intro: [
+      "Accounting postings are unusually precise about what they want. A senior accountant role at a listed company and a staff accountant role at a small firm might share a title, but one screens for SOX controls, consolidation and IFRS, and the other for full-cycle bookkeeping in QuickBooks or Xero.",
+      "Because the core vocabulary — reconciliations, journal entries, month-end close — appears on every applicant's resume, those words alone separate nobody. What does is scale, speed, the standards and systems involved, and the problems you fixed along the way.",
+    ],
+    responsibilities: [
+      "Preparing journal entries, accruals and reconciliations through the month-end close",
+      "Maintaining the general ledger and chart of accounts",
+      "Preparing financial statements and management reports",
+      "Supporting internal and external audits",
+      "Running accounts payable and receivable, or reviewing the team that does",
+      "Preparing tax filings and compliance returns, or supporting the tax team",
+    ],
+    recruiterSignals: [
+      "Qualification status — CPA, ACCA, CA, CIMA or CMA — whether qualified, part-qualified or in progress, stated plainly",
+      "A specialism that matches the role: general ledger, payables and receivables, financial reporting, tax, audit or FP&A",
+      "The standards you have worked under: US GAAP, IFRS, local GAAP, SOX controls",
+      "ERP and accounting systems: SAP, Oracle NetSuite, Microsoft Dynamics 365, QuickBooks, Xero, Sage",
+      "Close speed and scale: days to close, number of entities, accounts and transaction volume",
+      "Excel depth, where the posting asks for it: lookups, pivot tables, Power Query",
+    ],
+    sectionsThatMatter: [
+      {
+        section: "Qualifications",
+        guidance:
+          "Give professional qualifications their own section near the top, with the year you qualified, or the exams passed if you are part-qualified. A CPA buried under education is easy to miss.",
+      },
+      {
+        section: "Summary",
+        guidance:
+          "Specialism, years, standards and systems in one line: \"Accountant, 5 years in general ledger and month-end close for multi-entity groups; US GAAP; NetSuite.\"",
+      },
+      {
+        section: "Experience",
+        guidance:
+          "Open each role with its scope — entities, company size, team — then two to four bullets on what you improved, not only what you processed.",
+      },
+      {
+        section: "Systems",
+        guidance:
+          "List the ERP and tools you have done real work in, leading with the one the posting names. A system migration you led belongs in experience, not here.",
+      },
+    ],
+    skills: [
+      {
+        label: "Qualifications and standards",
+        items: ["CPA", "ACCA", "CA", "CMA", "US GAAP", "IFRS", "SOX compliance"],
+      },
+      {
+        label: "Core accounting",
+        items: [
+          "General ledger",
+          "Month-end close",
+          "Account reconciliations",
+          "Accruals and prepayments",
+          "Fixed assets",
+          "Intercompany and consolidation",
+          "Revenue recognition (ASC 606 / IFRS 15)",
+        ],
+      },
+      {
+        label: "Systems",
+        items: [
+          "SAP",
+          "Oracle NetSuite",
+          "Microsoft Dynamics 365",
+          "QuickBooks",
+          "Xero",
+          "Sage",
+          "BlackLine",
+        ],
+      },
+      {
+        label: "Reporting and analysis",
+        items: [
+          "Financial statements",
+          "Variance analysis",
+          "Budgeting and forecasting",
+          "Advanced Excel",
+          "Power Query",
+          "Audit support",
+        ],
+      },
+    ],
+    strongBullets: [
+      "Cut the month-end close from 9 working days to 5 by standardising reconciliation templates and moving accruals onto a shared close calendar.",
+      "Prepared monthly consolidations for 6 entities in three currencies under IFRS, including intercompany eliminations and FX revaluation.",
+      "Reconciled more than 120 balance sheet accounts each month, clearing an $85K backlog of unreconciled items inherited from a previous team.",
+      "Led the accounting workstream of a NetSuite migration, mapping the chart of accounts and validating opening balances for 3 entities.",
+      "Acted as the main contact for the external audit, preparing the PBC list and supporting schedules; the audit closed with no adjustments for the second year running.",
+      "Documented and tested 24 SOX controls over revenue and payables, remediating two deficiencies before year end.",
+      "Built a Power Query model to replace a manual vendor-payment reconciliation, saving about 10 hours a month and catching $14K in duplicate invoices.",
+    ],
+    mistakes: [
+      {
+        mistake: "Listing tasks every accountant does",
+        instead:
+          "\"Prepared journal entries and reconciliations\" describes the job, not you. Add the scale — entities, accounts, transactions — and what improved: speed, accuracy, a backlog cleared.",
+      },
+      {
+        mistake: "Being vague about qualification status",
+        instead:
+          "Write \"CPA, licensed 2021\", \"ACCA, 9 of 13 exams passed\" or \"CMA candidate, exam scheduled\". Recruiters screen on this, and ambiguity reads as overclaiming.",
+      },
+      {
+        mistake: "Leaving out the standards",
+        instead:
+          "US GAAP and IFRS are not interchangeable for many employers, and SOX experience is often a requirement at listed companies. Name what you have worked under.",
+      },
+      {
+        mistake: "Hiding the ERP",
+        instead:
+          "Name the system inside a bullet as well as in your skills. Employers running the same ERP often treat it as a strong preference, sometimes a requirement.",
+      },
+      {
+        mistake: "Sharing figures that aren't yours to share",
+        instead:
+          "Describe scale with ranges and percentages — \"a group with around $40M in revenue\" — rather than an employer's confidential or unreported numbers.",
+      },
+      {
+        mistake: "One resume for audit, tax and industry roles",
+        instead:
+          "An audit posting wants your client portfolio, sectors and standards; an in-house general ledger role wants close, reconciliations and systems. Lead with the half of your experience the posting is about.",
+      },
+    ],
+    examples: [EXAMPLES.accountantClose, EXAMPLES.accountantSummary],
+    workflow: [
+      {
+        title: "Record every entity, system and standard in your base resume",
+        detail:
+          "Include close times, account counts and any migrations or audits you led. SynCV can only bring forward what is already there.",
+      },
+      {
+        title: "Paste the posting",
+        detail:
+          "SynCV picks out the qualifications, standards, systems and specialism the posting names, grouped as must-have, important and nice to have.",
+      },
+      {
+        title: "Check that your specialism and qualification lead",
+        detail:
+          "A financial reporting role should open on consolidation and standards; a payables-heavy role on volume and controls. Your qualification belongs in the top third either way.",
+      },
+      {
+        title: "Review every change before you download",
+        detail:
+          "Each rewritten line is shown against your original, to accept or reject. Make sure no standard, system or qualification appears that you don't have.",
+      },
+    ],
+    faqs: [
+      {
+        question: "Should I put CPA or ACCA on my resume if I'm not fully qualified?",
+        answer:
+          "Yes, stated precisely: the exams you have passed, the ones remaining, or the date you sit next. Part-qualified status is valuable to many employers, but the letters on their own imply you hold the qualification.",
+      },
+      {
+        question: "What software should an accountant list?",
+        answer:
+          "The ERP and accounting systems you have done real work in, led by the one the posting names, plus Excel at the level you can demonstrate. Reconciliation and close tools such as BlackLine are worth listing when you have used them.",
+      },
+      {
+        question: "How do I move from audit to an in-house accounting role?",
+        answer:
+          "Lead with work that maps onto the in-house job: the areas you audited closely, the controls you tested, the client systems you worked in. Describe them in in-house terms — close, reconciliations, reporting — without presenting audit work as though you ran the client's books.",
+      },
+      {
+        question: "How long should an accountant's resume be?",
+        answer:
+          "One page early in your career, two once you have several roles or a qualification history to show. Either way, the first page should carry your qualification, specialism and most relevant role on its own.",
+      },
+    ],
+    relatedArticles: [
+      "how-to-tailor-your-resume-to-a-job-description",
+      "how-to-optimize-a-resume-for-ats",
       "resume-tailoring-vs-resume-optimization",
     ],
   },

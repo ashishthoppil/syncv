@@ -4,6 +4,12 @@ import { DEFAULT_OG_IMAGE, SITE_NAME, absoluteUrl } from "./site";
 type BuildMetadataInput = {
   /** Title without the " | SynCV" suffix — the root layout template adds it. */
   title: string;
+  /**
+   * Use `title` verbatim, bypassing the " | SynCV" template. The homepage needs
+   * this: it shares a segment with the root layout, so the template never
+   * applied there and the brand was silently missing from its <title>.
+   */
+  absoluteTitle?: boolean;
   description: string;
   /** Route path, e.g. "/resume-tailor". Drives canonical and og:url. */
   path: string;
@@ -25,6 +31,7 @@ type BuildMetadataInput = {
  */
 export function buildMetadata({
   title,
+  absoluteTitle = false,
   description,
   path,
   socialTitle,
@@ -36,11 +43,11 @@ export function buildMetadata({
   noIndex = false,
 }: BuildMetadataInput): Metadata {
   const url = absoluteUrl(path);
-  const ogTitle = socialTitle ?? `${title} | ${SITE_NAME}`;
+  const ogTitle = socialTitle ?? (absoluteTitle ? title : `${title} | ${SITE_NAME}`);
   const ogDescription = socialDescription ?? description;
 
   return {
-    title,
+    title: absoluteTitle ? { absolute: title } : title,
     description,
     alternates: { canonical: url },
     openGraph: {
